@@ -56,9 +56,9 @@
 
 ## 9. Infrastructure
 
-- [ ] 9.1 Write failing Vitest assertions: HTTP API routes `POST /ring/token`, `GET /ring/link`, `POST /ring/link`, `POST /ring/webhook`; two Python 3.13 arm64 Lambdas; an EventBridge rule `rate(3 hours)`; secrets `fridgesense/ring-app` and `fridgesense/ring-tokens`; table with `pk`/`sk`, TTL `ttl`, on-demand billing, retain policy; outputs for the three URLs; verify they fail
-- [ ] 9.2 Implement the stack (with local uv bundling) to make the tests pass
-- [ ] 9.3 Write a failing assertion that the Lambda role can read `ring-app`, read and write only `ring-tokens`, and read and write only the table; then scope the grants and verify it passes
+- [x] 9.1 Write failing Vitest assertions: HTTP API routes `POST /ring/token`, `GET /ring/link`, `POST /ring/link`, `POST /ring/webhook`; two Python 3.13 arm64 Lambdas; an EventBridge rule `rate(3 hours)`; secrets `fridgesense/ring-app` and `fridgesense/ring-tokens`; table with `pk`/`sk`, TTL `ttl`, on-demand billing, retain policy; outputs for the three URLs; verify they fail
+- [x] 9.2 Implement the stack (with local uv bundling) to make the tests pass
+- [x] 9.3 Write a failing assertion that the Lambda role can read `ring-app`, read and write only `ring-tokens`, and read and write only the table; then scope the grants and verify it passes
 
 ## 10. Docs and final check
 
