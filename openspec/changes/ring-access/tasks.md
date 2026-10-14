@@ -8,16 +8,16 @@
 
 ## 2. Crypto helpers and logging
 
-- [ ] 2.1 Write failing tests for webhook scenarios "Valid signature", "Invalid signature", "Missing signature header" at the function level (`verify_signature(raw_body, header, key)`); verify they fail on import
-- [ ] 2.2 Implement `verify_signature` (constant-time, `sha256=` hex) to make the tests pass
-- [ ] 2.3 Write failing tests for "Stale link request", "Time in the future", "Nonce does not match" at the function level (`nonce_for`, `is_fresh`), with a test vector computed from a known key; verify they fail
-- [ ] 2.4 Implement `nonce_for` (base64url, no padding) and `is_fresh` (600 s window, rejects the future) to make the tests pass
-- [ ] 2.5 Write failing tests for "Secrets never logged": the redaction helper drops `code`, `access_token`, `refresh_token`, `client_secret`, `passcode`, `hmac_key` at any depth; then implement it and verify it passes
+- [x] 2.1 Write failing tests for webhook scenarios "Valid signature", "Invalid signature", "Missing signature header" at the function level (`verify_signature(raw_body, header, key)`); verify they fail on import
+- [x] 2.2 Implement `verify_signature` (constant-time, `sha256=` hex) to make the tests pass
+- [x] 2.3 Write failing tests for "Stale link request", "Time in the future", "Nonce does not match" at the function level (`nonce_for`, `is_fresh`), with a test vector computed from a known key; verify they fail
+- [x] 2.4 Implement `nonce_for` (base64url, no padding) and `is_fresh` (600 s window, rejects the future) to make the tests pass
+- [x] 2.5 Write failing tests for "Secrets never logged": the redaction helper drops `code`, `access_token`, `refresh_token`, `client_secret`, `passcode`, `hmac_key` at any depth; then implement it and verify it passes
 
 ## 3. Config and token store
 
-- [ ] 3.1 Write failing moto tests for reading `fridgesense/ring-app` (with 5-minute cache) and for reading and writing `fridgesense/ring-tokens` (empty store returns None; save then load round-trips all five fields); verify they fail
-- [ ] 3.2 Implement `AppConfig` loader and `TokenStore` on Secrets Manager to make the tests pass
+- [x] 3.1 Write failing moto tests for reading `fridgesense/ring-app` (with 5-minute cache) and for reading and writing `fridgesense/ring-tokens` (empty store returns None; save then load round-trips all five fields); verify they fail
+- [x] 3.2 Implement `AppConfig` loader and `TokenStore` on Secrets Manager to make the tests pass
 
 ## 4. OAuth and Ring client
 
