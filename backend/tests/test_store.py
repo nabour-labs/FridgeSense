@@ -46,3 +46,13 @@ def test_token_store_round_trip(aws):
     assert TokenStore().load() == tokens
     raw = boto3.client("secretsmanager").get_secret_value(SecretId=TOKEN_SECRET)
     assert json.loads(raw["SecretString"])["link_status"] == "unclaimed"
+
+
+def test_resource_names_default_to_deployed_names(aws, monkeypatch):
+    from fridgesense.devices import DeviceRepository
+
+    for var in ["RING_APP_SECRET_ID", "RING_TOKENS_SECRET_ID", "TABLE_NAME"]:
+        monkeypatch.delenv(var)
+    assert load_app_config(now=lambda: 0.0, refresh=True).client_id == "cid"
+    assert TokenStore().secret_id == "fridgesense/ring-tokens"
+    assert DeviceRepository().table.name == "fridgesense"

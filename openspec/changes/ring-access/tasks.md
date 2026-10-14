@@ -62,5 +62,5 @@
 
 ## 10. Docs and final check
 
-- [ ] 10.1 Add README setup steps (prerequisites, `cdk bootstrap`, `cdk deploy`, Ring console URLs, `put-secret-value` command with placeholder values, linking, `fridgesense-devices`); verify each command matches the code
-- [ ] 10.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check` and `cd infra && npm test`; all green
+- [x] 10.1 Add README setup steps (prerequisites, `cdk bootstrap`, `cdk deploy`, Ring console URLs, `put-secret-value` command with placeholder values, linking, `fridgesense-devices`); verify each command matches the code
+- [x] 10.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check` and `cd infra && npm test`; all green

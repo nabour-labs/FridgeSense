@@ -6,7 +6,6 @@ every call gets a 200, even ones we can't use.
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -17,6 +16,7 @@ from fridgesense.crypto import verify_signature
 from fridgesense.devices import account_pk
 from fridgesense.logs import log_event
 from fridgesense.store import AppConfig
+from fridgesense.store import table_name as table_name_default
 from fridgesense.web import Request, json_response
 
 DEDUPE_TTL_S = 7 * 24 * 3600
@@ -46,7 +46,7 @@ class WebhookLog:
     """Remembers accepted request IDs so repeated deliveries are handled once."""
 
     def __init__(self, table_name: str | None = None):
-        self.table = boto3.resource("dynamodb").Table(table_name or os.environ["TABLE_NAME"])
+        self.table = boto3.resource("dynamodb").Table(table_name or table_name_default())
 
     def first_time(self, account_id: str, request_id: str, now: float) -> bool:
         try:
