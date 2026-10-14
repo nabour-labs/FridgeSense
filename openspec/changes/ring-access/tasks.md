@@ -42,10 +42,10 @@
 
 ## 7. Device discovery
 
-- [ ] 7.1 Write failing tests for "One camera returned", "Device removed since last link", "Device list unavailable" (link flow plus DynamoDB); verify they fail
-- [ ] 7.2 Implement `DeviceRepository` (replace the account's device list) and call it after a successful link to make the tests pass
-- [ ] 7.3 Write failing tests for "Listing devices from the command line" and "No linked account" (capsys, exit codes); verify they fail
-- [ ] 7.4 Implement the `fridgesense-devices` command to make the tests pass
+- [x] 7.1 Write failing tests for "One camera returned", "Device removed since last link", "Device list unavailable" (link flow plus DynamoDB); verify they fail
+- [x] 7.2 Implement `DeviceRepository` (replace the account's device list) and call it after a successful link to make the tests pass
+- [x] 7.3 Write failing tests for "Listing devices from the command line" and "No linked account" (capsys, exit codes); verify they fail
+- [x] 7.4 Implement the `fridgesense-devices` command to make the tests pass
 
 ## 8. Webhook intake
 
