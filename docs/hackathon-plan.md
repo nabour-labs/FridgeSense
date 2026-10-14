@@ -11,6 +11,34 @@ Oct 14, 2026 · @Jayson
 - **Front ends:** a PWA (main app) and an MCP server ("Alexa, do I have milk?").
 - **Later:** publishing to the Ring Appstore is undecided. The build keeps that option open (see below) but adds no work for it.
 
+## Demo MVP scope (decided Oct 14)
+
+One user (Jayson), one camera, one fridge. The goal is a sub-3-minute video that passes the Ring and Alexa+ fit checks and scores on the four criteria. **This section overrides the rest of the plan where they disagree;** everything cut below is a stretch goal for after the MVP works end to end.
+
+**The video in one line:** put milk in the fridge → the inventory updates on the phone within a minute → "Alexa, do I have milk?" → "Yes, 1 milk, added 2 minutes ago."
+
+| Area | Keep (minimal version) | Cut or defer |
+| --- | --- | --- |
+| Tracks | Ring, Alexa+, AWS Builder mini | Open Source mini (needs a second repo; only one mini prize anyway), Fire TV, Bee |
+| Ring access | Private app, one-way account link, token exchange, tokens in Secrets Manager, scheduled refresh | Lifecycle webhooks (`app_integration_removed` etc.), subscription checks |
+| Sign-in | Account Link page and PWA behind one passcode in Secrets Manager | Cognito |
+| Webhook | Signature check, dedupe by `meta.request_id`, 200 fast, start the workflow | — |
+| Workflow | Step Functions: wait → fetch event end → download 3–4 stills → brightness door check (Pillow) → Nova → save | Video clips, ffmpeg, container-image Lambda |
+| Analysis | Nova Lite via Converse on stills, Pydantic-checked JSON, cost logged per opening | Reference images / item catalog, embeddings |
+| Data | DynamoDB single table: door events, inventory items, analysis results. S3 stills, 7-day lifecycle | "Delete my data" UI (one user: a cleanup script is enough) |
+| PWA | Inventory list, "added/removed" feed, confirm or fix low-confidence items, opens-per-day and by-hour charts. S3 + CloudFront | Item photos, week/month views, notifications |
+| Alexa+ | Stateless MCP server on Lambda: `get_inventory`, `find_item`, `fridge_activity`, `last_opened` | Strands agent ("what can I cook?") — stretch; Alexa+'s own model can combine the tools |
+| Deploy | `cdk deploy` from the Mac | CI deploys, CodePipeline |
+
+**Build order** (each one OpenSpec change, test-first):
+
+1. `ring-access` (Oct 14–15): CDK skeleton, account link + token exchange, token refresh, `GET /v1/devices`
+2. `door-event-pipeline` (Oct 16–17): webhook → Step Functions → stills → door check → Nova → DynamoDB
+3. `inventory-pwa` (Oct 18–19): the phone app
+4. `fridge-mcp` (Oct 20): MCP server, tested with MCP Inspector, then Alexa+
+5. Oct 21: tune camera angle and prompt on real openings; stretch goals only if 1–4 work
+6. Oct 22: record the video, README setup steps, product feedback, friction log, submit (a day of buffer before the deadline)
+
 ## Hackathon rules that matter
 
 Submissions close **Oct 23, 12:00 pm PT**; judging runs Nov 9–20 and winners are announced around Dec 3. Source: [official rules](https://amazonappdev2026.devpost.com/rules).
