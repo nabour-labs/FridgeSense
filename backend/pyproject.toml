@@ -1,0 +1,36 @@
+[project]
+name = "fridgesense"
+version = "0.1.0"
+description = "FridgeSense backend: Ring access, webhook intake and Lambda handlers"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28",
+    "pydantic>=2.9",
+]
+
+[project.scripts]
+fridgesense-devices = "fridgesense.cli:devices_main"
+
+[dependency-groups]
+dev = [
+    "boto3>=1.35",
+    "moto[dynamodb,secretsmanager]>=5.0",
+    "pytest>=8.3",
+    "respx>=0.22",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

@@ -1,0 +1,16 @@
+{
+  "meta": {"time": "2026-10-14T22:57:16Z"},
+  "data": [
+    {
+      "type": "devices",
+      "id": "ava1.ring.device.D1",
+      "attributes": {"name": "Fridge Cam"},
+      "relationships": {
+        "status": {
+          "data": {"type": "device-status", "id": "ava1.ring.device.status.D1"},
+          "links": {"related": "/v1/devices/ava1.ring.device.D1/status"}
+        }
+      }
+    }
+  ]
+}
