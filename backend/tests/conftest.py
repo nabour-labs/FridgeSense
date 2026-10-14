@@ -82,3 +82,28 @@ def _reset_config_cache(monkeypatch):
     import fridgesense.store
 
     monkeypatch.setattr(fridgesense.store, "_config_cache", None)
+
+
+def api_event(
+    method: str,
+    path: str,
+    body: bytes | str | None = None,
+    headers: dict[str, str] | None = None,
+    query: dict[str, str] | None = None,
+    base64: bool = False,
+) -> dict:
+    """An API Gateway HTTP API (payload v2) event."""
+    import base64 as b64
+
+    raw = body.encode() if isinstance(body, str) else body
+    return {
+        "version": "2.0",
+        "routeKey": f"{method} {path}",
+        "rawPath": path,
+        "rawQueryString": "&".join(f"{k}={v}" for k, v in (query or {}).items()),
+        "queryStringParameters": query,
+        "headers": {k.lower(): v for k, v in (headers or {}).items()},
+        "requestContext": {"http": {"method": method, "path": path}},
+        "body": None if raw is None else (b64.b64encode(raw).decode() if base64 else raw.decode()),
+        "isBase64Encoded": base64,
+    }

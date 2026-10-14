@@ -30,8 +30,8 @@
 
 ## 5. Token exchange endpoint
 
-- [ ] 5.1 Write failing handler tests (API Gateway v2 events, moto, respx) for "Valid authorization code", "Code sent as a form field or query parameter", "Missing code", "Ring rejects the code", "Secrets never logged" (using caplog); verify they fail
-- [ ] 5.2 Implement the HTTP router and `POST /ring/token` to make the tests pass
+- [x] 5.1 Write failing handler tests (API Gateway v2 events, moto, respx) for "Valid authorization code", "Code sent as a form field or query parameter", "Missing code", "Ring rejects the code", "Secrets never logged" (using caplog); verify they fail
+- [x] 5.2 Implement the HTTP router and `POST /ring/token` to make the tests pass
 
 ## 6. Account link page
 
