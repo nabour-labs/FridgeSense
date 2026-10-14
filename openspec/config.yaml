@@ -1,0 +1,47 @@
+schema: spec-driven
+
+# Project context: constraints an agent cannot infer from the code.
+context: |
+  FridgeSense: a Ring Indoor Cam 2K watches a fridge; each door opening's clip goes to S3 and
+  Amazon Bedrock Nova lists items added/removed. The app keeps a running inventory and
+  open/close statistics. Front ends: a PWA and an MCP server for Alexa+.
+  Hackathon deadline: Fri Oct 23 2026, 12:00 PT. Scope is tight; prefer the smallest change that works.
+  Full plan: docs/hackathon-plan.md.
+
+  Stack: Python 3.13 (uv, pytest) for Ring, Bedrock, Lambdas, Strands agent and MCP server;
+  TypeScript for the PWA (Vite + React + vite-plugin-pwa + Tailwind + Recharts, Vitest) and AWS CDK.
+  AWS region us-east-1. DynamoDB single table, S3, Step Functions, API Gateway HTTP API, Cognito.
+
+  Development is strictly test-driven (red -> green -> refactor). Every spec scenario maps to at
+  least one automated test. Tests never call live Ring, AWS or Bedrock: use recorded Ring webhooks
+  and canned API responses (fixtures), moto/stubbers for AWS, and stubbed Bedrock responses.
+
+  Hard rules: credentials only in config/Secrets Manager, never in code; key all data by Ring
+  account_id and device_id; never put "Ring", "Amazon" or "Alexa" in the product name.
+
+rules:
+  proposal:
+    - State which hackathon track(s) the change serves (Ring, Alexa+, AWS Builder, Open Source, Fire TV)
+    - State what is out of scope
+  specs:
+    - Every requirement has at least one scenario written as WHEN/THEN that can be turned directly into a test
+    - Include failure and edge scenarios (bad signature, duplicate webhook, Nova low confidence, timeouts), not only the happy path
+    - Name concrete inputs and outputs (payload fields, status codes, JSON shapes) so tests can assert on them
+  design:
+    - Include a "Test strategy" section listing test levels (unit, contract, integration), fixtures needed, and what is stubbed
+  tasks:
+    - Order work test-first. For each behaviour write a "Write failing test(s) for <scenario>" task before the "Implement <behaviour> to make tests pass" task, then an optional refactor task
+    - Every scenario in the specs must be referenced by at least one test task
+    - Keep tasks small enough to finish in under 2 hours
+    - End with a task to run the full test suite and linters green
+
+operations:
+  apply:
+    guidance:
+      - Follow red -> green -> refactor for each task pair. Run the new test and confirm it fails for the expected reason before writing implementation code
+      - Write only enough implementation to make the failing test pass; then refactor with tests green
+      - Do not mark an implementation task done until its tests pass; report the test command and result
+      - Never weaken, skip or delete a test to make it pass; if a spec is wrong, update the spec first
+  archive:
+    guidance:
+      - Confirm the full test suite passes before archiving

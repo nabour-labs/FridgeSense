@@ -1,0 +1,36 @@
+# Secrets
+.env*
+!.env.example
+*.pem
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# AWS CDK
+cdk.out/
+cdk.context.json
+
+# Local media (clips, stills)
+*.mp4
+!tests/fixtures/**/*.mp4
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
