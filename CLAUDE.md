@@ -3,6 +3,7 @@
 A Ring Indoor Cam 2K watches the fridge. Each door opening triggers a Ring webhook; the clip and stills go to S3, Amazon Bedrock Nova lists what was added or removed, and the app keeps a running inventory plus open/close stats. Front ends: a PWA and an MCP server for Alexa+ ("do I have milk?").
 
 - Full plan, Ring API notes and hackathon rules: [docs/hackathon-plan.md](docs/hackathon-plan.md)
+- **Scope: single-user demo MVP.** Build only what the "Demo MVP scope" section of the plan keeps; everything it cuts is a stretch goal for after the MVP works end to end.
 - Deadline: **Fri Oct 23 2026, 12:00 pm PT**. Prefer the smallest change that works; Fire TV only if everything else is done by Oct 20.
 
 ## Workflow: OpenSpec + TDD
@@ -25,9 +26,9 @@ TDD rules (also enforced in `openspec/config.yaml`):
 
 ## Stack
 
-- **Python 3.13** (uv, pytest, ruff, Pydantic): Ring client, Lambdas, Step Functions tasks, Nova analysis, Strands agent, MCP server (official Python SDK, Streamable HTTP, spec 2025-11-25)
+- **Python 3.13** (uv, pytest, ruff, Pydantic): Ring client, Lambdas, Step Functions tasks, Nova analysis, MCP server (official Python SDK, Streamable HTTP, spec 2025-11-25)
 - **TypeScript**: PWA (Vite + React + vite-plugin-pwa + Tailwind + Recharts, Vitest) and AWS CDK infrastructure
-- AWS us-east-1: API Gateway HTTP API, Lambda, Step Functions, DynamoDB (single table), S3, Secrets Manager, Cognito, Bedrock Nova
+- AWS us-east-1: API Gateway HTTP API, Lambda, Step Functions, DynamoDB (single table), S3, Secrets Manager, Bedrock Nova. No Cognito: one passcode in Secrets Manager
 
 ## Accounts and credentials
 
@@ -69,6 +70,6 @@ You have no AWS or GitHub accounts of your own. Every Bash command runs as Jayso
 - Credentials and secrets live in config or Secrets Manager, never in code or commits. Ring Client Secret and webhook signing key are shown only once — keep them out of the repo.
 - Key all stored data by Ring `account_id` and device ID.
 - Webhook handler: verify `X-Signature` (HMAC-SHA256 of the raw body, `sha256=` hex) first, skip duplicates by `meta.request_id`, reply 200 within 5 s, and do the work asynchronously. Avoid 4xx responses to Ring (10+ in a row can disable the webhook).
-- Raw clips auto-delete after ~7 days; support "delete my data".
+- Raw stills and clips auto-delete after ~7 days (S3 lifecycle).
 - The product name never includes "Ring", "Amazon" or "Alexa".
 - AWS costs are paid out of pocket: only analyze real door openings and log Nova cost per clip.
