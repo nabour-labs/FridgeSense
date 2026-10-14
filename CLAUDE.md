@@ -56,9 +56,12 @@ You have no AWS or GitHub accounts of your own. Every Bash command runs as Jayso
 
 **Branches and PRs**
 
-- `main` is protected: never commit or push to it directly. Work on a feature branch (e.g. `feat/<openspec-change-name>`) and merge through a PR.
+- `main` is protected: never commit or push to it directly.
+- All development starts from `local`, the integration branch. Branch each feature off `local` (e.g. `feat/<openspec-change-name>`), then merge it straight back into `local` with no PR, once its tests pass locally. Feature branches stay local too.
+- `local` has no remote: never push it or set an upstream for it. To ship to `main`, cut a branch from `local` (e.g. `release/<yyyy-mm-dd>`), push that branch and open the PR from it, with Jayson's OK.
+- `local` has no CI gate, so run the tests before merging into it.
 - Every PR to `main` must pass the `unit-tests` check ([.github/workflows/unit-tests.yml](.github/workflows/unit-tests.yml)). It runs pytest for each Python project and `npm test` for each Node package whenever the PR changes code; PRs that only touch docs, `openspec/`, `.claude/` or Markdown pass without running tests.
-- Run the same tests locally before opening a PR. New Python projects need a `pyproject.toml` with pytest as a dev dependency; new Node packages need a `test` script that runs once and exits (e.g. `vitest run`).
+- Run the same tests locally before merging into `local` and before opening the PR to `main`. New Python projects need a `pyproject.toml` with pytest as a dev dependency; new Node packages need a `test` script that runs once and exits (e.g. `vitest run`).
 - Branch protection is applied by [scripts/protect-main.sh](scripts/protect-main.sh).
 
 ## Hard rules
