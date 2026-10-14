@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openspec list:*)",
+      "Bash(openspec show:*)",
+      "Bash(openspec validate:*)",
+      "Bash(openspec status:*)",
+      "Bash(openspec instructions:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run lint:*)"
+    ],
+    "deny": [
+      "Read(./.env*)",
+      "Read(./secrets/**)"
+    ]
+  }
+}
