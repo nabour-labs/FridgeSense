@@ -60,3 +60,25 @@ def aws(monkeypatch):
             BillingMode="PAY_PER_REQUEST",
         )
         yield
+
+
+class MemoryTokenStore:
+    """In-memory stand-in for TokenStore."""
+
+    def __init__(self, tokens=None):
+        self.tokens = tokens
+        self.saves = 0
+
+    def load(self):
+        return self.tokens
+
+    def save(self, tokens):
+        self.tokens = tokens
+        self.saves += 1
+
+
+@pytest.fixture(autouse=True)
+def _reset_config_cache(monkeypatch):
+    import fridgesense.store
+
+    monkeypatch.setattr(fridgesense.store, "_config_cache", None)

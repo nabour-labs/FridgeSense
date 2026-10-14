@@ -21,12 +21,12 @@
 
 ## 4. OAuth and Ring client
 
-- [ ] 4.1 Write failing respx tests for `OAuthClient.exchange_code` and `OAuthClient.refresh` asserting the exact URL, form body (`grant_type`, `code` / `refresh_token`, `client_id`, `client_secret`) and parsed response; verify they fail
-- [ ] 4.2 Implement `OAuthClient` to make the tests pass
-- [ ] 4.3 Write failing tests for token-lifecycle scenarios "Token about to expire", "Ring answers 401 once", "Ring answers 401 after refresh", "Bearer header"; verify they fail
-- [ ] 4.4 Implement `RingClient` (pre-expiry refresh, one refresh-and-retry on 401, base URL locked to api.amazonvision.com) to make the tests pass
-- [ ] 4.5 Write failing tests for scheduled-refresh scenarios "Refresh succeeds and rotates the refresh token", "Refresh response without a new refresh token", "Nothing to refresh", "Refresh token rejected", "OAuth endpoint unavailable"; verify they fail
-- [ ] 4.6 Implement the `token_refresh` handler to make the tests pass
+- [x] 4.1 Write failing respx tests for `OAuthClient.exchange_code` and `OAuthClient.refresh` asserting the exact URL, form body (`grant_type`, `code` / `refresh_token`, `client_id`, `client_secret`) and parsed response; verify they fail
+- [x] 4.2 Implement `OAuthClient` to make the tests pass
+- [x] 4.3 Write failing tests for token-lifecycle scenarios "Token about to expire", "Ring answers 401 once", "Ring answers 401 after refresh", "Bearer header"; verify they fail
+- [x] 4.4 Implement `RingClient` (pre-expiry refresh, one refresh-and-retry on 401, base URL locked to api.amazonvision.com) to make the tests pass
+- [x] 4.5 Write failing tests for scheduled-refresh scenarios "Refresh succeeds and rotates the refresh token", "Refresh response without a new refresh token", "Nothing to refresh", "Refresh token rejected", "OAuth endpoint unavailable"; verify they fail
+- [x] 4.6 Implement the `token_refresh` handler to make the tests pass
 
 ## 5. Token exchange endpoint
 
