@@ -49,10 +49,10 @@
 
 ## 8. Webhook intake
 
-- [ ] 8.1 Write failing handler tests for "Valid signature", "Invalid signature", "Missing signature header", "Base64-encoded body from the gateway", "Signing key not configured"; verify they fail
-- [ ] 8.2 Implement `POST /ring/webhook` signature gating to make the tests pass
-- [ ] 8.3 Write failing tests for "First delivery", "Repeated delivery" (DynamoDB conditional put, 7-day TTL), "Unknown event type", "Malformed JSON with a valid signature", "Motion event handed over", "App integration added"; verify they fail
-- [ ] 8.4 Implement dedupe, dispatch and the logging `MotionHandler` to make the tests pass
+- [x] 8.1 Write failing handler tests for "Valid signature", "Invalid signature", "Missing signature header", "Base64-encoded body from the gateway", "Signing key not configured"; verify they fail
+- [x] 8.2 Implement `POST /ring/webhook` signature gating to make the tests pass
+- [x] 8.3 Write failing tests for "First delivery", "Repeated delivery" (DynamoDB conditional put, 7-day TTL), "Unknown event type", "Malformed JSON with a valid signature", "Motion event handed over", "App integration added"; verify they fail
+- [x] 8.4 Implement dedupe, dispatch and the logging `MotionHandler` to make the tests pass
 
 ## 9. Infrastructure
 

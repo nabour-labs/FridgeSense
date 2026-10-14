@@ -3,11 +3,12 @@
 import logging
 import time
 
-from fridgesense import deps, devices, linking
+from fridgesense import deps, devices, linking, webhook
 from fridgesense.store import TokenStore, load_app_config
 from fridgesense.web import Request, json_response
 
 now = time.time
+motion_handler: webhook.MotionHandler = webhook.LoggingMotionHandler()
 
 
 def handler(event, context):
@@ -17,6 +18,10 @@ def handler(event, context):
     if route == ("POST", "/ring/token"):
         return linking.token_exchange(
             req, deps.oauth_client(), deps.http_client(), TokenStore(), now()
+        )
+    if route == ("POST", "/ring/webhook"):
+        return webhook.handle_webhook(
+            req, load_app_config(), webhook.WebhookLog(), motion_handler, now()
         )
     if route == ("GET", "/ring/link"):
         return linking.link_form(req)
