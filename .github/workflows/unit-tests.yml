@@ -50,6 +50,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
+          ignore-nothing-to-cache: true
       - name: Run pytest
         run: |
           projects=$(git ls-files '*pyproject.toml' | xargs -r -n1 dirname)
