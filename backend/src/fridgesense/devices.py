@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass
 
@@ -14,6 +13,7 @@ from boto3.dynamodb.conditions import Key
 from fridgesense.logs import log_event
 from fridgesense.oauth import OAuthRejected, OAuthUnavailable
 from fridgesense.ring import RingAuthError, RingClient
+from fridgesense.store import table_name as table_name_default
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ def account_pk(account_id: str) -> str:
 
 class DeviceRepository:
     def __init__(self, table_name: str | None = None):
-        self.table = boto3.resource("dynamodb").Table(table_name or os.environ["TABLE_NAME"])
+        self.table = boto3.resource("dynamodb").Table(table_name or table_name_default())
 
     def list(self, account_id: str) -> list[Device]:
         resp = self.table.query(
