@@ -35,10 +35,10 @@
 
 ## 6. Account link page
 
-- [ ] 6.1 Write failing handler tests for "Ring opens the link page", "Link page opened without Ring parameters", "Wrong passcode"; verify they fail
-- [ ] 6.2 Implement `GET`/`POST /ring/link` form rendering and the passcode check to make the tests pass
-- [ ] 6.3 Write failing handler tests for "Stale link request", "Time in the future", "Nonce does not match", "No unclaimed account", "Successful link" (asserting the exact POST and PATCH bodies), "Ring rejects the integration"; verify they fail
-- [ ] 6.4 Implement nonce matching and the app-integrations POST and PATCH to make the tests pass
+- [x] 6.1 Write failing handler tests for "Ring opens the link page", "Link page opened without Ring parameters", "Wrong passcode"; verify they fail
+- [x] 6.2 Implement `GET`/`POST /ring/link` form rendering and the passcode check to make the tests pass
+- [x] 6.3 Write failing handler tests for "Stale link request", "Time in the future", "Nonce does not match", "No unclaimed account", "Successful link" (asserting the exact POST and PATCH bodies), "Ring rejects the integration"; verify they fail
+- [x] 6.4 Implement nonce matching and the app-integrations POST and PATCH to make the tests pass
 
 ## 7. Device discovery
 

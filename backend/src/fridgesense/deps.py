@@ -1,5 +1,8 @@
 """Default wiring for Lambda handlers and the CLI."""
 
+import time
+from collections.abc import Callable
+
 import httpx
 
 from fridgesense.oauth import OAuthClient
@@ -21,5 +24,5 @@ def oauth_client(cfg: AppConfig | None = None) -> OAuthClient:
     return OAuthClient(http_client(), cfg.client_id, cfg.client_secret)
 
 
-def ring_client() -> RingClient:
-    return RingClient(http_client(), TokenStore(), oauth_client())
+def ring_client(now: Callable[[], float] = time.time) -> RingClient:
+    return RingClient(http_client(), TokenStore(), oauth_client(), now=now)
