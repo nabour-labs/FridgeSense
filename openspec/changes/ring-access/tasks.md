@@ -2,9 +2,9 @@
 
 ## 1. Project scaffolding
 
-- [ ] 1.1 Create `backend/` uv project (package `fridgesense`, src layout, Python 3.13; deps httpx, pydantic; dev deps pytest, respx, moto[secretsmanager,dynamodb], boto3, ruff) with a `fridgesense-devices` console script; verify `cd backend && uv run pytest` runs (0 tests) and `uv run ruff check` passes
-- [ ] 1.2 Add Ring fixtures under `backend/tests/fixtures/ring/` (motion, app_integration_added, button_press webhooks; oauth token and refresh; users_me; devices; app_integrations_patch) from the documented shapes; verify each file parses as JSON in a fixture-loading test
-- [ ] 1.3 Create `infra/` CDK v2 TypeScript app with Vitest (`npm test` = `vitest run`) and an empty `FridgeSenseStack`; verify `npm test` passes and `npx cdk synth` runs with bundling disabled
+- [x] 1.1 Create `backend/` uv project (package `fridgesense`, src layout, Python 3.13; deps httpx, pydantic; dev deps pytest, respx, moto[secretsmanager,dynamodb], boto3, ruff) with a `fridgesense-devices` console script; verify `cd backend && uv run pytest` runs (0 tests) and `uv run ruff check` passes
+- [x] 1.2 Add Ring fixtures under `backend/tests/fixtures/ring/` (motion, app_integration_added, button_press webhooks; oauth token and refresh; users_me; devices; app_integrations_patch) from the documented shapes; verify each file parses as JSON in a fixture-loading test
+- [x] 1.3 Create `infra/` CDK v2 TypeScript app with Vitest (`npm test` = `vitest run`) and an empty `FridgeSenseStack`; verify `npm test` passes and `npx cdk synth` runs with bundling disabled
 
 ## 2. Crypto helpers and logging
 
