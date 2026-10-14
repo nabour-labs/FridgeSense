@@ -59,7 +59,7 @@ You have no AWS or GitHub accounts of your own. Every Bash command runs as Jayso
 - `main` is protected: never commit or push to it directly. Work on a feature branch (e.g. `feat/<openspec-change-name>`) and merge through a PR.
 - Every PR to `main` must pass the `unit-tests` check ([.github/workflows/unit-tests.yml](.github/workflows/unit-tests.yml)). It runs pytest for each Python project and `npm test` for each Node package whenever the PR changes code; PRs that only touch docs, `openspec/`, `.claude/` or Markdown pass without running tests.
 - Run the same tests locally before opening a PR. New Python projects need a `pyproject.toml` with pytest as a dev dependency; new Node packages need a `test` script that runs once and exits (e.g. `vitest run`).
-- Branch protection is applied by [scripts/protect-main.sh](scripts/protect-main.sh).
+- Branch protection is applied by [scripts/protect-main.sh](scripts/protect-main.sh). Only `jnabor` can merge into `main`. Because you run as `jnabor`, never merge a PR unless Jayson explicitly asks.
 
 ## Hard rules
 
