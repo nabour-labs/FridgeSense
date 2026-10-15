@@ -159,7 +159,13 @@ export class FridgeSenseStack extends Stack {
       novaModelId: context("novaModelId", "us.amazon.nova-2-lite-v1:0"),
       novaPriceIn: context("novaPriceIn", "0.00033"),
       novaPriceOut: context("novaPriceOut", "0.00275"),
+      // Nova 2 Lite in us-east-1: cache reads at a quarter of the input price, writes free.
+      novaPriceCacheRead: context("novaPriceCacheRead", "0.0000825"),
+      novaPriceCacheWrite: context("novaPriceCacheWrite", "0"),
     };
+    // "today" in fridge answers and usage totals means the household's day:
+    // cdk deploy -c timeZone=America/Vancouver
+    const timeZone = context("timeZone", "America/Toronto");
     const doors = new DoorPipeline(this, "Doors", {
       code,
       baseEnvironment: common.environment,
@@ -171,6 +177,9 @@ export class FridgeSenseStack extends Stack {
       doorBox: context("doorBox", "0.25,0.1,0.5,0.8"),
       doorThreshold: context("doorThreshold", "0.5"),
       ...nova,
+      // Turn on once measured: cdk deploy -c novaCacheAnalysis=true
+      novaCacheAnalysis: context("novaCacheAnalysis", "false"),
+      timeZone,
       faceDetectPrice: context("faceDetectPrice", "0.001"),
     });
 
@@ -222,8 +231,6 @@ export class FridgeSenseStack extends Stack {
       integration,
     });
 
-    // "today" in fridge answers means the household's day: cdk deploy -c timeZone=America/Vancouver
-    const timeZone = context("timeZone", "America/Toronto");
 
     const app = new AppSite(this, "App", {
       api,

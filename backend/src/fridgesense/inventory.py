@@ -1,13 +1,18 @@
 """Workflow tasks after the door check: Nova analysis and saving changes to the inventory."""
 
 import logging
+import os
 import time
+from collections.abc import Callable
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from fridgesense import analysis_config
 from fridgesense.analysis import CATEGORIES, BedrockRejected, NovaAnalyzer
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.table import FridgeTable, TransactionConflict, account_pk
+from fridgesense.usage import UsageRecorder
 
 
 def in_stock_names(table: FridgeTable, account_id: str) -> list[str]:
@@ -15,12 +20,27 @@ def in_stock_names(table: FridgeTable, account_id: str) -> list[str]:
     return sorted(i["sk"].removeprefix("ITEM#") for i in items if i.get("quantity", 0) > 0)
 
 
-def analyze_task(analyzer: NovaAnalyzer, s3, table: FridgeTable, bucket: str, state: dict) -> dict:
+def analyze_task(
+    analyzer: NovaAnalyzer,
+    s3,
+    table: FridgeTable,
+    bucket: str,
+    state: dict,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> dict:
     account_id, door_sk = state["account_id"], state["door_sk"]
     stills = [s3.get_object(Bucket=bucket, Key=k)["Body"].read() for k in state["still_keys"]]
     context = {"account_id": account_id, "door_sk": door_sk}
     config = analysis_config.load(table, account_id)
     references = [(r.annotation, r.image) for r in config.references]
+    record_usage = UsageRecorder(
+        table,
+        ZoneInfo(os.environ.get("TIME_ZONE") or "America/Toronto"),
+        source="analysis",
+        account_id=account_id,
+        model_id=analyzer.model_id,
+        clock=clock,
+    )
     result = None
     try:
         result = analyzer.analyze(
@@ -29,6 +49,7 @@ def analyze_task(analyzer: NovaAnalyzer, s3, table: FridgeTable, bucket: str, st
             context,
             references=references,
             instructions=config.instructions,
+            on_usage=record_usage,
         )
     except BedrockRejected as e:
         log_event("analysis_failed", logging.ERROR, reason=str(e), **context)

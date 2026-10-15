@@ -128,15 +128,23 @@ describe("pipeline Lambda", () => {
       "DOOR_BOX",
       "DOOR_THRESHOLD",
       "FACE_DETECT_PRICE",
+      "NOVA_CACHE_ANALYSIS",
       "NOVA_MODEL_ID",
+      "NOVA_PRICE_CACHE_READ",
+      "NOVA_PRICE_CACHE_WRITE",
       "NOVA_PRICE_IN",
       "NOVA_PRICE_OUT",
       "RING_APP_SECRET_ID",
       "RING_TOKENS_SECRET_ID",
       "STILLS_BUCKET",
       "TABLE_NAME",
+      "TIME_ZONE",
     ]);
     expect(vars.NOVA_MODEL_ID).toBe("us.amazon.nova-2-lite-v1:0");
+    expect(vars.NOVA_PRICE_CACHE_READ).toBe("0.0000825");
+    expect(vars.NOVA_PRICE_CACHE_WRITE).toBe("0");
+    expect(vars.NOVA_CACHE_ANALYSIS).toBe("false");
+    expect(vars.TIME_ZONE).toBe("America/Toronto");
     expect(vars.DOOR_BOX).toBe("0.25,0.1,0.5,0.8");
     expect(vars.DOOR_THRESHOLD).toBe("0.5");
     expect(vars.FACE_DETECT_PRICE).toBe("0.001");

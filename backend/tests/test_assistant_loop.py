@@ -41,7 +41,7 @@ async def ask(question, server, stub, **kw):
 def tool_results(request: dict) -> list[dict]:
     last = request["messages"][-1]
     assert last["role"] == "user"
-    return [block["toolResult"] for block in last["content"]]
+    return [block["toolResult"] for block in last["content"] if "toolResult" in block]
 
 
 # Four tools offered, Six tools offered
@@ -83,7 +83,7 @@ async def test_system_prompt(server, converse_stub):
     converse_stub.answer("end_turn_hello.json")
     await ask("Hi", server, converse_stub)
     request = converse_stub.requests[0]
-    system = " ".join(block["text"] for block in request["system"]).lower()
+    system = " ".join(b["text"] for b in request["system"] if "text" in b).lower()
     assert "two short" in system
     assert "markdown" in system
     assert "tools" in system
@@ -140,3 +140,61 @@ async def test_tool_error_goes_back_to_model(aws, converse_stub):
     assert NOT_LINKED in res["content"][0]["text"]
     assert result.answer == "No camera is linked yet, so I can't tell."
     assert result.tools == ["last_opened"]
+
+
+CACHE_POINT = {"cachePoint": {"type": "default"}}
+
+
+def cache_points(request: dict) -> list[dict]:
+    blocks = list(request["system"])
+    for message in request["messages"]:
+        blocks += message["content"]
+    return [b["cachePoint"] for b in blocks if "cachePoint" in b]
+
+
+# First round
+async def test_first_round_cache_points(server, converse_stub):
+    converse_stub.answer("end_turn_hello.json")
+    await ask("Do I have milk?", server, converse_stub)
+    [first] = converse_stub.requests
+    assert first["system"] == [{"text": assistant.SYSTEM_PROMPT}, CACHE_POINT]
+    assert first["messages"] == [{"role": "user", "content": [{"text": "Do I have milk?"}]}]
+    assert all(set(t) == {"toolSpec"} for t in first["toolConfig"]["tools"])
+
+
+# Tool results carry no cache point
+async def test_tool_results_carry_no_cache_point(server, converse_stub):
+    put_item("milk", 1, minutes_ago=2)
+    converse_stub.answer("tool_use_find_milk.json", "end_turn_milk.json")
+    await ask("Do I have milk?", server, converse_stub)
+    first, second = converse_stub.requests
+    last = second["messages"][-1]
+    assert last["role"] == "user"
+    assert [next(iter(b)) for b in last["content"]] == ["toolResult"]
+    assert not any("cachePoint" in b for m in second["messages"] for b in m["content"])
+    assert second["system"] == first["system"]
+
+
+# One cache point per request
+async def test_one_cache_point_per_request(server, converse_stub):
+    put_item("milk", 1, minutes_ago=2)
+    converse_stub.answer(
+        "tool_use_find_milk.json",
+        "tool_use_find_milk.json",
+        "tool_use_find_milk.json",
+        "end_turn_milk.json",
+    )
+    await ask("Do I have milk?", server, converse_stub)
+    fourth = converse_stub.requests[3]
+    assert len(cache_points(fourth)) == 1
+    assert fourth["system"][-1] == CACHE_POINT
+
+
+# Cache points carry no ttl
+async def test_cache_points_carry_no_ttl(server, converse_stub):
+    put_item("milk", 1, minutes_ago=2)
+    converse_stub.answer("tool_use_find_milk.json", "end_turn_milk.json")
+    await ask("Do I have milk?", server, converse_stub)
+    for request in converse_stub.requests:
+        assert cache_points(request)
+        assert all(point == {"type": "default"} for point in cache_points(request))

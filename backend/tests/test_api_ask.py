@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -10,6 +11,7 @@ from fridgesense.door_events import iso_utc
 from fridgesense.handlers import api
 from fridgesense.store import load_app_config
 from fridgesense.table import FridgeTable, account_pk
+from fridgesense.usage import Tokens
 from fridgesense.web import Request
 from tests.api_helpers import ACCOUNT, NOW, call, configure, link_account, sign_in
 from tests.conftest import API_HOST, api_event
@@ -345,3 +347,19 @@ def test_route_polly_fails(owner, polly):
     polly.add_client_error("synthesize_speech", service_error_code="ServiceFailureException")
     status, body = call("POST", "/api/ask", {"question": "Do I have milk?"}, owner)
     assert (status, body["answer"], body["audio"]) == (200, MILK, None)
+
+
+# Assistant rounds (llm-usage-tracking): the Ask route records each model call
+def test_assistant_usage_is_recorded(agent_on, monkeypatch):
+    monkeypatch.setenv("NOVA_PRICE_CACHE_READ", "0.0001")
+    fake = agent_on(assistant.AssistantResult("Hi.", []))
+    token = sign_in()
+    call("POST", "/api/ask", {"question": "Hi"}, token)
+    [run] = fake.calls
+    assert run["prices"].cache_read == 0.0001
+    record = run["on_usage"]
+    record(Tokens(input=1200, output=40), 0.000506)
+    record(Tokens(input=300, output=30, cache_read=1200), 0.000281)
+    day = datetime.fromtimestamp(NOW, UTC).astimezone(ZoneInfo("America/Toronto")).date()
+    totals = FridgeTable().get(PK, f"USAGE#{day.isoformat()}")
+    assert (totals["assistant_calls"], totals["cache_read_tokens"]) == (2, 1200)

@@ -16,6 +16,7 @@ from fridgesense.analysis import (
     cost_usd,
     parse_response,
 )
+from fridgesense.usage import Prices, Tokens
 from tests.conftest import jpeg, load_fixture
 
 STILLS = [jpeg(0.5)] * 4
@@ -37,6 +38,17 @@ def tool_response(tool_input, usage=(1180, 96)):
         "totalTokens": sum(usage),
     }
     return resp
+
+
+def cached_response(**usage):
+    """The valid tool answer with these Converse usage fields."""
+    resp = copy.deepcopy(load_fixture("nova/converse_tool_use.json"))
+    resp["usage"] = {**usage, "totalTokens": sum(usage.values())}
+    return resp
+
+
+def nova_cost_lines(caplog):
+    return [json.loads(r.getMessage()) for r in caplog.records if "nova_cost" in r.getMessage()]
 
 
 def as_tuples(changes):
@@ -176,6 +188,8 @@ def test_cost_of_one_analysis(bedrock, caplog):
         "model_id": "us.amazon.nova-2-lite-v1:0",
         "input_tokens": 1180,
         "output_tokens": 96,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
         "usd": 0.000653,
         "door_sk": "DOOR#x",
     }
@@ -203,3 +217,84 @@ def test_prices_and_model_from_environment(monkeypatch):
         0.00006,
         0.00024,
     )
+
+
+# No cache fields in usage
+def test_no_cache_fields_in_usage(bedrock, caplog):
+    caplog.set_level(logging.INFO)
+    client, stub = bedrock
+    stub.add_response("converse", cached_response(inputTokens=1180, outputTokens=96))
+    result = NovaAnalyzer(client).analyze(STILLS, [])
+    [line] = nova_cost_lines(caplog)
+    assert (line["cache_read_tokens"], line["cache_write_tokens"], line["usd"]) == (0, 0, 0.000653)
+    assert result.usd == 0.000653
+
+
+# Cache read priced at the cache-read rate
+def test_cache_read_priced_at_the_cache_read_rate(bedrock, caplog):
+    caplog.set_level(logging.INFO)
+    client, stub = bedrock
+    stub.add_response(
+        "converse",
+        cached_response(
+            inputTokens=1180, cacheReadInputTokens=2000, cacheWriteInputTokens=0, outputTokens=96
+        ),
+    )
+    result = NovaAnalyzer(client).analyze(STILLS, [])
+    [line] = nova_cost_lines(caplog)
+    assert line["input_tokens"] == 1180
+    assert line["cache_read_tokens"] == 2000
+    assert line["cache_write_tokens"] == 0
+    assert line["usd"] == 0.000818
+    assert result.usd == 0.000818
+
+
+# Cache write priced at the cache-write rate
+def test_cache_write_priced_at_the_cache_write_rate(bedrock, caplog):
+    caplog.set_level(logging.INFO)
+    client, stub = bedrock
+    stub.add_response(
+        "converse",
+        cached_response(
+            inputTokens=200, cacheReadInputTokens=0, cacheWriteInputTokens=1500, outputTokens=96
+        ),
+    )
+    NovaAnalyzer(client).analyze(STILLS, [])
+    [line] = nova_cost_lines(caplog)
+    assert (line["cache_write_tokens"], line["usd"]) == (1500, 0.00033)
+
+
+# Cache prices from configuration
+def test_cache_prices_from_configuration(monkeypatch):
+    monkeypatch.setenv("NOVA_PRICE_CACHE_READ", "0.0001")
+    monkeypatch.setenv("NOVA_PRICE_CACHE_WRITE", "0.0005")
+    analyzer = NovaAnalyzer.from_env(boto3.client("bedrock-runtime", region_name="us-east-1"))
+    assert (analyzer.prices.cache_read, analyzer.prices.cache_write) == (0.0001, 0.0005)
+
+
+# Retried analysis (llm-usage-tracking): one usage record per response
+def test_on_usage_called_once_per_response(bedrock):
+    client, stub = bedrock
+    stub.add_response("converse", load_fixture("nova/converse_end_turn.json"))  # 1000 in, 50 out
+    stub.add_response("converse", load_fixture("nova/converse_tool_use.json"))  # 1180 in, 96 out
+    calls = []
+    NovaAnalyzer(client).analyze(STILLS, [], on_usage=lambda t, usd: calls.append((t, usd)))
+    assert calls == [
+        (Tokens(input=1000, output=50), cost_usd(1000, 50, 0.00033, 0.00275)),
+        (Tokens(input=1180, output=96), 0.000653),
+    ]
+
+
+# Call that raises an error (llm-usage-tracking): nothing recorded
+def test_on_usage_not_called_when_the_call_fails(bedrock):
+    client, stub = bedrock
+    stub.add_client_error("converse", "ThrottlingException", http_status_code=429)
+    calls = []
+    with pytest.raises(BedrockRetryable):
+        NovaAnalyzer(client).analyze(STILLS, [], on_usage=lambda t, usd: calls.append(t))
+    assert calls == []
+
+
+def test_analyzer_prices_default(bedrock):
+    client, _ = bedrock
+    assert NovaAnalyzer(client).prices == Prices()

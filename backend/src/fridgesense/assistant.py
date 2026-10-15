@@ -18,9 +18,10 @@ import anyio
 from botocore.exceptions import BotoCoreError, ClientError
 from mcp import Client
 
-from fridgesense.analysis import DEFAULT_MODEL_ID, DEFAULT_PRICE_IN, DEFAULT_PRICE_OUT, cost_usd
+from fridgesense.analysis import DEFAULT_MODEL_ID
 from fridgesense.logs import log_event
 from fridgesense.table import account_pk
+from fridgesense.usage import Prices, Tokens, price
 
 SYSTEM_PROMPT = (
     "You are FridgeSense, a kitchen voice assistant that knows what is in the user's fridge "
@@ -31,6 +32,9 @@ SYSTEM_PROMPT = (
     "from what is in stock."
 )
 INFERENCE = {"maxTokens": 300, "temperature": 0.2}
+# Bedrock prompt caching: the tool specs and system prompt are read from cache each round.
+# Nova 2 Lite rejects a cache point after a toolResult block, and in tools; no ttl.
+CACHE_POINT = {"cachePoint": {"type": "default"}}
 DEADLINE_S = 12.0
 MAX_ROUNDS = 4
 DAILY_LIMIT = 100
@@ -101,22 +105,29 @@ class _Fail(Exception):
 class _Run:
     """What one question has spent and done so far, for the result and the cost log."""
 
-    price_in: float
-    price_out: float
+    prices: Prices
+    on_usage: Callable[[Tokens, float], None] | None = None
     tools: list[str] = field(default_factory=list)
     rounds: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     usd: float = 0.0
     answer: str | None = None
     started: bool = False  # the MCP connection is up
 
-    def spend(self, usage: dict) -> None:
-        i, o = int(usage.get("inputTokens", 0)), int(usage.get("outputTokens", 0))
+    def spend(self, usage: dict | None) -> None:
+        tokens = Tokens.from_converse(usage)
+        usd = price(tokens, self.prices)
         self.rounds += 1
-        self.input_tokens += i
-        self.output_tokens += o
-        self.usd = round(self.usd + cost_usd(i, o, self.price_in, self.price_out), 6)
+        self.input_tokens += tokens.input
+        self.output_tokens += tokens.output
+        self.cache_read_tokens += tokens.cache_read
+        self.cache_write_tokens += tokens.cache_write
+        self.usd = round(self.usd + usd, 6)
+        if self.on_usage is not None:
+            self.on_usage(tokens, usd)
 
 
 def _text(result: Any) -> str:
@@ -181,7 +192,7 @@ async def _loop(
                 bedrock,
                 {
                     "modelId": model_id,
-                    "system": [{"text": SYSTEM_PROMPT}],
+                    "system": [{"text": SYSTEM_PROMPT}, CACHE_POINT],
                     "messages": messages,
                     "toolConfig": {"tools": specs},
                     "inferenceConfig": INFERENCE,
@@ -218,8 +229,8 @@ async def run(
     server: Any,
     bedrock: Any,
     model_id: str = DEFAULT_MODEL_ID,
-    price_in: float = DEFAULT_PRICE_IN,
-    price_out: float = DEFAULT_PRICE_OUT,
+    prices: Prices | None = None,
+    on_usage: Callable[[Tokens, float], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
     deadline_s: float = DEADLINE_S,
     max_rounds: int = MAX_ROUNDS,
@@ -229,13 +240,14 @@ async def run(
 
     Never raises for the known failures: they come back as an AssistantFailure. Logs one
     `ask_agent` cost event per question, without the question or the URL. `budget` is
-    asked first; when it says no, nothing is connected or called."""
+    asked first; when it says no, nothing is connected or called. `on_usage` gets each
+    model call's tokens and cost."""
     if budget is not None and not budget():
         log_event("ask_agent", logging.WARNING, outcome="over_budget")
         return AssistantFailure("over_budget")
     began = time.monotonic()
     start = clock()
-    state = _Run(price_in, price_out)
+    state = _Run(prices or Prices(), on_usage)
 
     def check_time() -> None:
         if clock() - start > deadline_s:
@@ -265,6 +277,8 @@ async def run(
         tools=state.tools,
         input_tokens=state.input_tokens,
         output_tokens=state.output_tokens,
+        cache_read_tokens=state.cache_read_tokens,
+        cache_write_tokens=state.cache_write_tokens,
         usd=state.usd,
         ms=int((time.monotonic() - began) * 1000),
     )
