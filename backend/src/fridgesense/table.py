@@ -80,6 +80,28 @@ class FridgeTable:
             if not start:
                 return items
 
+    def query_range(
+        self, account_id: str, low: str, high: str, newest_first: bool = False
+    ) -> list[dict]:
+        """Items whose sort key is between `low` and `high` (inclusive)."""
+        items, start = [], None
+        while True:
+            kwargs = {
+                "TableName": self.name,
+                "KeyConditionExpression": "pk = :pk AND sk BETWEEN :low AND :high",
+                "ExpressionAttributeValues": serialize(
+                    {":pk": account_pk(account_id), ":low": low, ":high": high}
+                ),
+                "ScanIndexForward": not newest_first,
+            }
+            if start:
+                kwargs["ExclusiveStartKey"] = start
+            resp = self.client.query(**kwargs)
+            items += [deserialize(i) for i in resp["Items"]]
+            start = resp.get("LastEvaluatedKey")
+            if not start:
+                return items
+
     def put(self, item: dict) -> None:
         self.client.put_item(TableName=self.name, Item=serialize(item))
 
