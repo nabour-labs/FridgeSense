@@ -7,10 +7,10 @@
 
 ## 2. Webhook hand-over to Step Functions
 
-- [ ] 2.1 Write failing tests for "Motion event starts a run" and "Same event handed over twice" (Stubber on `stepfunctions`: exact `StartExecution` input and name; `ExecutionAlreadyExists` counts as success); verify they fail
-- [ ] 2.2 Implement `StepFunctionsMotionHandler` and run naming, and select it when `STATE_MACHINE_ARN` is set, to make the tests pass
-- [ ] 2.3 Write failing webhook tests for "Motion handler fails" and "Ring retries after a failed hand-over"; verify they fail
-- [ ] 2.4 Implement forgetting the request ID and answering 500 on hand-over failure to make the tests pass
+- [x] 2.1 Write failing tests for "Motion event starts a run" and "Same event handed over twice" (Stubber on `stepfunctions`: exact `StartExecution` input and name; `ExecutionAlreadyExists` counts as success); verify they fail
+- [x] 2.2 Implement `StepFunctionsMotionHandler` and run naming, and select it when `STATE_MACHINE_ARN` is set, to make the tests pass
+- [x] 2.3 Write failing webhook tests for "Motion handler fails" and "Ring retries after a failed hand-over"; verify they fail
+- [x] 2.4 Implement forgetting the request ID and answering 500 on hand-over failure to make the tests pass
 
 ## 3. Event window
 

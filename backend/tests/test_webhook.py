@@ -176,3 +176,38 @@ def test_app_integration_added(aws, motion, caplog):
         "app_integration_added" in r.getMessage() and ACCOUNT in r.getMessage()
         for r in caplog.records
     )
+
+
+class FlakyMotionHandler:
+    """Fails the first `failures` calls, then records events."""
+
+    def __init__(self, failures: int):
+        self.failures = failures
+        self.events: list[MotionEvent] = []
+
+    def handle(self, event: MotionEvent) -> None:
+        if self.failures:
+            self.failures -= 1
+            raise RuntimeError("StartExecution failed")
+        self.events.append(event)
+
+
+# Motion handler fails
+def test_motion_handler_fails(aws, monkeypatch):
+    monkeypatch.setattr(http, "now", lambda: NOW)
+    monkeypatch.setattr(http, "motion_handler", FlakyMotionHandler(failures=1))
+    resp = post(MOTION)
+    assert resp["statusCode"] == 500
+    assert stored_items() == []
+
+
+# Ring retries after a failed hand-over
+def test_ring_retries_after_failed_hand_over(aws, monkeypatch):
+    flaky = FlakyMotionHandler(failures=1)
+    monkeypatch.setattr(http, "now", lambda: NOW)
+    monkeypatch.setattr(http, "motion_handler", flaky)
+    assert post(MOTION)["statusCode"] == 500
+    resp = post(MOTION)
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) == {"ok": True}
+    assert len(flaky.events) == 1
