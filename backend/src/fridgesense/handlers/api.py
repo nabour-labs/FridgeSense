@@ -8,12 +8,14 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from urllib.parse import unquote
+from zoneinfo import ZoneInfo
 
 import boto3
 from botocore.config import Config
 
-from fridgesense import inventory, session
+from fridgesense import ask, inventory, session
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.store import TokenStore, load_app_config
@@ -255,3 +257,17 @@ def put_item(ctx: Context) -> dict:
         ctx.table, ctx.account_id, unquote(ctx.params["key"]), quantity, now=_now_iso()
     )
     return json_response(200, inventory_body(ctx.table, ctx.account_id))
+
+
+MAX_QUESTION = 200
+
+
+@route("POST", "/api/ask")
+def post_ask(ctx: Context) -> dict:
+    question = (_json_body(ctx.req) or {}).get("question")
+    if not isinstance(question, str) or not question.strip() or len(question) > MAX_QUESTION:
+        return json_response(400, {"error": "question required"})
+    tz = ZoneInfo(os.environ.get("TIME_ZONE") or "America/Toronto")
+    when = datetime.fromtimestamp(now(), UTC)
+    result = ask.ask(ctx.table, ctx.account_id, question, now=when, tz=tz)
+    return json_response(200, result.model_dump())

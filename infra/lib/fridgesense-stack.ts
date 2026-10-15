@@ -198,6 +198,9 @@ export class FridgeSenseStack extends Stack {
       api.addRoutes({ path: routePath, methods: [method], integration });
     }
 
+    // "today" in fridge answers means the household's day: cdk deploy -c timeZone=America/Vancouver
+    const timeZone = context("timeZone", "America/Toronto");
+
     new AppSite(this, "App", {
       api,
       code,
@@ -207,6 +210,7 @@ export class FridgeSenseStack extends Stack {
       tokenSecret,
       stillsBucket: doors.bucket,
       logGroup,
+      timeZone,
     });
 
     new McpEndpoint(this, "Mcp", {
@@ -217,8 +221,7 @@ export class FridgeSenseStack extends Stack {
       appSecret,
       tokenSecret,
       logGroup,
-      // "today" in fridge_activity means the household's day: cdk deploy -c timeZone=America/Vancouver
-      timeZone: context("timeZone", "America/Toronto"),
+      timeZone,
     });
 
     const base = api.apiEndpoint;

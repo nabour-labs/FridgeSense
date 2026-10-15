@@ -4,7 +4,7 @@ import type { Role } from "./api/types";
 
 export type Api = Pick<
   ApiClient,
-  "signIn" | "inventory" | "events" | "pending" | "confirm" | "reject" | "setQuantity"
+  "signIn" | "inventory" | "events" | "pending" | "confirm" | "reject" | "setQuantity" | "ask"
 >;
 
 export interface AppContextValue {
@@ -17,7 +17,7 @@ export interface AppContextValue {
   go: (tab: Tab) => void;
 }
 
-export type Tab = "fridge" | "activity" | "review" | "stats";
+export type Tab = "fridge" | "activity" | "review" | "stats" | "ask";
 
 export const AppContext = createContext<AppContextValue | null>(null);
 
