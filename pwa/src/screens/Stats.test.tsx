@@ -52,3 +52,12 @@ test("no openings shows zeros without errors", async () => {
   expect(within(today).getByText("0")).toBeInTheDocument();
   expect(within(screen.getByRole("group", { name: "Average open time" })).getByText("–")).toBeInTheDocument();
 });
+
+// Hour heat strip
+test("opens by hour is a 24-cell strip labelled per hour", async () => {
+  renderStats([event(0, 19, 20), event(1, 19, 30)]);
+  const figure = await screen.findByRole("figure", { name: "Opens by hour" });
+  expect(within(figure).getAllByRole("listitem")).toHaveLength(24);
+  expect(within(figure).getByRole("listitem", { name: "19:00, 2 opens" })).toBeInTheDocument();
+  expect(within(figure).getByRole("listitem", { name: "03:00, 0 opens" })).toBeInTheDocument();
+});
