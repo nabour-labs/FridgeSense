@@ -91,6 +91,7 @@ def link_submit(
     ring: RingClient,
     now: float,
     after_link: Callable[[str], list[str] | None] = lambda account_id: None,
+    app_url: str | None = None,
 ) -> dict:
     form = req.fields()
     nonce, time_ms = form.get("nonce", ""), form.get("time", "")
@@ -123,7 +124,7 @@ def link_submit(
     current = store.load() or tokens  # the Ring client may have refreshed the tokens
     store.save(current.model_copy(update={"link_status": "linked"}))
     log_event("link_ok", account_id=tokens.account_id)
-    return html_response(200, link_page.linked(after_link(tokens.account_id)))
+    return html_response(200, link_page.linked(after_link(tokens.account_id), app_url))
 
 
 def _complete_integration(ring: RingClient, nonce: str) -> None:

@@ -201,7 +201,7 @@ export class FridgeSenseStack extends Stack {
     // "today" in fridge answers means the household's day: cdk deploy -c timeZone=America/Vancouver
     const timeZone = context("timeZone", "America/Toronto");
 
-    new AppSite(this, "App", {
+    const app = new AppSite(this, "App", {
       api,
       code,
       baseEnvironment: common.environment,
@@ -212,6 +212,8 @@ export class FridgeSenseStack extends Stack {
       logGroup,
       timeZone,
     });
+    // The "Camera linked" page links to the app.
+    httpFn.addEnvironment("APP_URL", app.url);
 
     new McpEndpoint(this, "Mcp", {
       api,
