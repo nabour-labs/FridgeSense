@@ -14,16 +14,13 @@ from fridgesense.logs import log_event
 from fridgesense.oauth import OAuthRejected, OAuthUnavailable
 from fridgesense.ring import RingAuthError, RingClient
 from fridgesense.store import table_name as table_name_default
+from fridgesense.table import account_pk
 
 
 @dataclass(frozen=True)
 class Device:
     device_id: str
     name: str
-
-
-def account_pk(account_id: str) -> str:
-    return f"ACCOUNT#{account_id}"
 
 
 class DeviceRepository:

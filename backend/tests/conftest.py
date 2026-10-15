@@ -22,6 +22,7 @@ def fixture():
 APP_SECRET = "fridgesense/ring-app"
 TOKEN_SECRET = "fridgesense/ring-tokens"
 TABLE = "fridgesense"
+BUCKET = "fridgesense-stills-test"
 APP_CONFIG = {
     "client_id": "cid",
     "client_secret": "csecret",
@@ -43,10 +44,12 @@ def aws(monkeypatch):
     monkeypatch.setenv("RING_APP_SECRET_ID", APP_SECRET)
     monkeypatch.setenv("RING_TOKENS_SECRET_ID", TOKEN_SECRET)
     monkeypatch.setenv("TABLE_NAME", TABLE)
+    monkeypatch.setenv("STILLS_BUCKET", BUCKET)
     with mock_aws():
         sm = boto3.client("secretsmanager")
         sm.create_secret(Name=APP_SECRET, SecretString=json.dumps(APP_CONFIG))
         sm.create_secret(Name=TOKEN_SECRET, SecretString="{}")
+        boto3.client("s3").create_bucket(Bucket=BUCKET)
         boto3.client("dynamodb").create_table(
             TableName=TABLE,
             KeySchema=[

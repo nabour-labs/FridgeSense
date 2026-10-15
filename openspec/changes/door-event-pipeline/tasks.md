@@ -19,12 +19,12 @@
 
 ## 4. Stills and door-open check
 
-- [ ] 4.1 Write failing unit tests for still times and for "Fridge light visible", "Door stayed closed" (brightness part), "Box and threshold from config"; verify they fail
-- [ ] 4.2 Implement still timing and the brightness check (`DOOR_BOX`, `DOOR_THRESHOLD`) to make the tests pass
-- [ ] 4.3 Write failing tests (respx + moto S3) for "Four stills saved", "Download link gets no token", "Still not ready yet", "Too few stills"; verify they fail
-- [ ] 4.4 Implement still download and S3 storage to make the tests pass
-- [ ] 4.5 Write failing tests (moto DynamoDB) for "Door event saved", "Same Ring event in two runs", "Door stayed closed" (no door event, `motion_not_door` log), and "Too few stills" (`status = "no_media"`); verify they fail
-- [ ] 4.6 Implement the `fetch_stills` task: claim transaction, door event record, and outcomes `door_open`, `not_door`, `no_media`, `duplicate`, to make the tests pass
+- [x] 4.1 Write failing unit tests for still times and for "Fridge light visible", "Door stayed closed" (brightness part), "Box and threshold from config"; verify they fail
+- [x] 4.2 Implement still timing and the brightness check (`DOOR_BOX`, `DOOR_THRESHOLD`) to make the tests pass
+- [x] 4.3 Write failing tests (respx + moto S3) for "Four stills saved", "Download link gets no token", "Still not ready yet", "Too few stills"; verify they fail
+- [x] 4.4 Implement still download and S3 storage to make the tests pass
+- [x] 4.5 Write failing tests (moto DynamoDB) for "Door event saved", "Same Ring event in two runs", "Door stayed closed" (no door event, `motion_not_door` log), and "Too few stills" (`status = "no_media"`); verify they fail
+- [x] 4.6 Implement the `fetch_stills` task: claim transaction, door event record, and outcomes `door_open`, `not_door`, `no_media`, `duplicate`, to make the tests pass
 
 ## 5. Nova analysis
 
