@@ -3,7 +3,7 @@ import { cpSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CfnOutput, DockerImage, Duration, Fn, RemovalPolicy, Stack } from "aws-cdk-lib";
-import { type HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { type HttpApi, HttpMethod, type HttpRoute } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import {
   AllowedMethods,
@@ -39,6 +39,8 @@ export interface AppSiteProps {
 /** The phone app: an /api Lambda on the HTTP API, and the PWA on S3 + CloudFront. */
 export class AppSite extends Construct {
   readonly url: string;
+  /** `POST /api/session`, its own route so the stage can throttle the passcode check. */
+  readonly sessionRoute: HttpRoute;
 
   constructor(scope: Construct, id: string, props: AppSiteProps) {
     super(scope, id);
@@ -64,10 +66,12 @@ export class AppSite extends Construct {
     props.tokenSecret.grantRead(fn);
     props.stillsBucket.grantRead(fn);
 
-    props.api.addRoutes({
-      path: "/api/{proxy+}",
-      methods: [HttpMethod.ANY],
-      integration: new HttpLambdaIntegration("AppApiIntegration", fn),
+    const integration = new HttpLambdaIntegration("AppApiIntegration", fn);
+    props.api.addRoutes({ path: "/api/{proxy+}", methods: [HttpMethod.ANY], integration });
+    [this.sessionRoute] = props.api.addRoutes({
+      path: "/api/session",
+      methods: [HttpMethod.POST],
+      integration,
     });
 
     const site = new Bucket(this, "Site", {

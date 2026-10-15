@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-15 · AWS CDK / API Gateway · HTTP API route throttling needs the L1 stage, and its keys are not converted
+
+- **Task:** throttle the HTTP API: a default limit for every route, and a lower limit on `POST /api/session` and `POST /ring/link`.
+- **Steps:** looked for throttle props on `HttpApi` and its default stage; then set `defaultRouteSettings` and `routeSettings` on `api.defaultStage.node.defaultChild as CfnStage`, writing both in camelCase (`{ throttlingRateLimit: 1, throttlingBurstLimit: 3 }`), and asserted the template in a Vitest CDK test.
+- **Expected:** a per-route throttle option on the L2 construct, and the same camelCase-to-PascalCase conversion for `routeSettings` that `defaultRouteSettings` gets.
+- **Actual:** the L2 `HttpApi` default stage takes only a stage-wide `throttle`; per-route limits need the L1 `CfnStage`. `defaultRouteSettings` came out as `ThrottlingRateLimit`, but `routeSettings` (typed `any`, a map keyed by route key) went into the template unchanged as `throttlingRateLimit`/`throttlingBurstLimit`, which API Gateway would not recognize. Separately, API Gateway rejects route settings for a route key that doesn't exist yet, and CloudFormation doesn't infer the stage → route dependency from the route key string.
+- **Severity:** Low
+- **Workaround:** write the `routeSettings` values in PascalCase, `stage.node.addDependency(route)` for each throttled route, and assert both in a template test.
+- **Suggestion:** add per-route throttling to the L2 HTTP API stage (for example `routeThrottle: { route, rateLimit, burstLimit }`), or type `CfnStage.routeSettings` as `Record<string, RouteSettingsProperty>` so the keys are converted.
+
 ### 2026-10-14 · AWS CDK · Local bundling output picks up ANSI colors
 
 - **Task:** build the Python Lambda asset in CDK local bundling by capturing `uv export` stdout into a requirements file, then `uv pip install --requirements`.

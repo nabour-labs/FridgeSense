@@ -14,18 +14,18 @@
 
 ## 3. API throttling (`cost-and-abuse-guards`)
 
-- [ ] 3.1 Set `alertEmail: "owner@example.test"` as a default context in `infra/test/helpers.ts` (needed by section 4; harmless before it)
-- [ ] 3.2 Write failing CDK tests for "Default stage throttled", "Passcode routes throttled", "Session route reaches the app API" and "Routes exist before their limits"
-- [ ] 3.3 Implement: explicit `POST /api/session` route in `AppSite`, stage default and route settings plus stage dependencies in `fridgesense-stack.ts`, to make tests pass; update any route-count test that the new route legitimately changes
+- [x] 3.1 Set `alertEmail: "owner@example.test"` as a default context in `infra/test/helpers.ts` (needed by section 4; harmless before it)
+- [x] 3.2 Write failing CDK tests for "Default stage throttled", "Passcode routes throttled", "Session route reaches the app API" and "Routes exist before their limits"
+- [x] 3.3 Implement: explicit `POST /api/session` route in `AppSite`, stage default and route settings plus stage dependencies in `fridgesense-stack.ts`, to make tests pass; update any route-count test that the new route legitimately changes
 
 ## 4. Budget and alarm (`cost-and-abuse-guards`)
 
-- [ ] 4.1 Write failing CDK tests for "Budget at 80 percent", "Alarm on failed executions" and "Address missing"
-- [ ] 4.2 Implement `alertEmail` context check, `CfnBudget`, SNS topic with email subscription and the `ExecutionsFailed` alarm to make tests pass
-- [ ] 4.3 Make sure `cdk.context.json` is gitignored; add `-c alertEmail=...` to the deploy command in the README
+- [x] 4.1 Write failing CDK tests for "Budget at 80 percent", "Alarm on failed executions" and "Address missing"
+- [x] 4.2 Implement `alertEmail` context check, `CfnBudget`, SNS topic with email subscription and the `ExecutionsFailed` alarm to make tests pass
+- [x] 4.3 Make sure `cdk.context.json` is gitignored; add `-c alertEmail=...` to the deploy command in the README
 
 ## 5. Finish
 
-- [ ] 5.1 Run every suite green: `cd backend && uv run pytest && uv run ruff check .`, `cd pwa && npm test`, `cd infra && npm test && npx tsc --noEmit -p .`
-- [ ] 5.2 Log any friction from API Gateway, Budgets, CloudWatch or CDK in `docs/friction-log.md`
+- [x] 5.1 Run every suite green: `cd backend && uv run pytest && uv run ruff check .`, `cd pwa && npm test`, `cd infra && npm test && npx tsc --noEmit -p .`
+- [x] 5.2 Log any friction from API Gateway, Budgets, CloudWatch or CDK in `docs/friction-log.md`
 - [ ] 5.3 Merge `feat/cost-security-guards` into `local` (no push, no deploy)
