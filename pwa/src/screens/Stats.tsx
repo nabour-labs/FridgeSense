@@ -3,28 +3,37 @@ import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis } f
 import { useApp } from "../AppContext";
 import { NoData } from "../components/NoData";
 import { plural } from "../format";
-import { averageDuration, deviceTimeZone, perDay, perHour, todayCount } from "../stats";
+import { averageDuration, byWeekdayHour, deviceTimeZone, heatLevel, lastDays, perDay, todayCount } from "../stats";
 import { useLoad } from "../useLoad";
 
 const AXIS = { fontSize: 11, fill: "#64748b" };
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const LEVELS = [
+  "bg-slate-100 dark:bg-slate-800",
+  "bg-brand-200 dark:bg-brand-900",
+  "bg-brand-400 dark:bg-brand-700",
+  "bg-brand-600 dark:bg-brand-500",
+  "bg-brand-800 dark:bg-brand-300",
+];
 
 export function Stats() {
   const { api } = useApp();
   const { data: events, failed } = useLoad(
-    useCallback(() => api.events(7).then((r) => r.events), [api]),
+    useCallback(() => api.events(28).then((r) => r.events), [api]),
     60_000,
   );
 
   const stats = useMemo(() => {
-    const list = events ?? [];
+    const all = events ?? [];
     const tz = deviceTimeZone();
     const now = new Date();
+    const week = lastDays(all, now, tz, 7);
     return {
-      today: todayCount(list, now, tz),
-      week: list.length,
-      average: averageDuration(list),
-      days: perDay(list, now, tz),
-      hours: perHour(list, tz),
+      today: todayCount(week, now, tz),
+      week: week.length,
+      average: averageDuration(week),
+      days: perDay(week, now, tz),
+      grid: byWeekdayHour(all, tz),
     };
   }, [events]);
 
@@ -66,36 +75,54 @@ export function Stats() {
           </ResponsiveContainer>
         </div>
       </Chart>
-      <Chart title="Opens by hour">
-        <HourStrip hours={stats.hours} />
+      <Chart title="Opens by day and hour" note="Last 4 weeks">
+        <Heatmap grid={stats.grid} />
       </Chart>
     </div>
   );
 }
 
-/** 24 cells, one per hour, shaded by how many openings fell in it. */
-function HourStrip({ hours }: { hours: number[] }) {
-  const max = Math.max(1, ...hours);
+/** Weekday rows by hour columns, shaded in 5 levels like a contribution graph. */
+function Heatmap({ grid }: { grid: number[][] }) {
+  const max = Math.max(0, ...grid.flat());
+  const label = "text-[10px] leading-none text-slate-500 dark:text-slate-400";
   return (
     <div>
-      <ul className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-0.5">
-        {hours.map((opens, hour) => {
-          const hh = String(hour).padStart(2, "0");
-          return (
-            <li
-              key={hour}
-              aria-label={`${hh}:00, ${plural(opens, "open")}`}
-              title={`${hh}:00 · ${plural(opens, "open")}`}
-              className={`h-12 rounded-[4px] ${opens === 0 ? "bg-slate-100 dark:bg-slate-800" : "bg-brand-500"}`}
-              style={opens === 0 ? undefined : { opacity: 0.25 + 0.75 * (opens / max) }}
-            />
-          );
-        })}
-      </ul>
-      <div aria-hidden className="mt-1.5 grid grid-cols-4 text-[11px] text-slate-500 dark:text-slate-400">
-        {["00", "06", "12", "18"].map((h) => (
-          <span key={h}>{h}:00</span>
+      <div role="table" className="grid grid-cols-[auto_repeat(24,minmax(0,1fr))] gap-[2px]">
+        <div role="row" className="contents">
+          <span aria-hidden />
+          {Array.from({ length: 24 }, (_, hour) => (
+            <span key={hour} aria-hidden className={`${label} pb-1 ${hour % 6 === 0 ? "" : "invisible"}`}>
+              {String(hour).padStart(2, "0")}
+            </span>
+          ))}
+        </div>
+        {grid.map((hours, day) => (
+          <div key={day} role="row" className="contents">
+            <span aria-hidden className={`${label} self-center pr-1.5 ${day % 2 === 1 ? "" : "invisible"}`}>
+              {WEEKDAYS[day]}
+            </span>
+            {hours.map((opens, hour) => {
+              const name = `${WEEKDAYS[day]} ${String(hour).padStart(2, "0")}:00, ${plural(opens, "open")}`;
+              return (
+                <span
+                  key={hour}
+                  role="cell"
+                  aria-label={name}
+                  title={name.replace(",", " ·")}
+                  className={`aspect-square rounded-[3px] ${LEVELS[heatLevel(opens, max)]}`}
+                />
+              );
+            })}
+          </div>
         ))}
+      </div>
+      <div className={`${label} mt-2 flex items-center justify-end gap-[3px]`}>
+        <span className="mr-1">Less</span>
+        {LEVELS.map((level) => (
+          <span key={level} aria-hidden className={`size-2.5 rounded-[3px] ${level}`} />
+        ))}
+        <span className="ml-1">More</span>
       </div>
     </div>
   );
@@ -123,13 +150,16 @@ function Tile({ label, value, short, accent }: { label: string; value: string; s
   );
 }
 
-function Chart({ title, children }: { title: string; children: React.ReactNode }) {
+function Chart({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <figure
       aria-label={title}
       className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-900/5 ring-1 ring-slate-200 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800"
     >
-      <figcaption className="mb-3 text-sm font-bold">{title}</figcaption>
+      <figcaption className="mb-3 flex items-baseline justify-between gap-2">
+        <span className="text-sm font-bold">{title}</span>
+        {note && <span className="text-xs text-slate-500 dark:text-slate-400">{note}</span>}
+      </figcaption>
       {children}
     </figure>
   );

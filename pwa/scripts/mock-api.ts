@@ -49,11 +49,28 @@ export function mockApi(): Plugin {
         { item: "eggs", category: "dairy", direction: "removed", quantity: 2, confidence: 0.79, applied: true },
       ] },
     { id: "e3", opened_at: iso(9 * HOUR), duration_s: 12, status: "analysis_failed", pending_count: 0, stills: [], changes: [] },
-    ...Array.from({ length: 18 }, (_, i) => ({
-      id: `old${i}`, opened_at: iso((14 + i * 7) * HOUR), duration_s: 15 + ((i * 7) % 30),
-      status: "done", pending_count: 0, stills: [], changes: [],
-    })),
+    ...habit(),
   ];
+  // Four weeks of meal-time openings (busier at weekends) so the Stats heatmap has a pattern.
+  function habit() {
+    const out: { id: string; opened_at: string; duration_s: number; status: string; pending_count: number; stills: string[]; changes: never[] }[] = [];
+    const day0 = new Date(now);
+    day0.setHours(0, 0, 0, 0);
+    for (let d = 1; d < 28; d++) {
+      const day = new Date(day0.getTime() - d * 24 * HOUR);
+      const weekend = day.getDay() === 0 || day.getDay() === 6;
+      const hours = weekend ? [9, 10, 12, 13, 15, 18, 19, 19, 21] : [7, 7, 12, 17, 18, 18, 19, 22];
+      hours.forEach((h, i) => {
+        if ((d * 7 + i * 3) % 5 === 0) return; // skip some for texture
+        out.push({
+          id: `old${d}-${i}`, opened_at: new Date(day.getTime() + h * HOUR + ((d * 13 + i * 7) % 50) * MIN).toISOString(),
+          duration_s: 15 + ((d * 7 + i) % 30), status: "done", pending_count: 0, stills: [], changes: [],
+        });
+      });
+    }
+    return out;
+  }
+  const eventsSince = (days: number) => events.filter((e) => Date.parse(e.opened_at) >= now - days * 24 * HOUR);
   const inventory = () => ({ items, pending_count: pending.length });
   return {
     name: "fridgesense-mock-api",
@@ -79,7 +96,7 @@ export function mockApi(): Plugin {
         // FRIDGESENSE_MOCK=nocamera: signed in, but no Ring account linked yet.
         if (process.env.FRIDGESENSE_MOCK === "nocamera") return send(409, { error: "no camera linked" });
         if (url === "/inventory") return send(200, inventory());
-        if (url.startsWith("/events")) return send(200, { events });
+        if (url.startsWith("/events")) return send(200, { events: eventsSince(Number(new URLSearchParams(url.split("?")[1]).get("days") ?? 7)) });
         if (url === "/pending") return send(200, { pending });
         const m = url.match(/^\/pending\/(\w+)\/(confirm|reject)$/);
         if (m) {

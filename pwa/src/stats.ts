@@ -48,11 +48,32 @@ export function perDay(events: Opening[], now: Date, timeZone: string, days = 7)
   });
 }
 
-/** Opens by hour of day (0–23). */
-export function perHour(events: Opening[], timeZone: string): number[] {
-  const hours = Array(24).fill(0);
-  for (const e of events) hours[hourOf(new Date(e.opened_at), timeZone)] += 1;
-  return hours;
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function weekdayOf(date: Date, timeZone: string): number {
+  return WEEKDAYS.indexOf(new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date));
+}
+
+/** Events that opened in the last `days` local days, today included. */
+export function lastDays<T extends Opening>(events: T[], now: Date, timeZone: string, days: number): T[] {
+  const first = perDay([], now, timeZone, days)[0].date;
+  return events.filter((e) => dayKey(new Date(e.opened_at), timeZone) >= first);
+}
+
+/** Opens by weekday (rows, Sunday first) and hour of day (columns, 0–23). */
+export function byWeekdayHour(events: Opening[], timeZone: string): number[][] {
+  const grid = WEEKDAYS.map(() => Array(24).fill(0));
+  for (const e of events) {
+    const date = new Date(e.opened_at);
+    grid[weekdayOf(date, timeZone)][hourOf(date, timeZone)] += 1;
+  }
+  return grid;
+}
+
+/** Shade level 0–4 for a heatmap cell; the busiest cell is always 4. */
+export function heatLevel(opens: number, max: number): number {
+  if (opens <= 0 || max <= 0) return 0;
+  return Math.min(4, Math.ceil((4 * opens) / max));
 }
 
 export function todayCount(events: Opening[], now: Date, timeZone: string): number {

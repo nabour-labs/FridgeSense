@@ -1,4 +1,4 @@
-import { averageDuration, perDay, perHour, todayCount } from "./stats";
+import { averageDuration, byWeekdayHour, heatLevel, lastDays, perDay, todayCount } from "./stats";
 
 const UTC = "UTC";
 const NOW = new Date("2026-10-15T20:00:00Z");
@@ -26,12 +26,30 @@ test("today, per day and average from a week of events", () => {
   expect(averageDuration(WEEK)).toBe(30);
 });
 
-test("per hour counts by local hour", () => {
-  const hours = perHour(WEEK, UTC);
-  expect(hours).toHaveLength(24);
-  expect(hours[8]).toBe(1);
-  expect(hours[18]).toBe(1);
-  expect(hours.reduce((a, b) => a + b, 0)).toBe(5);
+// Day and hour heatmap
+test("by weekday and hour counts by local weekday (Sunday first) and hour", () => {
+  const grid = byWeekdayHour(WEEK, UTC);
+  expect(grid).toHaveLength(7);
+  grid.forEach((row) => expect(row).toHaveLength(24));
+  // 2026-10-15 is a Thursday (4), 2026-10-14 a Wednesday (3).
+  expect(grid[4][8]).toBe(1);
+  expect(grid[4][18]).toBe(1);
+  expect(grid[3][19]).toBe(1);
+  expect(grid.flat().reduce((a, b) => a + b, 0)).toBe(5);
+});
+
+// Heat levels
+test("heat levels split counts into 5 levels relative to the busiest cell", () => {
+  expect([0, 1, 4, 5, 8].map((n) => heatLevel(n, 8))).toEqual([0, 1, 2, 3, 4]);
+  expect(heatLevel(0, 0)).toBe(0);
+});
+
+// Older events only in the heatmap
+test("last days keeps only events from the last 7 local days", () => {
+  const old = at("2026-10-05T12:00:00Z", 10);
+  expect(lastDays([...WEEK, old], NOW, UTC, 7)).toEqual(WEEK);
+  expect(lastDays([at("2026-10-09T00:00:00Z", 10)], NOW, UTC, 7)).toHaveLength(1);
+  expect(lastDays([at("2026-10-08T23:59:00Z", 10)], NOW, UTC, 7)).toHaveLength(0);
 });
 
 // Local time zone
@@ -41,7 +59,7 @@ test("an event counts toward the local day and hour", () => {
   const days = perDay(ev, new Date("2026-10-15T03:00:00Z"), tz);
   expect(days[6].date).toBe("2026-10-14");
   expect(days[6].opens).toBe(1);
-  expect(perHour(ev, tz)[19]).toBe(1);
+  expect(byWeekdayHour(ev, tz)[3][19]).toBe(1);
   expect(todayCount(ev, new Date("2026-10-15T03:00:00Z"), tz)).toBe(1);
 });
 
@@ -49,7 +67,7 @@ test("an event counts toward the local day and hour", () => {
 test("no openings gives zeros and no average", () => {
   expect(todayCount([], NOW, UTC)).toBe(0);
   expect(perDay([], NOW, UTC).map((d) => d.opens)).toEqual([0, 0, 0, 0, 0, 0, 0]);
-  expect(perHour([], UTC)).toEqual(Array(24).fill(0));
+  expect(byWeekdayHour([], UTC).flat()).toEqual(Array(168).fill(0));
   expect(averageDuration([])).toBeNull();
 });
 
