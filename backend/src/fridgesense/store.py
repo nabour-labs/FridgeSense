@@ -38,6 +38,7 @@ class AppConfig(BaseModel):
     hmac_key: str = ""
     passcode: str = ""
     demo_passcode: str = ""  # optional read-only passcode for judges
+    mcp_key: str = ""  # path key for the MCP endpoint; empty disables it
 
 
 class Tokens(BaseModel):

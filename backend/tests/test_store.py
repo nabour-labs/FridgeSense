@@ -56,3 +56,7 @@ def test_resource_names_default_to_deployed_names(aws, monkeypatch):
     assert load_app_config(now=lambda: 0.0, refresh=True).client_id == "cid"
     assert TokenStore().secret_id == "fridgesense/ring-tokens"
     assert DeviceRepository().table.name == "fridgesense"
+
+
+def test_mcp_key_is_optional(aws):
+    assert load_app_config(now=lambda: 0.0, refresh=True).mcp_key == ""

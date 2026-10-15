@@ -2,7 +2,7 @@
 
 ## 1. Setup
 
-- [ ] 1.1 Add `mcp>=2.3,<3` and `mangum` to backend dependencies and `mcp_key` (default empty) to `AppConfig`; verify `uv run pytest` still passes and `uv export --no-dev` lists `mcp`, `httpx2` and `mangum`
+- [x] 1.1 Add `mcp>=2.3,<3` and `mangum` to backend dependencies and `mcp_key` (default empty) to `AppConfig`; verify `uv run pytest` still passes and `uv export --no-dev` lists `mcp`, `httpx2` and `mangum`
 
 ## 2. Answer functions
 
