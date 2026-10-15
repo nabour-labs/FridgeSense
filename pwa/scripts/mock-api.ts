@@ -35,7 +35,7 @@ export function mockApi(): Plugin {
       quantity: 1, confidence: 0.48, opened_at: iso(5 * HOUR) },
   ];
   const stills = [1, 2, 3, 4].map((n) => `/mock/still-${n}.svg`);
-  const events = [
+  let events = [
     { id: "e0", opened_at: iso(2 * MIN), duration_s: 18, status: "done", pending_count: 0, stills,
       changes: [{ item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.94, applied: true }] },
     { id: "e1", opened_at: iso(50 * MIN), duration_s: 31, status: "done", pending_count: 1, stills,
@@ -49,6 +49,11 @@ export function mockApi(): Plugin {
         { item: "eggs", category: "dairy", direction: "removed", quantity: 2, confidence: 0.79, applied: true },
       ] },
     { id: "e3", opened_at: iso(9 * HOUR), duration_s: 12, status: "analysis_failed", pending_count: 0, stills: [], changes: [] },
+    // Quick grabs, so today runs past one page of 10.
+    ...Array.from({ length: 8 }, (_, i) => ({
+      id: `grab${i}`, opened_at: iso((8 + i * 4) * MIN), duration_s: 6 + i, status: "done", pending_count: 0,
+      stills: [], changes: [],
+    })),
     ...habit(),
   ];
   // Four weeks of meal-time openings (busier at weekends) so the Stats heatmap has a pattern.
@@ -96,7 +101,26 @@ export function mockApi(): Plugin {
         // FRIDGESENSE_MOCK=nocamera: signed in, but no Ring account linked yet.
         if (process.env.FRIDGESENSE_MOCK === "nocamera") return send(409, { error: "no camera linked" });
         if (url === "/inventory") return send(200, inventory());
-        if (url.startsWith("/events")) return send(200, { events: eventsSince(Number(new URLSearchParams(url.split("?")[1]).get("days") ?? 7)) });
+        const doomed = url.match(/^\/events\/(.+)$/);
+        if (req.method === "DELETE" && doomed) {
+          const id = decodeURIComponent(doomed[1]);
+          if (!events.some((e) => e.id === id)) return send(404, { error: "not found" });
+          events = events.filter((e) => e.id !== id);
+          pending = pending.filter((p) => p.door_event_id !== id);
+          return send(200, { id });
+        }
+        if (url.startsWith("/events")) {
+          const q = new URLSearchParams(url.split("?")[1]);
+          if (!q.has("from")) return send(200, { events: eventsSince(Number(q.get("days") ?? 7)), next: null });
+          const from = Date.parse(q.get("from")!), to = Date.parse(q.get("to")!);
+          let found = events
+            .filter((e) => Date.parse(e.opened_at) >= from && Date.parse(e.opened_at) < to)
+            .sort((a, b) => b.opened_at.localeCompare(a.opened_at));
+          const cursor = found.findIndex((e) => e.id === q.get("cursor"));
+          if (cursor >= 0) found = found.slice(cursor + 1);
+          const limit = Number(q.get("limit") ?? found.length);
+          return send(200, { events: found.slice(0, limit), next: found.length > limit ? found[limit - 1].id : null });
+        }
         if (url === "/pending") return send(200, { pending });
         const m = url.match(/^\/pending\/(\w+)\/(confirm|reject)$/);
         if (m) {

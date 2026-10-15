@@ -11,7 +11,7 @@ See [docs/hackathon-plan.md](docs/hackathon-plan.md) for the full plan.
 - App: **`<SiteUrl>`** (open it on a phone and add it to the home screen)
 - Demo passcode: **`<demo passcode>`**
 
-The demo passcode signs in **read-only** to the live fridge: the current inventory, every door opening from the last 7 days with the stills the camera took, items waiting for confirmation, and open/close stats. A "Demo · read-only" badge shows on every screen; confirming, editing and fixing counts are disabled.
+The demo passcode signs in **read-only** to the live fridge: the current inventory, door openings day by day (stills for the last 7 days), items waiting for confirmation, and open/close stats. A "Demo · read-only" badge shows on every screen; confirming, editing and fixing counts are disabled.
 
 ## Development
 

@@ -310,3 +310,18 @@ def set_quantity(
 
 def _now_iso() -> str:
     return iso_utc(int(time.time() * 1000))
+
+
+class DoorEventNotFound(Exception):
+    """No such door event (or it was deleted meanwhile)."""
+
+
+def delete_door_event(table: FridgeTable, account_id: str, door_sk: str) -> None:
+    """Delete a door event and its pending changes; the inventory stays as it is."""
+    pk = account_pk(account_id)
+    if not door_sk.startswith("DOOR#") or not table.delete(pk, door_sk):
+        raise DoorEventNotFound(door_sk)
+    for p in table.query(account_id, "PENDING#"):
+        if p.get("door_sk") == door_sk:
+            table.delete(pk, p["sk"])
+    log_event("door_event_deleted", account_id=account_id, door_sk=door_sk)

@@ -41,6 +41,12 @@ export interface DoorEvent {
   stills: string[];
 }
 
+export interface EventPage {
+  events: DoorEvent[];
+  /** Pass as `cursor` for the next, older page; null on the last page. */
+  next: string | null;
+}
+
 export interface Pending {
   id: string;
   door_event_id: string | null;

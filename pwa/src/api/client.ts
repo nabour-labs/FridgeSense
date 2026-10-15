@@ -1,4 +1,4 @@
-import type { AskResult, Config, DoorEvent, Inventory, Pending, Session } from "./types";
+import type { AskResult, Config, DoorEvent, EventPage, Inventory, Pending, Session } from "./types";
 
 /** The session is missing, expired or no longer valid: sign in again. */
 export class Unauthorized extends Error {}
@@ -34,6 +34,17 @@ export class ApiClient {
 
   events(days: number): Promise<{ events: DoorEvent[] }> {
     return this.request("GET", `/api/events?days=${days}`);
+  }
+
+  /** Door openings in [from, to), newest first, `limit` at a time; pass `next` back as `cursor`. */
+  eventsOn(from: Date, to: Date, limit: number, cursor?: string): Promise<EventPage> {
+    const query = new URLSearchParams({ from: from.toISOString(), to: to.toISOString(), limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.request("GET", `/api/events?${query}`);
+  }
+
+  deleteEvent(id: string): Promise<{ id: string }> {
+    return this.request("DELETE", `/api/events/${encodeURIComponent(id)}`);
   }
 
   pending(): Promise<{ pending: Pending[] }> {

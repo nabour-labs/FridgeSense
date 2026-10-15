@@ -139,17 +139,62 @@ def _s3():
     return boto3.client("s3", config=Config(signature_version="s3v4"))
 
 
+MAX_RANGE_DAYS = 31
+MAX_PAGE = 50
+
+
+def _instant_ms(value: str) -> int | None:
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return int(dt.timestamp() * 1000) if dt.tzinfo else None
+
+
+def _event_range(query: dict) -> tuple[str, str] | str:
+    """The DOOR# sort key range to list, or the 400 error text."""
+    if "from" not in query:
+        raw = query.get("days", "7")
+        if not raw.isdigit() or not 1 <= int(raw) <= 30:
+            return "days must be 1 to 30"
+        return f"DOOR#{iso_utc(int(now() * 1000) - int(raw) * DAY_MS)}", "DOOR#~"
+    start, end = _instant_ms(query["from"]), _instant_ms(query.get("to", ""))
+    if start is None or end is None or not 0 < end - start <= MAX_RANGE_DAYS * DAY_MS:
+        return f"from and to must be times, from before to, at most {MAX_RANGE_DAYS} days apart"
+    return f"DOOR#{iso_utc(start)}", f"DOOR#{iso_utc(end)}"
+
+
 @route("GET", "/api/events")
 def get_events(ctx: Context) -> dict:
-    raw = ctx.req.query.get("days", "7")
-    if not raw.isdigit() or not 1 <= int(raw) <= 30:
-        return json_response(400, {"error": "days must be 1 to 30"})
+    span = _event_range(ctx.req.query)
+    if isinstance(span, str):
+        return json_response(400, {"error": span})
+    low, high = span
+    limit = None
+    if "limit" in ctx.req.query:
+        raw = ctx.req.query["limit"]
+        if not raw.isdigit() or not 1 <= int(raw) <= MAX_PAGE:
+            return json_response(400, {"error": f"limit must be 1 to {MAX_PAGE}"})
+        limit = int(raw)
+    cursor = None
+    if "cursor" in ctx.req.query:
+        cursor = decode_id(ctx.req.query["cursor"], "DOOR#")
+        if cursor is None:
+            return json_response(400, {"error": "invalid cursor"})
+        high = min(high, cursor)
+    # One extra to know whether an older page exists, one more for the cursor event itself.
+    found = ctx.table.query_range(
+        ctx.account_id, low, high, newest_first=True, limit=limit and limit + 2
+    )
+    found = [e for e in found if e["sk"] != cursor]
+    more = limit is not None and len(found) > limit
+    if limit is not None:
+        found = found[:limit]
     now_ms = int(now() * 1000)
-    since = iso_utc(now_ms - int(raw) * DAY_MS)
     stills_since = iso_utc(now_ms - STILLS_DAYS * DAY_MS)
     s3, bucket = _s3(), os.environ.get("STILLS_BUCKET", "")
     events = []
-    for e in ctx.table.query_range(ctx.account_id, f"DOOR#{since}", "DOOR#~", newest_first=True):
+    for e in found:
         recent = e.get("opened_at", "") >= stills_since
         events.append(
             {
@@ -170,7 +215,19 @@ def get_events(ctx: Context) -> dict:
                 ],
             }
         )
-    return json_response(200, {"events": events})
+    return json_response(200, {"events": events, "next": events[-1]["id"] if more else None})
+
+
+@route("DELETE", "/api/events/{id}", write=True)
+def delete_event(ctx: Context) -> dict:
+    sk = decode_id(ctx.params["id"], "DOOR#")
+    try:
+        if sk is None:
+            raise inventory.DoorEventNotFound(ctx.params["id"])
+        inventory.delete_door_event(ctx.table, ctx.account_id, sk)
+    except inventory.DoorEventNotFound:
+        return json_response(404, {"error": "not found"})
+    return json_response(200, {"id": ctx.params["id"]})
 
 
 @route("GET", "/api/pending")
