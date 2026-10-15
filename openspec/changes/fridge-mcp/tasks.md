@@ -21,8 +21,8 @@
 
 ## 4. Lambda endpoint
 
-- [ ] 4.1 Write failing handler tests (API Gateway v2 events, moto secret) for "Initialize with 2025-11-25", "Older client version", "Wrong key", "No key configured", "Request through API Gateway" (execute-api `Host`, two warm calls) and a warm-up event returning without AWS calls; verify they fail
-- [ ] 4.2 Implement `handlers/mcp.py` (warm-up short-circuit, constant-time key check, Mangum with a fresh app per call, DNS-rebinding protection off) to make the tests pass
+- [x] 4.1 Write failing handler tests (API Gateway v2 events, moto secret) for "Initialize with 2025-11-25", "Older client version", "Wrong key", "No key configured", "Request through API Gateway" (execute-api `Host`, two warm calls) and a warm-up event returning without AWS calls; verify they fail
+- [x] 4.2 Implement `handlers/mcp.py` (warm-up short-circuit, constant-time key check, Mangum with a fresh app per call, DNS-rebinding protection off) to make the tests pass
 
 ## 5. Infrastructure
 
