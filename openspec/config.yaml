@@ -6,11 +6,12 @@ context: |
   Amazon Bedrock Nova lists items added/removed. The app keeps a running inventory and
   open/close statistics. Front ends: a PWA and an MCP server for Alexa+.
   Hackathon deadline: Fri Oct 23 2026, 12:00 PT. Scope is tight; prefer the smallest change that works.
+  Single-user demo MVP: build only what the "Demo MVP scope" section of the plan keeps.
   Full plan: docs/hackathon-plan.md.
 
-  Stack: Python 3.13 (uv, pytest) for Ring, Bedrock, Lambdas, Strands agent and MCP server;
+  Stack: Python 3.13 (uv, pytest) for Ring, Bedrock, Lambdas and MCP server;
   TypeScript for the PWA (Vite + React + vite-plugin-pwa + Tailwind + Recharts, Vitest) and AWS CDK.
-  AWS region us-east-1. DynamoDB single table, S3, Step Functions, API Gateway HTTP API, Cognito.
+  AWS region us-east-1. DynamoDB single table, S3, Step Functions, API Gateway HTTP API. No Cognito (one passcode).
 
   Development is strictly test-driven (red -> green -> refactor). Every spec scenario maps to at
   least one automated test. Tests never call live Ring, AWS or Bedrock: use recorded Ring webhooks

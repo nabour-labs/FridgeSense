@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "version": "1.1",
+    "time": "2026-08-14T08:50:00.000000000Z",
+    "request_id": "7c1e2f30-5b4a-4d1e-9a7b-0f5d3c2b1a99",
+    "account_id": "ava1.ring.account.XXXYYY"
+  },
+  "data": {
+    "id": "evt_app_integration_added_1",
+    "type": "app_integration_added",
+    "attributes": {
+      "source": "ava1.ring.account.XXXYYY",
+      "source_type": "users",
+      "timestamp": 1786715400000
+    }
+  }
+}
