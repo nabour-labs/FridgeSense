@@ -3,6 +3,7 @@
 A Ring Indoor Cam 2K watches the fridge. Each door opening triggers a Ring webhook; the clip and stills go to S3, Amazon Bedrock Nova lists what was added or removed, and the app keeps a running inventory plus open/close stats. Front ends: a PWA and an MCP server for Alexa+ ("do I have milk?").
 
 - Full plan, Ring API notes and hackathon rules: [docs/hackathon-plan.md](docs/hackathon-plan.md)
+- Friction log: [docs/friction-log.md](docs/friction-log.md)
 - **Scope: single-user demo MVP.** Build only what the "Demo MVP scope" section of the plan keeps; everything it cuts is a stretch goal for after the MVP works end to end.
 - Deadline: **Fri Oct 23 2026, 12:00 pm PT**. Prefer the smallest change that works; Fire TV only if everything else is done by Oct 20.
 
@@ -23,6 +24,10 @@ TDD rules (also enforced in `openspec/config.yaml`):
 - Never skip, weaken or delete a test to get green. If the spec is wrong, change the spec first.
 - Tests never hit live Ring, AWS or Bedrock: use recorded webhooks and canned responses under `tests/fixtures/`, moto or botocore Stubber for AWS, and stubbed Bedrock Converse responses.
 - Report the test command and its result when finishing a task.
+
+## Friction log
+
+Whenever you use a service the hackathon covers (Ring Partner API, Alexa+, any AWS service or AWS CDK, MCP or Strands, Fire TV) and hit friction, add an entry to [docs/friction-log.md](docs/friction-log.md) in the same task. Friction includes unclear or missing docs, surprising behavior, errors, missing features, awkward IAM, and slow or confusing setup. Use the template at the top of the file, newest first. Record only what actually happened, with exact commands and error text. If there was no friction, add nothing. Mention new entries when reporting the task.
 
 ## Stack
 
