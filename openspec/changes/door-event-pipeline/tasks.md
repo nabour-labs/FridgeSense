@@ -38,11 +38,11 @@
 
 ## 6. Inventory
 
-- [ ] 6.1 Write failing tests (moto) for "New item added", "Existing item added again", "Item removed", "Removing more than is known", "Removing an unknown item"; verify they fail
-- [ ] 6.2 Implement name normalization and the quantity updates in the `save` task to make the tests pass
-- [ ] 6.3 Write failing tests for "Low-confidence item", "Exactly at the cutoff", "Door event completed", "Save step retried", "Nothing changed"; verify they fail
-- [ ] 6.4 Implement pending changes and the conditional transaction (`already_saved`) to make the tests pass
-- [ ] 6.5 Write an end-to-end test that runs the tasks in state-machine order (find_window → fetch_stills → analyze → save) for a bright opening and for a closed door, checking the inventory and door event; verify it passes
+- [x] 6.1 Write failing tests (moto) for "New item added", "Existing item added again", "Item removed", "Removing more than is known", "Removing an unknown item"; verify they fail
+- [x] 6.2 Implement name normalization and the quantity updates in the `save` task to make the tests pass
+- [x] 6.3 Write failing tests for "Low-confidence item", "Exactly at the cutoff", "Door event completed", "Save step retried", "Nothing changed"; verify they fail
+- [x] 6.4 Implement pending changes and the conditional transaction (`already_saved`) to make the tests pass
+- [x] 6.5 Write an end-to-end test that runs the tasks in state-machine order (find_window → fetch_stills → analyze → save) for a bright opening and for a closed door, checking the inventory and door event; verify it passes
 
 ## 7. Infrastructure
 
