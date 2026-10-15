@@ -107,8 +107,14 @@ export class FridgeSenseStack extends Stack {
       secretStringValue: SecretValue.unsafePlainText("{}"),
     });
 
+    const logGroupNames: Record<string, string> = {
+      HttpFunction: "/fridgesense/http",
+      TokenRefreshFunction: "/fridgesense/token-refresh",
+      PipelineFunction: "/fridgesense/pipeline",
+    };
     const logGroup = (id: string) =>
       new LogGroup(this, `${id}Logs`, {
+        logGroupName: logGroupNames[id],
         retention: RetentionDays.TWO_WEEKS,
         removalPolicy: RemovalPolicy.DESTROY,
       });

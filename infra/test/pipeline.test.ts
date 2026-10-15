@@ -148,7 +148,7 @@ describe("pipeline Lambda", () => {
 });
 
 describe("stills bucket", () => {
-  it("deletes stills after 7 days and is private and encrypted", () => {
+  it("Stills deleted after 7 days; bucket private and encrypted", () => {
     template.hasResourceProperties("AWS::S3::Bucket", {
       LifecycleConfiguration: {
         Rules: [{ ExpirationInDays: 7, Status: "Enabled" }],
@@ -183,5 +183,15 @@ describe("webhook hand-over", () => {
     );
     expect(states.flatMap(actions)).toEqual(["states:StartExecution"]);
     expect(JSON.stringify(states.map((s) => s.Resource))).toContain("DoorEvents");
+  });
+});
+
+describe("logs", () => {
+  it("use fixed log group names so the README commands work", () => {
+    const names = Object.values(resourcesOf("AWS::Logs::LogGroup"))
+      .map((g) => g.Properties.LogGroupName)
+      .filter((n) => typeof n === "string")
+      .sort();
+    expect(names).toEqual(["/fridgesense/http", "/fridgesense/pipeline", "/fridgesense/token-refresh"]);
   });
 });

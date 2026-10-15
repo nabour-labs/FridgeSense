@@ -52,5 +52,5 @@
 
 ## 8. Docs and final check
 
-- [ ] 8.1 Update the README: what happens on a door opening, how to tune `doorBox`/`doorThreshold` from the `motion_not_door` logs, where to find `nova_cost` lines, and the cross-region inference note; verify the commands match the code
-- [ ] 8.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check` and `cd infra && npm test && npx tsc --noEmit`; all green
+- [x] 8.1 Update the README: what happens on a door opening, how to tune `doorBox`/`doorThreshold` from the `motion_not_door` logs, where to find `nova_cost` lines, and the cross-region inference note; verify the commands match the code
+- [x] 8.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check` and `cd infra && npm test && npx tsc --noEmit`; all green
