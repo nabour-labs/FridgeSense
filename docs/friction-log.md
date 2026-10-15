@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-15 · Bedrock Nova · Prompt caching docs don't say whether image blocks can be cached
+
+- **Task:** plan prompt caching for the door-opening analysis, whose stable prefix is mostly the owner's reference images (up to 6 JPEGs) and whose stills change every request.
+- **Steps:** read https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html and looked for Nova 2 Lite's limits and cache pricing.
+- **Expected:** a clear answer on whether a `cachePoint` after `image` blocks caches them for Nova, and Nova cache read/write prices.
+- **Actual:** the Nova rows say only "Prompt caching is primarily for text prompts" with a 20K-token cap, while the generic Converse example puts a `cachePoint` right after an `image` block. Nova accepts checkpoints in `system` and `messages` but not `tools` (Claude accepts all three), and passing `ttl` to a 5-minute-only model can raise `ValidationException`. The Nova cache prices didn't come through when the pricing page was fetched as text.
+- **Severity:** Low
+- **Workaround:** a short measured test (send the same request twice, read `cacheWriteInputTokens` and `cacheReadInputTokens`) before relying on image caching.
+- **Suggestion:** say plainly whether image and document blocks are cacheable for each Nova model, and put the cache read/write prices for each model in the caching guide.
+
 ### 2026-10-15 · MCP Python SDK · The MCP client logs full server URLs, secrets in the path included
 
 - **Task:** live check of the Ask assistant: Nova calls our MCP server at `/mcp/<mcp_key>` through `mcp.Client(url)` from the API Lambda.
