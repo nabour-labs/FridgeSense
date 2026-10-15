@@ -37,6 +37,7 @@ class AppConfig(BaseModel):
     client_secret: str = ""
     hmac_key: str = ""
     passcode: str = ""
+    demo_passcode: str = ""  # optional read-only passcode for judges
 
 
 class Tokens(BaseModel):
