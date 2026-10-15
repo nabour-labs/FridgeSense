@@ -3,6 +3,7 @@
 import logging
 import time
 
+from fridgesense import analysis_config
 from fridgesense.analysis import BedrockRejected, NovaAnalyzer
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
@@ -18,9 +19,17 @@ def analyze_task(analyzer: NovaAnalyzer, s3, table: FridgeTable, bucket: str, st
     account_id, door_sk = state["account_id"], state["door_sk"]
     stills = [s3.get_object(Bucket=bucket, Key=k)["Body"].read() for k in state["still_keys"]]
     context = {"account_id": account_id, "door_sk": door_sk}
+    config = analysis_config.load(table, account_id)
+    references = [(r.annotation, r.image) for r in config.references]
     result = None
     try:
-        result = analyzer.analyze(stills, in_stock_names(table, account_id), context)
+        result = analyzer.analyze(
+            stills,
+            in_stock_names(table, account_id),
+            context,
+            references=references,
+            instructions=config.instructions,
+        )
     except BedrockRejected as e:
         log_event("analysis_failed", logging.ERROR, reason=str(e), **context)
     finally:

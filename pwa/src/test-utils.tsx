@@ -16,6 +16,10 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     reject: vi.fn().mockResolvedValue(EMPTY),
     setQuantity: vi.fn().mockResolvedValue(EMPTY),
     ask: vi.fn().mockResolvedValue({ intent: "unknown", answer: "Try asking.", data: null }),
+    config: vi.fn().mockResolvedValue({ instructions: "", references: [] }),
+    saveInstructions: vi.fn(),
+    addReference: vi.fn(),
+    deleteReference: vi.fn(),
     ...overrides,
   } as Api;
 }

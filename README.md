@@ -150,7 +150,16 @@ set -a; source .env; set +a; aws cloudformation describe-stacks --stack-name Fri
 
 Sign in with the link passcode from step 3. To install it, open the URL on the phone, then use **Share → Add to Home Screen** (iPhone, Safari) or **⋮ → Install app** (Android, Chrome).
 
-The app keeps its session token in the browser's local storage for 30 days. That's fine for a single-user app on your own phone; changing the passcode signs every device out.
+The app asks for the passcode again every 24 hours, owner and demo alike. It notices the expiry on its own, even offline. Changing a passcode signs out every device that used it.
+
+### Teach the camera your fridge
+
+The gear at the top right opens **Config**:
+
+- **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). The app shrinks each photo to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
+- **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
+
+Changes apply from the next door opening. Each reference adds roughly 1–2K input tokens per analysis, which shows up in the `nova_cost` log. The demo passcode sees Config read-only.
 
 ### Demo access
 
@@ -181,6 +190,8 @@ Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in
 ```bash
 cd pwa && FRIDGESENSE_MOCK=1 npm run dev
 ```
+
+`FRIDGESENSE_MOCK=nocamera` answers every request with 409 "no camera linked", to see the "No Data" screens.
 
 ### Voice and MCP (Alexa+)
 

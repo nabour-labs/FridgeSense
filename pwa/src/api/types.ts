@@ -60,3 +60,17 @@ export interface AskResult {
   answer: string;
   data: Record<string, unknown> | null;
 }
+
+/** A photo of an item from this fridge, sent to the analysis with its annotation. */
+export interface Reference {
+  id: string;
+  annotation: string;
+  /** Base64 JPEG. */
+  image: string;
+  created_at: string;
+}
+
+export interface Config {
+  instructions: string;
+  references: Reference[];
+}

@@ -1,4 +1,4 @@
-import type { AskResult, DoorEvent, Inventory, Pending, Session } from "./types";
+import type { AskResult, Config, DoorEvent, Inventory, Pending, Session } from "./types";
 
 /** The session is missing, expired or no longer valid: sign in again. */
 export class Unauthorized extends Error {}
@@ -7,8 +7,12 @@ export class ReadOnly extends Error {}
 /** FridgeSense could not be reached. */
 export class Offline extends Error {}
 export class ApiError extends Error {
-  constructor(readonly status: number) {
-    super(`HTTP ${status}`);
+  /** `message` is the server's `error` text when it sent one. */
+  constructor(
+    readonly status: number,
+    message?: string,
+  ) {
+    super(message || `HTTP ${status}`);
   }
 }
 
@@ -52,6 +56,23 @@ export class ApiClient {
     return this.request("POST", "/api/ask", { question });
   }
 
+  config(): Promise<Config> {
+    return this.request("GET", "/api/config");
+  }
+
+  saveInstructions(instructions: string): Promise<Config> {
+    return this.request("PUT", "/api/config/instructions", { instructions });
+  }
+
+  /** `image` is a base64 JPEG. */
+  addReference(annotation: string, image: string): Promise<Config> {
+    return this.request("POST", "/api/config/references", { annotation, image });
+  }
+
+  deleteReference(id: string): Promise<Config> {
+    return this.request("DELETE", `/api/config/references/${encodeURIComponent(id)}`);
+  }
+
   private async request<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
     const headers = new Headers();
     if (body !== undefined) headers.set("content-type", "application/json");
@@ -69,7 +90,10 @@ export class ApiClient {
     }
     if (resp.status === 401) throw new Unauthorized();
     if (resp.status === 403) throw new ReadOnly();
-    if (!resp.ok) throw new ApiError(resp.status);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      throw new ApiError(resp.status, typeof body?.error === "string" ? body.error : undefined);
+    }
     return (await resp.json()) as T;
   }
 }

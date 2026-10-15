@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
@@ -72,7 +73,10 @@ INSTRUCTIONS = (
     "- Set confidence from 0 to 1; use less than 0.7 when you are unsure.\n"
     "- If nothing was added or removed, return empty lists.\n"
     "Current inventory: {inventory}\n"
-    f"Call {TOOL_NAME} with your answer."
+)
+TOOL_LINE = f"Call {TOOL_NAME} with your answer."
+REFERENCE_HEADER = (
+    "Reference images: examples of items in this fridge. They are not part of this door opening."
 )
 
 
@@ -144,13 +148,29 @@ class AnalysisResult:
         return round(sum(u.usd for u in self.usage), 6)
 
 
-def build_request(model_id: str, stills: list[bytes], inventory: list[str]) -> dict:
+def build_request(
+    model_id: str,
+    stills: list[bytes],
+    inventory: list[str],
+    references: Sequence[tuple[str, bytes]] = (),
+    instructions: str = "",
+) -> dict:
+    """References (annotation, JPEG) go first, then the stills; the owner's instructions
+    sit in the final text before the tool line. Without config the request is unchanged."""
     content: list[dict] = []
+    if references:
+        content.append({"text": REFERENCE_HEADER})
+        for n, (annotation, data) in enumerate(references, start=1):
+            content.append({"text": f"Reference {n}: {annotation}"})
+            content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
     images = stills[:MAX_IMAGES]
     for n, data in enumerate(images, start=1):
         content.append({"text": f"Image {n} of {len(images)}"})
         content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
-    content.append({"text": INSTRUCTIONS.format(inventory="[" + ", ".join(inventory) + "]")})
+    text = INSTRUCTIONS.format(inventory="[" + ", ".join(inventory) + "]")
+    if instructions:
+        text += f"Owner's instructions: {instructions}\n"
+    content.append({"text": text + TOOL_LINE})
     return {
         "modelId": model_id,
         "messages": [{"role": "user", "content": content}],
@@ -208,12 +228,17 @@ class NovaAnalyzer:
         )
 
     def analyze(
-        self, stills: list[bytes], inventory: list[str], context: dict | None = None
+        self,
+        stills: list[bytes],
+        inventory: list[str],
+        context: dict | None = None,
+        references: Sequence[tuple[str, bytes]] = (),
+        instructions: str = "",
     ) -> AnalysisResult:
         """Ask Nova; one more request if the answer is invalid. Raises BedrockRetryable
         or BedrockRejected for API errors."""
         result = AnalysisResult(changes=None)
-        request = build_request(self.model_id, stills, inventory)
+        request = build_request(self.model_id, stills, inventory, references, instructions)
         for _ in range(self.attempts):
             try:
                 resp = self.client.converse(**request)

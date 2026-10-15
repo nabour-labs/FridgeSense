@@ -97,3 +97,17 @@ test("the passcode screen returns within 60 s of expiry, even offline", async ()
     vi.useRealTimers();
   }
 });
+
+// Open config
+test("the header gear opens Config and loads it", async () => {
+  signedIn();
+  location.hash = "";
+  const api = fakeApi();
+  render(<App api={api} />);
+  await userEvent.click(screen.getByRole("link", { name: "Config" }));
+  expect(await screen.findByRole("heading", { level: 1, name: "Config" })).toBeInTheDocument();
+  expect(location.hash).toBe("#config");
+  expect(api.config).toHaveBeenCalled();
+  expect(await screen.findByRole("region", { name: "Reference images" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Custom instructions" })).toBeInTheDocument();
+});
