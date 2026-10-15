@@ -98,6 +98,14 @@ describe("door-event state machine", () => {
     expect(States.Save.Type).toBe("Task");
   });
 
+  it("save fails: marks the event failed instead of leaving it analyzing", () => {
+    const { States } = definition();
+    const save = States.Save as State & { Catch?: Record<string, unknown>[] };
+    expect(save.Catch).toEqual([
+      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "MarkFailed" },
+    ]);
+  });
+
   it("passes the task name and the run state to the pipeline Lambda", () => {
     const { States } = definition();
     const tasks = { FindWindow: "find_window", FetchStills: "fetch_stills", Analyze: "analyze",

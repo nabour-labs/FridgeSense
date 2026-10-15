@@ -1,5 +1,5 @@
 import { Mic, Send, Square } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useApp } from "../AppContext";
 
 const EXAMPLES = ["Do I have milk?", "What's in my fridge?", "When was the fridge last opened?"];
@@ -28,6 +28,7 @@ interface Recognizer {
   onend: (() => void) | null;
   start(): void;
   stop(): void;
+  abort?(): void;
 }
 
 type RecognizerClass = new () => Recognizer;
@@ -50,6 +51,21 @@ export function Ask() {
   const [hint, setHint] = useState<string | null>(null);
   const recognizer = useRef<Recognizer | null>(null);
   const Recognition = recognizerClass();
+
+  // Leaving the screen (tab switch, sign-out) ends listening and speaking, and sends nothing:
+  // clearing the ref first makes onend drop whatever was heard.
+  useEffect(
+    () => () => {
+      const rec = recognizer.current;
+      recognizer.current = null;
+      if (rec) {
+        if (rec.abort) rec.abort();
+        else rec.stop();
+      }
+      if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    },
+    [],
+  );
 
   function listen() {
     if (!Recognition) return;

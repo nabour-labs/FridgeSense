@@ -101,13 +101,15 @@ describe("site", () => {
     expect(Object.keys(resourcesOf("AWS::CloudFront::OriginAccessControl"))).toHaveLength(1);
     const [dist] = Object.values(resourcesOf("AWS::CloudFront::Distribution"));
     const config = dist.Properties.DistributionConfig as Record<string, unknown>;
+    // App shell at the root
     expect(config.DefaultRootObject).toBe("index.html");
-    expect(config.CustomErrorResponses).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ ErrorCode: 403, ResponseCode: 200, ResponsePagePath: "/index.html" }),
-        expect.objectContaining({ ErrorCode: 404, ResponseCode: 200, ResponsePagePath: "/index.html" }),
-      ]),
-    );
+  });
+
+  it("passes API errors through: viewer write refused / not found through the CDN", () => {
+    // Custom error responses apply to every origin, /api/* included; the app uses hash routes.
+    const [dist] = Object.values(resourcesOf("AWS::CloudFront::Distribution"));
+    const config = dist.Properties.DistributionConfig as Record<string, unknown>;
+    expect(config.CustomErrorResponses).toBeUndefined();
   });
 
   it("routes /api/* to the HTTP API without caching", () => {

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
 from pydantic import BaseModel, ValidationError, field_validator
 
 from fridgesense.logs import log_event
@@ -244,10 +244,14 @@ class NovaAnalyzer:
                 resp = self.client.converse(**request)
             except ClientError as e:
                 code = e.response["Error"]["Code"]
-                log_event("nova_error", logging.WARNING, code=code, **(context or {}))
+                log_event("nova_error", logging.WARNING, error_code=code, **(context or {}))
                 if code in RETRYABLE:
                     raise BedrockRetryable(code) from None
                 raise BedrockRejected(code) from None
+            except (ReadTimeoutError, ConnectTimeoutError) as e:
+                code = "ReadTimeout" if isinstance(e, ReadTimeoutError) else "ConnectTimeout"
+                log_event("nova_error", logging.WARNING, error_code=code, **(context or {}))
+                raise BedrockRetryable(code) from None
             usage = resp.get("usage", {})
             spent = Usage(
                 input_tokens=int(usage.get("inputTokens", 0)),
