@@ -2,19 +2,17 @@
 
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
 from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
 from pydantic import BaseModel, ValidationError, field_validator
 
 from fridgesense.logs import log_event
+from fridgesense.usage import Prices, Tokens, price
 
 DEFAULT_MODEL_ID = "us.amazon.nova-2-lite-v1:0"
-DEFAULT_PRICE_IN = 0.00033  # USD per 1K input tokens (Nova 2 Lite, us. profile)
-DEFAULT_PRICE_OUT = 0.00275  # USD per 1K output tokens
 TOOL_NAME = "record_fridge_changes"
 MAX_IMAGES = 4
 CATEGORIES = [
@@ -75,6 +73,9 @@ INSTRUCTIONS = (
     "Current inventory: {inventory}\n"
 )
 TOOL_LINE = f"Call {TOOL_NAME} with your answer."
+# Bedrock prompt caching (opt-in): the account's references, then the stills, become a cached
+# prefix that a burst of openings and the invalid-answer retry can read back.
+CACHE_POINT = {"cachePoint": {"type": "default"}}
 REFERENCE_HEADER = (
     "Reference images: examples of items in this fridge. They are not part of this door opening."
 )
@@ -133,8 +134,7 @@ class FridgeChanges(BaseModel):
 
 @dataclass
 class Usage:
-    input_tokens: int
-    output_tokens: int
+    tokens: Tokens
     usd: float
 
 
@@ -154,19 +154,25 @@ def build_request(
     inventory: list[str],
     references: Sequence[tuple[str, bytes]] = (),
     instructions: str = "",
+    cache: bool = False,
 ) -> dict:
     """References (annotation, JPEG) go first, then the stills; the owner's instructions
-    sit in the final text before the tool line. Without config the request is unchanged."""
+    sit in the final text before the tool line. Without config the request is unchanged.
+    With `cache`, a cache point follows the references (if any) and another the stills."""
     content: list[dict] = []
     if references:
         content.append({"text": REFERENCE_HEADER})
         for n, (annotation, data) in enumerate(references, start=1):
             content.append({"text": f"Reference {n}: {annotation}"})
             content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
+        if cache:
+            content.append(CACHE_POINT)
     images = stills[:MAX_IMAGES]
     for n, data in enumerate(images, start=1):
         content.append({"text": f"Image {n} of {len(images)}"})
         content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
+    if cache:
+        content.append(CACHE_POINT)
     text = INSTRUCTIONS.format(inventory="[" + ", ".join(inventory) + "]")
     if instructions:
         text += f"Owner's instructions: {instructions}\n"
@@ -192,12 +198,11 @@ def parse_response(resp: dict) -> FridgeChanges | None:
 
 
 def cost_usd(input_tokens: int, output_tokens: int, price_in: float, price_out: float) -> float:
-    """USD for one call, rounded half-up to 6 decimals (exact decimal math, no float drift)."""
-    usd = (
-        Decimal(input_tokens) * Decimal(str(price_in))
-        + Decimal(output_tokens) * Decimal(str(price_out))
-    ) / 1000
-    return float(usd.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
+    """USD for one uncached call; see `usage.price`."""
+    return price(
+        Tokens(input=input_tokens, output=output_tokens),
+        Prices(input=price_in, output=price_out),
+    )
 
 
 Kind = Literal["retryable", "rejected"]
@@ -208,23 +213,31 @@ class NovaAnalyzer:
         self,
         client,
         model_id: str = DEFAULT_MODEL_ID,
-        price_in: float = DEFAULT_PRICE_IN,
-        price_out: float = DEFAULT_PRICE_OUT,
+        prices: Prices | None = None,
         attempts: int = 2,
+        cache_analysis: bool = False,
     ):
         self.client = client
         self.model_id = model_id
-        self.price_in = price_in
-        self.price_out = price_out
+        self.prices = prices or Prices()
         self.attempts = attempts
+        self.cache_analysis = cache_analysis
+
+    @property
+    def price_in(self) -> float:
+        return self.prices.input
+
+    @property
+    def price_out(self) -> float:
+        return self.prices.output
 
     @classmethod
     def from_env(cls, client) -> "NovaAnalyzer":
         return cls(
             client,
             model_id=os.environ.get("NOVA_MODEL_ID") or DEFAULT_MODEL_ID,
-            price_in=float(os.environ.get("NOVA_PRICE_IN") or DEFAULT_PRICE_IN),
-            price_out=float(os.environ.get("NOVA_PRICE_OUT") or DEFAULT_PRICE_OUT),
+            prices=Prices.from_env(),
+            cache_analysis=os.environ.get("NOVA_CACHE_ANALYSIS") == "true",
         )
 
     def analyze(
@@ -234,11 +247,14 @@ class NovaAnalyzer:
         context: dict | None = None,
         references: Sequence[tuple[str, bytes]] = (),
         instructions: str = "",
+        on_usage: Callable[[Tokens, float], None] | None = None,
     ) -> AnalysisResult:
         """Ask Nova; one more request if the answer is invalid. Raises BedrockRetryable
-        or BedrockRejected for API errors."""
+        or BedrockRejected for API errors. `on_usage` gets each response's tokens and cost."""
         result = AnalysisResult(changes=None)
-        request = build_request(self.model_id, stills, inventory, references, instructions)
+        request = build_request(
+            self.model_id, stills, inventory, references, instructions, cache=self.cache_analysis
+        )
         for _ in range(self.attempts):
             try:
                 resp = self.client.converse(**request)
@@ -252,26 +268,21 @@ class NovaAnalyzer:
                 code = "ReadTimeout" if isinstance(e, ReadTimeoutError) else "ConnectTimeout"
                 log_event("nova_error", logging.WARNING, error_code=code, **(context or {}))
                 raise BedrockRetryable(code) from None
-            usage = resp.get("usage", {})
-            spent = Usage(
-                input_tokens=int(usage.get("inputTokens", 0)),
-                output_tokens=int(usage.get("outputTokens", 0)),
-                usd=cost_usd(
-                    int(usage.get("inputTokens", 0)),
-                    int(usage.get("outputTokens", 0)),
-                    self.price_in,
-                    self.price_out,
-                ),
-            )
+            tokens = Tokens.from_converse(resp.get("usage"))
+            spent = Usage(tokens=tokens, usd=price(tokens, self.prices))
             result.usage.append(spent)
             log_event(
                 "nova_cost",
                 model_id=self.model_id,
-                input_tokens=spent.input_tokens,
-                output_tokens=spent.output_tokens,
+                input_tokens=tokens.input,
+                output_tokens=tokens.output,
+                cache_read_tokens=tokens.cache_read,
+                cache_write_tokens=tokens.cache_write,
                 usd=spent.usd,
                 **(context or {}),
             )
+            if on_usage is not None:
+                on_usage(tokens, spent.usd)
             changes = parse_response(resp)
             if changes is not None:
                 result.changes = changes

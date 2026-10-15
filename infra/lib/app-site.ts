@@ -42,6 +42,8 @@ export interface AppSiteProps {
   novaModelId: string;
   novaPriceIn: string;
   novaPriceOut: string;
+  novaPriceCacheRead: string;
+  novaPriceCacheWrite: string;
 }
 
 /** The phone app: an /api Lambda on the HTTP API, and the PWA on S3 + CloudFront. */
@@ -74,6 +76,8 @@ export class AppSite extends Construct {
         NOVA_MODEL_ID: props.novaModelId,
         NOVA_PRICE_IN: props.novaPriceIn,
         NOVA_PRICE_OUT: props.novaPriceOut,
+        NOVA_PRICE_CACHE_READ: props.novaPriceCacheRead,
+        NOVA_PRICE_CACHE_WRITE: props.novaPriceCacheWrite,
       },
     });
     fn.addToRolePolicy(
