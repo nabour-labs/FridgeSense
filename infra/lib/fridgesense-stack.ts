@@ -19,6 +19,7 @@ import { Architecture, Code, Function as LambdaFn, Runtime } from "aws-cdk-lib/a
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
+import { AppSite } from "./app-site.js";
 import { DoorPipeline } from "./door-pipeline.js";
 
 const BACKEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../backend");
@@ -111,6 +112,7 @@ export class FridgeSenseStack extends Stack {
       HttpFunction: "/fridgesense/http",
       TokenRefreshFunction: "/fridgesense/token-refresh",
       PipelineFunction: "/fridgesense/pipeline",
+      ApiFunction: "/fridgesense/api",
     };
     const logGroup = (id: string) =>
       new LogGroup(this, `${id}Logs`, {
@@ -192,6 +194,17 @@ export class FridgeSenseStack extends Stack {
     for (const [routePath, method] of routes) {
       api.addRoutes({ path: routePath, methods: [method], integration });
     }
+
+    new AppSite(this, "App", {
+      api,
+      code,
+      baseEnvironment: common.environment,
+      table,
+      appSecret,
+      tokenSecret,
+      stillsBucket: doors.bucket,
+      logGroup,
+    });
 
     const base = api.apiEndpoint;
     new CfnOutput(this, "TokenExchangeUrl", { value: `${base}/ring/token` });

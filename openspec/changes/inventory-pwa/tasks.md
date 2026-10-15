@@ -47,9 +47,9 @@
 
 ## 7. Infrastructure
 
-- [ ] 7.1 Write failing Vitest assertions for the API Lambda (`fridgesense.handlers.api.handler`, arm64, 256 MB, 10 s), the `ANY /api/{proxy+}` route, and its grants (table read and write, app and token secret read, stills bucket read only, no Bedrock or Step Functions); verify they fail
-- [ ] 7.2 Write failing Vitest assertions for the site: private bucket, distribution with OAC and `index.html` default, 403/404 → `/index.html` 200, an `/api/*` behavior to the HTTP API with caching disabled, all methods and `ALL_VIEWER_EXCEPT_HOST_HEADER`, and a `SiteUrl` output; verify they fail
-- [ ] 7.3 Implement the API Lambda and the site construct (`BucketDeployment` with local `npm ci && npm run build` bundling) to make the tests pass; verify `cdk synth` with real bundling includes `index.html` and `manifest.webmanifest` in the site asset
+- [x] 7.1 Write failing Vitest assertions for the API Lambda (`fridgesense.handlers.api.handler`, arm64, 256 MB, 10 s), the `ANY /api/{proxy+}` route, and its grants (table read and write, app and token secret read, stills bucket read only, no Bedrock or Step Functions); verify they fail
+- [x] 7.2 Write failing Vitest assertions for the site: private bucket, distribution with OAC and `index.html` default, 403/404 → `/index.html` 200, an `/api/*` behavior to the HTTP API with caching disabled, all methods and `ALL_VIEWER_EXCEPT_HOST_HEADER`, and a `SiteUrl` output; verify they fail
+- [x] 7.3 Implement the API Lambda and the site construct (`BucketDeployment` with local `npm ci && npm run build` bundling) to make the tests pass; verify `cdk synth` with real bundling includes `index.html` and `manifest.webmanifest` in the site asset
 
 ## 8. Docs and final check
 
