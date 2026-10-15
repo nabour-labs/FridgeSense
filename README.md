@@ -199,10 +199,12 @@ cd pwa && FRIDGESENSE_MOCK=1 npm run dev
 
 ### Voice and MCP (Alexa+)
 
-FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec 2025-11-25, Streamable HTTP) with four tools: `find_item`, `get_inventory`, `fridge_activity` and `last_opened`. Ask things like:
+FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec 2025-11-25, Streamable HTTP) with six tools: `find_item`, `get_inventory`, `fridge_activity`, `last_opened`, `oldest_items` and `low_stock`. Ask things like:
 
 - "Do I have milk?"
 - "What's in my fridge?" / "What dairy do I have?"
+- "What should I eat first?" (`oldest_items`: what has been in the fridge longest, so less food goes to waste; condiments, frozen food and drinks are left out unless you ask for them)
+- "What do I need to buy?" (`low_stock`: what ran out in the last 30 days, and what is down to a quarter of its usual count)
 - "How many times did we open the fridge today?"
 - "When was the fridge last opened, and what changed?"
 

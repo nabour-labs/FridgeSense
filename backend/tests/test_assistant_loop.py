@@ -11,7 +11,14 @@ from fridgesense.table import FridgeTable
 from tests.mcp_helpers import ACCOUNT, NOW, put_item
 
 pytestmark = pytest.mark.anyio
-TOOLS = ["find_item", "get_inventory", "fridge_activity", "last_opened"]
+TOOLS = [
+    "find_item",
+    "get_inventory",
+    "fridge_activity",
+    "last_opened",
+    "oldest_items",
+    "low_stock",
+]
 
 
 @pytest.fixture
@@ -37,8 +44,8 @@ def tool_results(request: dict) -> list[dict]:
     return [block["toolResult"] for block in last["content"]]
 
 
-# Four tools offered
-async def test_four_tools_offered(server, converse_stub):
+# Four tools offered, Six tools offered
+async def test_six_tools_offered(server, converse_stub):
     converse_stub.answer("end_turn_hello.json")
     await ask("Do I have milk?", server, converse_stub)
     tools = converse_stub.requests[0]["toolConfig"]["tools"]

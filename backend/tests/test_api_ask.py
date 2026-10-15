@@ -78,6 +78,23 @@ def put_milk(minutes_ago=2):
     )
 
 
+def test_what_should_i_eat_first(owner):
+    put_milk()
+    status, body = call("POST", "/api/ask", {"question": "What should I eat first?"}, owner)
+    assert status == 200
+    assert body["intent"] == "oldest_items"
+    assert body["answer"].startswith("Use these first: 1 milk from")
+    assert body["data"]["items"][0]["name"] == "Milk"
+
+
+def test_what_do_i_need_to_buy(owner):
+    put_milk()
+    status, body = call("POST", "/api/ask", {"question": "What do I need to buy?"}, owner)
+    assert status == 200
+    assert body["intent"] == "low_stock"
+    assert body["answer"] == "Nothing has run out or is running low."
+
+
 # Do I have milk
 def test_do_i_have_milk(owner):
     put_milk()

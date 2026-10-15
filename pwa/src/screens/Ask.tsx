@@ -3,7 +3,13 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useApp } from "../AppContext";
 import type { AskResult } from "../api/types";
 
-const EXAMPLES = ["Do I have milk?", "What's in my fridge?", "When was the fridge last opened?"];
+const EXAMPLES = [
+  "Do I have milk?",
+  "What's in my fridge?",
+  "What should I eat first?",
+  "What do I need to buy?",
+  "When was the fridge last opened?",
+];
 
 interface Exchange {
   id: number;

@@ -122,3 +122,26 @@ def test_category_asked_as_an_item():
 def test_category_aliases_and_plurals(question, category):
     intent = parse(question)
     assert (intent.name, intent.category) == ("get_inventory", category)
+
+
+# Eat first
+@pytest.mark.parametrize(
+    "question", ["What should I eat first?", "What's going bad?", "Anything expiring soon?"]
+)
+def test_eat_first(question):
+    assert parse(question).name == "oldest_items"
+
+
+# Shopping list
+@pytest.mark.parametrize(
+    "question", ["What do I need to buy?", "Make me a shopping list", "What's running low?"]
+)
+def test_shopping_list(question):
+    assert parse(question).name == "low_stock"
+
+
+# One item is not a shopping question
+def test_one_item_is_not_a_shopping_question():
+    assert parse("Am I out of milk?").name != "low_stock"
+    intent = parse("Do we have any eggs left?")
+    assert (intent.name, intent.item) == ("find_item", "eggs")

@@ -60,7 +60,7 @@ async def test_do_i_have_milk_over_http(mcp_base, converse_stub):
     assert result.answer == "Yes, you have 1 milk, added 2 minutes ago."
     assert result.tools == ["find_item"]
     tools = converse_stub.requests[0]["toolConfig"]["tools"]
-    assert len(tools) == 4
+    assert len(tools) == 6
     data = converse_stub.requests[1]["messages"][-1]["content"][0]["toolResult"]["content"][0]
     assert data["json"]["in_fridge"] is True
 

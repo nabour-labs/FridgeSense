@@ -1,14 +1,16 @@
-"""FridgeSense MCP server: four read-only tools for voice assistants and MCP clients."""
+"""FridgeSense MCP server: six read-only tools for voice assistants and MCP clients."""
 
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from fridgesense import fridge_answers as answers
 from fridgesense.store import TokenStore
@@ -17,7 +19,8 @@ from fridgesense.table import FridgeTable
 INSTRUCTIONS = (
     "FridgeSense knows what is in the user's fridge, from a camera that watches each door "
     "opening. Use these tools to answer questions like 'Do I have milk?', 'What's in my "
-    "fridge?' or 'When was the fridge last opened?'. Answers are spoken: keep them short, "
+    "fridge?', 'What should I eat first?', 'What do I need to buy?' or 'When was the fridge "
+    "last opened?'. Answers are spoken: keep them short, "
     "say counts and how long ago, and mention items that ran out."
 )
 READ_ONLY = ToolAnnotations(
@@ -68,6 +71,29 @@ def build_server(context: Callable[[], FridgeContext]) -> MCPServer:
         that time. unsure_count is how many changes the camera wasn't sure about."""
         c = context()
         return answers.last_opened(c.table, c.account_id, now=c.now)
+
+    @server.tool(annotations=READ_ONLY)
+    def oldest_items(
+        category: str | None = None,
+        limit: Annotated[int, Field(ge=1, le=20)] = 5,
+    ) -> answers.OldestItemsResult:
+        """What to eat or use first, e.g. "What should I eat first?" or "What's going bad?".
+        Items in the fridge now, oldest first, with days_in_fridge since they were last
+        stocked (an estimate from the camera; there are no expiry dates). Condiments, frozen
+        food and beverages keep for weeks, so they are left out (skipped_categories) unless
+        that category is asked for. limit: 1-20, default 5."""
+        c = context()
+        return answers.oldest_items(
+            c.table, c.account_id, now=c.now, category=category, limit=limit
+        )
+
+    @server.tool(annotations=READ_ONLY)
+    def low_stock() -> answers.LowStockResult:
+        """A shopping list, e.g. "What do I need to buy?" or "What's running low?". ran_out:
+        items that hit zero in the last 30 days, most recent first. running_low: items down
+        to a quarter or less of usual_count, the most held since they were last restocked."""
+        c = context()
+        return answers.low_stock(c.table, c.account_id, now=c.now)
 
     return server
 

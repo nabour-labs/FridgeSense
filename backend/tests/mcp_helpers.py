@@ -14,7 +14,16 @@ def iso(dt: datetime) -> str:
     return iso_utc(int(dt.timestamp() * 1000))
 
 
-def put_item(key, quantity, category="dairy", minutes_ago=60, name=None):
+def put_item(
+    key,
+    quantity,
+    category="dairy",
+    minutes_ago=60,
+    name=None,
+    first_seen_at=None,
+    stocked_at=None,
+    peak_quantity=None,
+):
     FridgeTable().put(
         {
             "pk": PK,
@@ -22,8 +31,10 @@ def put_item(key, quantity, category="dairy", minutes_ago=60, name=None):
             "name": name or key,
             "category": category,
             "quantity": quantity,
-            "first_seen_at": iso(NOW - timedelta(days=3)),
+            "first_seen_at": first_seen_at or iso(NOW - timedelta(days=3)),
             "last_changed_at": iso(NOW - timedelta(minutes=minutes_ago)),
+            **({"stocked_at": stocked_at} if stocked_at else {}),
+            **({"peak_quantity": peak_quantity} if peak_quantity is not None else {}),
         }
     )
 
