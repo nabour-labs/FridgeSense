@@ -53,5 +53,5 @@
 
 ## 8. Docs and final check
 
-- [ ] 8.1 Update the README: opening the app (the `SiteUrl` output), the passcode command, installing to the home screen, local PWA development (`npm run dev` with a proxy to the deployed API), the localStorage token note, and a "Try it (judges)" section with the `SiteUrl`, the demo passcode, what a viewer can see, the command that sets `demo_passcode` in `fridgesense/ring-app`, and a reminder to remove it after judging; verify the commands match the code
-- [ ] 8.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check`, `cd pwa && npm test && npx tsc --noEmit && npm run build`, and `cd infra && npm test && npx tsc --noEmit`; all green
+- [x] 8.1 Update the README: opening the app (the `SiteUrl` output), the passcode command, installing to the home screen, local PWA development (`npm run dev` with a proxy to the deployed API), the localStorage token note, and a "Try it (judges)" section with the `SiteUrl`, the demo passcode, what a viewer can see, the command that sets `demo_passcode` in `fridgesense/ring-app`, and a reminder to remove it after judging; verify the commands match the code
+- [x] 8.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check`, `cd pwa && npm test && npx tsc --noEmit && npm run build`, and `cd infra && npm test && npx tsc --noEmit`; all green
