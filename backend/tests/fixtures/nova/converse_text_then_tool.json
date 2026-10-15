@@ -1,0 +1,14 @@
+{
+  "ResponseMetadata": {"HTTPStatusCode": 200},
+  "output": {"message": {"role": "assistant", "content": [
+    {"text": "I compared the four images."},
+    {"toolUse": {"toolUseId": "tooluse_def456", "name": "record_fridge_changes",
+      "input": {
+        "added": [{"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.92}],
+        "removed": [{"item": "eggs", "category": "dairy", "quantity": 2, "confidence": 0.71}]
+      }}}
+  ]}},
+  "stopReason": "tool_use",
+  "usage": {"inputTokens": 1180, "outputTokens": 110, "totalTokens": 1290},
+  "metrics": {"latencyMs": 2300}
+}

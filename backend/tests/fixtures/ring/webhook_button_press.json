@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "version": "1.1",
+    "time": "2026-08-14T09:00:00.000000000Z",
+    "request_id": "b3f1d9a2-0e6c-4c55-8f2a-6d7e8f9a0b1c",
+    "account_id": "ava1.ring.account.XXXYYY"
+  },
+  "data": {
+    "id": "ava1.ring.device.XXXYYY_ding_1786716000000",
+    "type": "button_press",
+    "attributes": {
+      "source": "ava1.ring.device.XXXYYY",
+      "source_type": "devices",
+      "timestamp": 1786716000000
+    }
+  }
+}
