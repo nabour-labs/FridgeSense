@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { Unauthorized } from "./api/client";
+import { ApiError, Unauthorized } from "./api/client";
 import { fakeApi, signedIn } from "./test-utils";
 
 // First visit
@@ -43,4 +43,30 @@ test("a 401 while signed in returns to the passcode screen", async () => {
   render(<App api={api} />);
   expect(await screen.findByLabelText("Passcode")).toBeInTheDocument();
   await waitFor(() => expect(localStorage.getItem("fridgesense.token")).toBeNull());
+});
+
+// Missing camera is quiet
+test("a 409 no camera linked shows no error notice", async () => {
+  vi.useFakeTimers();
+  try {
+    signedIn();
+    location.hash = "";
+    const api = fakeApi({ inventory: vi.fn().mockRejectedValue(new ApiError(409)) });
+    render(<App api={api} />);
+    for (let i = 0; i < 2; i++) await act(async () => void vi.advanceTimersByTime(10_000));
+    expect(api.inventory).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText("Something went wrong")).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Other errors still notify
+test("other API errors still show Something went wrong", async () => {
+  signedIn();
+  location.hash = "";
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const api = fakeApi({ inventory: vi.fn().mockRejectedValue(new ApiError(500)) });
+  render(<App api={api} />);
+  expect(await screen.findByText("Something went wrong")).toBeInTheDocument();
 });

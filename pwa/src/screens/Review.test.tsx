@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { Pending } from "../api/types";
+import { ApiError } from "../api/client";
 import { fakeApi, signedIn } from "../test-utils";
 
 function pending(overrides: Partial<Pending> = {}): Pending {
@@ -93,4 +94,13 @@ test("each pending change shows a confidence meter toned by confidence", async (
   const meters = screen.getAllByRole("meter", { name: "Confidence" });
   expect(meters.map((m) => m.getAttribute("aria-valuenow"))).toEqual(["62", "48", "85"]);
   expect(meters.map((m) => m.getAttribute("data-tone"))).toEqual(["medium", "low", "high"]);
+});
+
+// No camera linked
+test("a 409 shows No Data instead of the skeleton", async () => {
+  signedIn();
+  location.hash = "#review";
+  render(<App api={fakeApi({ pending: vi.fn().mockRejectedValue(new ApiError(409)) })} />);
+  expect(await screen.findByText("No Data")).toBeInTheDocument();
+  expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
 });

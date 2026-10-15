@@ -1,24 +1,19 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis } from "recharts";
-import type { DoorEvent } from "../api/types";
 import { useApp } from "../AppContext";
+import { NoData } from "../components/NoData";
 import { plural } from "../format";
 import { averageDuration, deviceTimeZone, perDay, perHour, todayCount } from "../stats";
-import { usePolling } from "../usePolling";
+import { useLoad } from "../useLoad";
 
 const AXIS = { fontSize: 11, fill: "#64748b" };
 
 export function Stats() {
-  const { api, report, online } = useApp();
-  const [events, setEvents] = useState<DoorEvent[] | null>(null);
-
-  const load = useCallback(() => {
-    api.events(7).then((r) => {
-      setEvents(r.events);
-      online();
-    }, report);
-  }, [api, report, online]);
-  usePolling(load, 60_000);
+  const { api } = useApp();
+  const { data: events, failed } = useLoad(
+    useCallback(() => api.events(7).then((r) => r.events), [api]),
+    60_000,
+  );
 
   const stats = useMemo(() => {
     const list = events ?? [];
@@ -33,7 +28,10 @@ export function Stats() {
     };
   }, [events]);
 
-  if (!events) return <div aria-hidden className="h-64 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  if (!events) {
+    if (failed) return <NoData />;
+    return <div aria-hidden data-testid="loading" className="h-64 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  }
 
   return (
     <div className="space-y-4">
