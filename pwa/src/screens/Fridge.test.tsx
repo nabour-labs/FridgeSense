@@ -68,7 +68,73 @@ test("one pending change reads in the singular", async () => {
 test("an empty fridge explains when items appear", async () => {
   renderFridge({ items: [], pending_count: 0 });
   expect(await screen.findByText(/fridge looks empty/i)).toBeInTheDocument();
-  expect(screen.getByText(/after the next door opening/i)).toBeInTheDocument();
+  expect(screen.getByText(/after the next door opening or can be added by hand/i)).toBeInTheDocument();
+});
+
+describe("add item", () => {
+  const mock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
+
+  // Add butter
+  test("the owner adds an item with a name, category and quantity", async () => {
+    const api = renderFridge();
+    mock(api.addItem).mockResolvedValue({ ...STOCKED, items: [...STOCKED.items, item("butter", 2, "dairy", "Butter")] });
+    await userEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    const dialog = screen.getByRole("dialog", { name: "Add item" });
+    expect(within(dialog).getByLabelText("Category")).toHaveValue("other");
+    expect(within(dialog).getByLabelText("Quantity")).toHaveValue("1");
+    await userEvent.type(within(dialog).getByLabelText("Name"), "Butter");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Category"), "Dairy");
+    await userEvent.click(within(dialog).getByRole("button", { name: "One more" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(api.addItem).toHaveBeenCalledWith({ name: "Butter", category: "dairy", quantity: 2 });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const dairy = screen.getByRole("region", { name: "Dairy" });
+    expect(within(dairy).getByText("Butter")).toBeInTheDocument();
+    expect(within(dairy).getByText("×2")).toBeInTheDocument();
+  });
+
+  // Blank name
+  test("Save is disabled while the name is blank", async () => {
+    const api = renderFridge();
+    await userEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    const dialog = screen.getByRole("dialog", { name: "Add item" });
+    const save = within(dialog).getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "   ");
+    expect(save).toBeDisabled();
+    await userEvent.click(save);
+    expect(api.addItem).not.toHaveBeenCalled();
+  });
+
+  test("the quantity can't go below 1", async () => {
+    renderFridge();
+    await userEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    const dialog = screen.getByRole("dialog", { name: "Add item" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "One less" }));
+    expect(within(dialog).getByLabelText("Quantity")).toHaveValue("1");
+  });
+
+  // Add from an empty fridge
+  test("an empty fridge offers Add item", async () => {
+    renderFridge({ items: [], pending_count: 0 });
+    await screen.findByText(/fridge looks empty/i);
+    const buttons = screen.getAllByRole("button", { name: "Add item" });
+    await userEvent.click(buttons[buttons.length - 1]);
+    expect(screen.getByRole("dialog", { name: "Add item" })).toBeInTheDocument();
+  });
+
+  // Add fails
+  test("an API error shows in the sheet and the list is unchanged", async () => {
+    const api = renderFridge();
+    mock(api.addItem).mockRejectedValue(new ApiError(400, "unknown category"));
+    await userEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    const dialog = screen.getByRole("dialog", { name: "Add item" });
+    await userEvent.type(within(dialog).getByLabelText("Name"), "Butter");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("unknown category")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Add item" })).toBeInTheDocument();
+    expect(screen.queryByText("Butter")).not.toBeInTheDocument();
+  });
 });
 
 describe("polling", () => {
@@ -108,7 +174,7 @@ describe("polling", () => {
 // Fix a quantity
 test("tapping an item lets the owner fix its quantity", async () => {
   const api = renderFridge();
-  (api.setQuantity as ReturnType<typeof vi.fn>).mockResolvedValue({
+  (api.editItem as ReturnType<typeof vi.fn>).mockResolvedValue({
     items: [item("eggs", 12, "dairy", "Eggs")],
     pending_count: 0,
   });
@@ -118,9 +184,86 @@ test("tapping an item lets the owner fix its quantity", async () => {
   await userEvent.clear(input);
   await userEvent.type(input, "12");
   await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-  expect(api.setQuantity).toHaveBeenCalledWith("eggs", 12);
+  expect(api.editItem).toHaveBeenCalledWith("eggs", { quantity: 12 });
   expect(await screen.findByText("×12")).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+describe("edit and remove", () => {
+  const mock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
+  const WITH_BOTTLE: Inventory = {
+    items: [...STOCKED.items, item("bottle", 1, "other", "Bottle"), item("mystery jar", 1, "other", "Mystery Jar")],
+    pending_count: 0,
+  };
+
+  test("the editor opens with the item's name, category and quantity", async () => {
+    renderFridge(WITH_BOTTLE);
+    await userEvent.click(await screen.findByRole("button", { name: /Eggs/ }));
+    const dialog = screen.getByRole("dialog", { name: "Eggs" });
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("Eggs");
+    expect(within(dialog).getByLabelText("Category")).toHaveValue("dairy");
+    expect(within(dialog).getByLabelText("Quantity")).toHaveValue("6");
+  });
+
+  // Rename and recategorize
+  test("renaming and recategorizing sends only the changed fields", async () => {
+    const api = renderFridge(WITH_BOTTLE);
+    mock(api.editItem).mockResolvedValue({
+      items: [...STOCKED.items, item("oat milk", 1, "dairy", "Oat Milk")],
+      pending_count: 0,
+    });
+    await userEvent.click(await screen.findByRole("button", { name: /Bottle/ }));
+    const dialog = screen.getByRole("dialog", { name: "Bottle" });
+    const name = within(dialog).getByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Oat Milk");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Category"), "Dairy");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(api.editItem).toHaveBeenCalledWith("bottle", { quantity: 1, name: "Oat Milk", category: "dairy" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Dairy" })).getByText("Oat Milk")).toBeInTheDocument();
+  });
+
+  // Name clash
+  test("a name clash is shown in the editor", async () => {
+    const api = renderFridge(WITH_BOTTLE);
+    mock(api.editItem).mockRejectedValue(new ApiError(409, "item exists"));
+    await userEvent.click(await screen.findByRole("button", { name: /Bottle/ }));
+    const dialog = screen.getByRole("dialog", { name: "Bottle" });
+    const name = within(dialog).getByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Oat Milk");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("You already have Oat Milk.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Bottle/ })).toBeInTheDocument();
+  });
+
+  // Remove an item
+  test("removing asks first, then deletes the item", async () => {
+    const api = renderFridge(WITH_BOTTLE);
+    mock(api.deleteItem).mockResolvedValue(STOCKED);
+    await userEvent.click(await screen.findByRole("button", { name: /Mystery Jar/ }));
+    const dialog = screen.getByRole("dialog", { name: "Mystery Jar" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove item" }));
+    expect(within(dialog).getByText("Remove Mystery Jar?")).toBeInTheDocument();
+    expect(api.deleteItem).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    expect(api.deleteItem).toHaveBeenCalledWith("mystery jar");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Mystery Jar")).not.toBeInTheDocument();
+  });
+
+  // Remove cancelled
+  test("cancelling the removal keeps the editor open", async () => {
+    const api = renderFridge(WITH_BOTTLE);
+    await userEvent.click(await screen.findByRole("button", { name: /Mystery Jar/ }));
+    const dialog = screen.getByRole("dialog", { name: "Mystery Jar" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove item" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(api.deleteItem).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Mystery Jar" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Name")).toBeInTheDocument();
+  });
 });
 
 // Summary card

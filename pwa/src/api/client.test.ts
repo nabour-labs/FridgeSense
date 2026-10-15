@@ -155,3 +155,37 @@ test("ApiError falls back to the status when the body has no error text", async 
   expect(err).toBeInstanceOf(ApiError);
   expect(err.message).toBe("HTTP 500");
 });
+
+const INVENTORY = { items: [], pending_count: 0 };
+
+test.each([
+  [
+    "addItem",
+    (api: ApiClient) => api.addItem({ name: "Butter", category: "dairy", quantity: 2 }),
+    "POST",
+    "/api/items",
+    { name: "Butter", category: "dairy", quantity: 2 },
+  ],
+  [
+    "editItem with every field",
+    (api: ApiClient) => api.editItem("bottle", { quantity: 1, name: "Oat Milk", category: "dairy" }),
+    "PUT",
+    "/api/items/bottle",
+    { quantity: 1, name: "Oat Milk", category: "dairy" },
+  ],
+  [
+    "editItem with only the quantity",
+    (api: ApiClient) => api.editItem("oat milk", { quantity: 3 }),
+    "PUT",
+    "/api/items/oat%20milk",
+    { quantity: 3 },
+  ],
+  ["deleteItem", (api: ApiClient) => api.deleteItem("mystery jar"), "DELETE", "/api/items/mystery%20jar", undefined],
+])("%s sends the right request", async (_, callApi, method, path, body) => {
+  const fetch = respond(200, INVENTORY);
+  await expect(callApi(new ApiClient(() => "t", fetch))).resolves.toEqual(INVENTORY);
+  const [url, init] = fetch.mock.calls[0];
+  expect(url).toBe(path);
+  expect(init.method).toBe(method);
+  expect(init.body === undefined ? undefined : JSON.parse(init.body)).toEqual(body);
+});

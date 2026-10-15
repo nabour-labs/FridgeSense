@@ -176,16 +176,55 @@ export function mockApi(): Plugin {
           config = { ...config, references: config.references.filter((r) => r.id !== decodeURIComponent(ref[1])) };
           return config.references.length < before ? send(200, config) : send(404, { error: "not found" });
         }
-        const put = url.match(/^\/items\/(.+)$/);
-        if (req.method === "PUT" && put) {
+        const itemKey = (name: string) => name.trim().split(/\s+/).join(" ").toLowerCase();
+        const display = (name: string) => name.trim().split(/\s+/).join(" ");
+        if (url.startsWith("/items") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+        if (req.method === "POST" && url === "/items") {
           let body = "";
           req.on("data", (c) => (body += c));
           req.on("end", () => {
-            const key = decodeURIComponent(put[1]);
-            items = items.map((i) => (i.key === key ? { ...i, quantity: JSON.parse(body).quantity } : i));
+            const { name, category, quantity } = JSON.parse(body);
+            const key = itemKey(name);
+            const at = new Date().toISOString();
+            const old = items.find((i) => i.key === key);
+            items = old
+              ? items.map((i) => (i.key === key ? { ...i, category, quantity: i.quantity + quantity, last_changed_at: at } : i))
+              : [...items, { key, name: display(name), category, quantity, last_changed_at: at }];
             send(200, inventory());
           });
           return;
+        }
+        const one = url.match(/^\/items\/(.+)$/);
+        if (req.method === "PUT" && one) {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const key = decodeURIComponent(one[1]);
+            const { quantity, name, category } = JSON.parse(body);
+            const newKey = name === undefined ? key : itemKey(name);
+            if (newKey !== key && items.some((i) => i.key === newKey)) return send(409, { error: "item exists" });
+            const at = new Date().toISOString();
+            items = items.map((i) =>
+              i.key === key
+                ? {
+                    ...i,
+                    key: newKey,
+                    name: name === undefined ? i.name : display(name),
+                    category: category ?? i.category,
+                    quantity,
+                    last_changed_at: at,
+                  }
+                : i,
+            );
+            send(200, inventory());
+          });
+          return;
+        }
+        if (req.method === "DELETE" && one) {
+          const key = decodeURIComponent(one[1]);
+          if (!items.some((i) => i.key === key)) return send(404, { error: "not found" });
+          items = items.filter((i) => i.key !== key);
+          return send(200, inventory());
         }
         send(404, { error: "not found" });
       });
