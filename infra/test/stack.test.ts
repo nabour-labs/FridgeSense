@@ -36,7 +36,7 @@ describe("HTTP API", () => {
 });
 
 describe("Lambdas", () => {
-  it("are four Python 3.13 arm64 functions", () => {
+  it("are five Python 3.13 arm64 functions", () => {
     const fns = Object.values(resourcesOf("AWS::Lambda::Function")).filter((f) =>
       String(f.Properties.Handler).startsWith("fridgesense."),
     );
@@ -44,6 +44,7 @@ describe("Lambdas", () => {
     expect(fns.map((f) => f.Properties.Handler).sort()).toEqual([
       "fridgesense.handlers.api.handler",
       "fridgesense.handlers.http.handler",
+      "fridgesense.handlers.mcp.handler",
       "fridgesense.handlers.pipeline.handler",
       "fridgesense.handlers.token_refresh.handler",
     ]);
