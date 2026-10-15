@@ -74,6 +74,16 @@ export function mockApi(): Plugin {
           pending = pending.filter((p) => p.id !== m[1]);
           return send(200, inventory());
         }
+        if (req.method === "POST" && url === "/ask") {
+          // Canned reply: the real wording comes from the backend's fridge-ask rules.
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const question = String(JSON.parse(body || "{}").question ?? "");
+            send(200, { intent: "unknown", answer: `Mock answer to "${question}".`, data: null });
+          });
+          return;
+        }
         const put = url.match(/^\/items\/(.+)$/);
         if (req.method === "PUT" && put) {
           let body = "";

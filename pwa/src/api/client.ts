@@ -1,4 +1,4 @@
-import type { DoorEvent, Inventory, Pending, Session } from "./types";
+import type { AskResult, DoorEvent, Inventory, Pending, Session } from "./types";
 
 /** The session is missing, expired or no longer valid: sign in again. */
 export class Unauthorized extends Error {}
@@ -46,6 +46,10 @@ export class ApiClient {
 
   setQuantity(key: string, quantity: number): Promise<Inventory> {
     return this.request("PUT", `/api/items/${encodeURIComponent(key)}`, { quantity });
+  }
+
+  ask(question: string): Promise<AskResult> {
+    return this.request("POST", "/api/ask", { question });
   }
 
   private async request<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
