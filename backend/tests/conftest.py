@@ -107,3 +107,24 @@ def api_event(
         "body": None if raw is None else (b64.b64encode(raw).decode() if base64 else raw.decode()),
         "isBase64Encoded": base64,
     }
+
+
+def jpeg(
+    brightness: float = 0.0,
+    bright_box: tuple[float, float, float, float] | None = None,
+    size: tuple[int, int] = (320, 180),
+) -> bytes:
+    """A test JPEG: uniformly `brightness` (0-1), or dark with one bright box (fractions)."""
+    import io
+
+    from PIL import Image, ImageDraw
+
+    level = round(brightness * 255)
+    img = Image.new("L", size, level if bright_box is None else 0)
+    if bright_box is not None:
+        x, y, w, h = bright_box
+        W, H = size
+        ImageDraw.Draw(img).rectangle([x * W, y * H, (x + w) * W - 1, (y + h) * H - 1], fill=255)
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=95)
+    return buf.getvalue()

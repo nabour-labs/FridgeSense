@@ -1,0 +1,9 @@
+{
+  "ResponseMetadata": {"HTTPStatusCode": 200},
+  "output": {"message": {"role": "assistant", "content": [
+    {"text": "Milk was added and two eggs were removed."}
+  ]}},
+  "stopReason": "end_turn",
+  "usage": {"inputTokens": 1000, "outputTokens": 50, "totalTokens": 1050},
+  "metrics": {"latencyMs": 1900}
+}
