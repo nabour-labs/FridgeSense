@@ -4,6 +4,34 @@ A Ring Indoor Cam 2K watches your fridge. Each time the door opens, the clip goe
 
 See [docs/hackathon-plan.md](docs/hackathon-plan.md) for the full plan.
 
+<table>
+  <tr>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/01-fridge.png"><img src="docs/screenshots/light/01-fridge.png" width="200" alt="Fridge screen: 17 items in stock, grouped by category"></picture><br><b>Fridge</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/03-activity.png"><img src="docs/screenshots/light/03-activity.png" width="200" alt="Activity screen: today's door openings with camera stills and what went in or out"></picture><br><b>Activity</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/06-stats.png"><img src="docs/screenshots/light/06-stats.png" width="200" alt="Stats screen: opens per day and a day-by-hour heatmap"></picture><br><b>Stats</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/07-ask.png"><img src="docs/screenshots/light/07-ask.png" width="200" alt="Ask screen: answers to 'Do I have milk?' and 'What should I eat first?'"></picture><br><b>Ask</b></td>
+  </tr>
+</table>
+
+<details>
+<summary>More screens</summary>
+<br>
+<table>
+  <tr>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/00-sign-in.png"><img src="docs/screenshots/light/00-sign-in.png" width="200" alt="Sign-in screen with a passcode field"></picture><br><b>Sign in</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/02-fridge-edit-item.png"><img src="docs/screenshots/light/02-fridge-edit-item.png" width="200" alt="Edit item sheet: name, category and quantity"></picture><br><b>Edit an item</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/04-activity-still-viewer.png"><img src="docs/screenshots/light/04-activity-still-viewer.png" width="200" alt="Still viewer: one camera still from a door opening"></picture><br><b>Camera stills</b></td>
+  </tr>
+  <tr>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/05-review.png"><img src="docs/screenshots/light/05-review.png" width="200" alt="Review screen: low-confidence changes to confirm, edit or reject"></picture><br><b>Review</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/08-config.png"><img src="docs/screenshots/light/08-config.png" width="200" alt="Config screen: reference images and custom instructions for the camera"></picture><br><b>Config</b></td>
+    <td></td>
+  </tr>
+</table>
+</details>
+
+<sub>Screenshots use made-up data from the local mock (`FRIDGESENSE_MOCK=1`); they follow your light or dark theme.</sub>
+
 ## Try it (judges)
 
 > **TODO before submitting:** replace the two placeholders below after `cdk deploy` and after setting the demo passcode (see [Demo access](#demo-access)).
