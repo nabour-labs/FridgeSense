@@ -7,6 +7,8 @@ export type Api = Pick<
   | "signIn"
   | "inventory"
   | "events"
+  | "eventsOn"
+  | "deleteEvent"
   | "pending"
   | "confirm"
   | "reject"

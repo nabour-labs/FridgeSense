@@ -84,7 +84,7 @@ The Fridge screen SHALL show a summary card with the number of in-stock items, w
 - **THEN** `PUT /api/items/eggs` is sent with `{"quantity": 12}` and the list shows eggs ×12
 
 ### Requirement: Activity screen
-The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs" with an arrow showing the direction, a marker on unconfirmed changes, and the stills with the first one shown large. Tapping a still SHALL open it full size in a viewer that can step to the previous and next still.
+The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs" with an arrow showing the direction, a marker on unconfirmed changes, and the stills with the first one shown large. Tapping a still SHALL open it full size in a viewer that can step to the previous and next still. The screen SHALL show one day at a time, today by default, 10 openings per page, and SHALL let the owner delete an opening after confirming.
 
 #### Scenario: Door opening shown
 - **WHEN** an event opened at 18:02 local time for 25 s added 1 milk and removed 2 eggs
@@ -115,8 +115,36 @@ The Activity screen SHALL list door openings newest first with their local time,
 - **THEN** it shows "Couldn't tell what changed" instead of a change list
 
 #### Scenario: No door openings
-- **WHEN** there are no events in the last 7 days
-- **THEN** the screen says there were no door openings in the last 7 days
+- **WHEN** there are no events on the chosen day
+- **THEN** the screen says there were no door openings on this day, and the day picker stays shown
+
+#### Scenario: Today by default
+- **WHEN** the Activity screen opens
+- **THEN** the day picker shows today's date, cannot be set past today, and the events requested run from local midnight today to local midnight tomorrow, 10 at a time
+
+#### Scenario: Pick a day
+- **WHEN** the user picks yesterday
+- **THEN** the events requested run from local midnight yesterday to local midnight today, starting at page 1
+
+#### Scenario: Older and newer pages
+- **WHEN** the first page comes back with a `next` id and the user taps "Older"
+- **THEN** the next request passes that id as the cursor and the screen shows "Page 2"; tapping "Newer" shows page 1 again
+
+#### Scenario: Single page
+- **WHEN** the first page comes back with `next` null
+- **THEN** "Older" and "Newer" are both disabled
+
+#### Scenario: Delete an opening
+- **WHEN** the owner taps "Delete door opening at 18:02" and then "Delete" in the confirmation
+- **THEN** the event is deleted through the API and its card disappears
+
+#### Scenario: Cancel delete
+- **WHEN** the owner taps the delete button and then "Cancel"
+- **THEN** nothing is deleted and the card stays
+
+#### Scenario: Viewer can't delete
+- **WHEN** a viewer opens Activity
+- **THEN** no delete button is shown
 
 ### Requirement: Review screen
 The Review screen SHALL list pending changes with the item, direction, quantity and confidence as a percentage and as a meter coloured by confidence, and let the user confirm, edit then confirm, or reject each one.
@@ -308,7 +336,7 @@ The Fridge, Activity, Review and Stats screens SHALL show a loading skeleton onl
 
 #### Scenario: Empty lists keep their messages
 - **WHEN** the API answers 200 with no items, no events or no pending changes
-- **THEN** the screens show their existing empty-list messages ("Your fridge looks empty.", "No door openings in the last 7 days.", "Everything is confirmed.", and zeros on Stats), not "No Data"
+- **THEN** the screens show their existing empty-list messages ("Your fridge looks empty.", "No door openings on this day.", "Everything is confirmed.", and zeros on Stats), not "No Data"
 
 ### Requirement: No error notice for a missing camera
 A 409 `{"error": "no camera linked"}` answer SHALL NOT show the "Something went wrong" notice. Other errors keep their existing handling.

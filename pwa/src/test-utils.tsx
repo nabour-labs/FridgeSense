@@ -11,6 +11,8 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     signIn: vi.fn().mockResolvedValue({ token: "tok", expires_at: new Date(Date.now() + DAY).toISOString(), role: "owner" }),
     inventory: vi.fn().mockResolvedValue(EMPTY),
     events: vi.fn().mockResolvedValue({ events: [] }),
+    eventsOn: vi.fn().mockResolvedValue({ events: [], next: null }),
+    deleteEvent: vi.fn().mockImplementation(async (id: string) => ({ id })),
     pending: vi.fn().mockResolvedValue({ pending: [] }),
     confirm: vi.fn().mockResolvedValue(EMPTY),
     reject: vi.fn().mockResolvedValue(EMPTY),

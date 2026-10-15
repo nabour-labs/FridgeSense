@@ -1,8 +1,9 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { DoorEvent } from "../api/types";
 import { ApiError } from "../api/client";
+import type { Api } from "../AppContext";
 import { fakeApi, signedIn } from "../test-utils";
 
 const opened = new Date();
@@ -25,23 +26,36 @@ function event(overrides: Partial<DoorEvent> = {}): DoorEvent {
   };
 }
 
-function renderActivity(events: DoorEvent[]) {
-  signedIn();
+function renderActivity(
+  events: DoorEvent[],
+  { role = "owner", ...overrides }: { role?: "owner" | "viewer" } & Partial<Record<keyof Api, unknown>> = {},
+) {
+  signedIn(role);
   location.hash = "#activity";
-  const api = fakeApi({ events: vi.fn().mockResolvedValue({ events }) });
+  const api = fakeApi({ eventsOn: vi.fn().mockResolvedValue({ events, next: null }), ...overrides });
   render(<App api={api} />);
   return api;
 }
 
+function midnight(daysFromToday = 0) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + daysFromToday);
+  return d;
+}
+
+function dateValue(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Door opening shown
 test("a door opening shows its time, duration and changes", async () => {
-  const api = renderActivity([event()]);
+  renderActivity([event()]);
   const card = await screen.findByRole("article");
   expect(within(card).getByText("18:02")).toBeInTheDocument();
   expect(within(card).getByText("25 s")).toBeInTheDocument();
   expect(within(card).getByText("+ milk")).toBeInTheDocument();
   expect(within(card).getByText("− 2 eggs")).toBeInTheDocument();
-  expect(api.events).toHaveBeenCalledWith(7);
 });
 
 test("unconfirmed changes are marked", async () => {
@@ -114,16 +128,98 @@ test("a failed analysis says so instead of listing changes", async () => {
   expect(within(card).getByText("Couldn't tell what changed")).toBeInTheDocument();
 });
 
-test("no door openings yet", async () => {
+// No door openings
+test("a day without door openings says so and keeps the day picker", async () => {
   renderActivity([]);
-  expect(await screen.findByText(/No door openings in the last 7 days/)).toBeInTheDocument();
+  expect(await screen.findByText("No door openings on this day.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Day")).toBeInTheDocument();
+});
+
+// Today by default
+test("Activity shows today, 10 at a time, and can't pick a later day", async () => {
+  const api = renderActivity([event()]);
+  await screen.findByRole("article");
+  const picker = screen.getByLabelText("Day");
+  expect(picker).toHaveValue(dateValue(midnight()));
+  expect(picker).toHaveAttribute("max", dateValue(midnight()));
+  expect(api.eventsOn).toHaveBeenCalledWith(midnight(), midnight(1), 10, undefined);
+});
+
+// Pick a day
+test("picking yesterday asks for yesterday's openings from page 1", async () => {
+  const api = renderActivity([event()]);
+  await screen.findByRole("article");
+  fireEvent.change(screen.getByLabelText("Day"), { target: { value: dateValue(midnight(-1)) } });
+  await waitFor(() => expect(api.eventsOn).toHaveBeenLastCalledWith(midnight(-1), midnight(), 10, undefined));
+  expect(screen.getByLabelText("Day")).toHaveValue(dateValue(midnight(-1)));
+});
+
+// Older and newer pages
+test("Older and Newer step through pages with the cursor", async () => {
+  const eventsOn = vi.fn(async (_from: Date, _to: Date, _limit: number, cursor?: string) =>
+    cursor === "c1"
+      ? { events: [event({ id: "ev2", opened_at: new Date(opened.getTime() - 3600_000).toISOString() })], next: null }
+      : { events: [event()], next: "c1" },
+  );
+  renderActivity([], { eventsOn });
+  expect(await screen.findByText("18:02")).toBeInTheDocument();
+  expect(screen.getByText("Page 1")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Newer" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Older" }));
+  expect(await screen.findByText("17:02")).toBeInTheDocument();
+  expect(eventsOn).toHaveBeenLastCalledWith(midnight(), midnight(1), 10, "c1");
+  expect(screen.getByText("Page 2")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Older" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Newer" }));
+  expect(await screen.findByText("18:02")).toBeInTheDocument();
+  expect(screen.getByText("Page 1")).toBeInTheDocument();
+  expect(eventsOn).toHaveBeenLastCalledWith(midnight(), midnight(1), 10, undefined);
+});
+
+// Single page
+test("a single page disables Older and Newer", async () => {
+  renderActivity([event()]);
+  await screen.findByRole("article");
+  expect(screen.getByRole("button", { name: "Older" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Newer" })).toBeDisabled();
+});
+
+// Delete an opening
+test("the owner deletes a door opening after confirming", async () => {
+  const eventsOn = vi.fn().mockResolvedValueOnce({ events: [event()], next: null }).mockResolvedValue({ events: [], next: null });
+  const api = renderActivity([], { eventsOn });
+  const card = await screen.findByRole("article");
+  await userEvent.click(within(card).getByRole("button", { name: "Delete door opening at 18:02" }));
+  const dialog = screen.getByRole("dialog", { name: "Delete this door opening?" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+  expect(api.deleteEvent).toHaveBeenCalledWith("ev1");
+  await waitFor(() => expect(screen.queryByRole("article")).not.toBeInTheDocument());
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+// Cancel delete
+test("cancelling the delete keeps the door opening", async () => {
+  const api = renderActivity([event()]);
+  const card = await screen.findByRole("article");
+  await userEvent.click(within(card).getByRole("button", { name: "Delete door opening at 18:02" }));
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+  expect(api.deleteEvent).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("article")).toBeInTheDocument();
+});
+
+// Viewer can't delete
+test("a viewer sees no delete button", async () => {
+  renderActivity([event()], { role: "viewer" });
+  const card = await screen.findByRole("article");
+  expect(within(card).queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
 });
 
 // No camera linked
 test("a 409 shows No Data instead of the skeleton", async () => {
   signedIn();
   location.hash = "#activity";
-  render(<App api={fakeApi({ events: vi.fn().mockRejectedValue(new ApiError(409)) })} />);
+  render(<App api={fakeApi({ eventsOn: vi.fn().mockRejectedValue(new ApiError(409)) })} />);
   expect(await screen.findByText("No Data")).toBeInTheDocument();
   expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
 });
@@ -135,8 +231,8 @@ test("door openings stay listed when a later poll fails", async () => {
   try {
     signedIn();
     location.hash = "#activity";
-    const events = vi.fn().mockResolvedValueOnce({ events: [event()] }).mockRejectedValue(new ApiError(500));
-    render(<App api={fakeApi({ events })} />);
+    const events = vi.fn().mockResolvedValueOnce({ events: [event()], next: null }).mockRejectedValue(new ApiError(500));
+    render(<App api={fakeApi({ eventsOn: events })} />);
     expect(await screen.findByRole("article")).toBeInTheDocument();
     await act(() => vi.advanceTimersByTimeAsync(10_000));
     expect(events).toHaveBeenCalledTimes(2);
@@ -164,15 +260,15 @@ describe("still links across polls", () => {
   function renderPolls(events: ReturnType<typeof vi.fn>) {
     signedIn();
     location.hash = "#activity";
-    render(<App api={fakeApi({ events })} />);
+    render(<App api={fakeApi({ eventsOn: events })} />);
   }
 
   // Poll with fresh links
   test("a poll with fresh links keeps the links on screen", async () => {
     const events = vi
       .fn()
-      .mockResolvedValueOnce({ events: [event({ stills: links("a") })] })
-      .mockResolvedValue({ events: [event({ stills: links("b") })] });
+      .mockResolvedValueOnce({ events: [event({ stills: links("a") })], next: null })
+      .mockResolvedValue({ events: [event({ stills: links("b") })], next: null });
     renderPolls(events);
     await act(async () => {});
     expect(shownSrcs()).toEqual(links("a"));
@@ -184,7 +280,7 @@ describe("still links across polls", () => {
   // Links refreshed after 10 minutes
   test("links older than 10 minutes are replaced by the latest poll", async () => {
     let tag = "a";
-    const events = vi.fn(async () => ({ events: [event({ stills: links(tag) })] }));
+    const events = vi.fn(async () => ({ events: [event({ stills: links(tag) })], next: null }));
     renderPolls(events);
     await act(async () => {});
     tag = "b";
@@ -199,8 +295,8 @@ describe("still links across polls", () => {
   test("a change in the number of stills shows the new links", async () => {
     const events = vi
       .fn()
-      .mockResolvedValueOnce({ events: [event({ stills: links("a", 2) })] })
-      .mockResolvedValue({ events: [event({ stills: links("b", 4) })] });
+      .mockResolvedValueOnce({ events: [event({ stills: links("a", 2) })], next: null })
+      .mockResolvedValue({ events: [event({ stills: links("b", 4) })], next: null });
     renderPolls(events);
     await act(async () => {});
     expect(shownSrcs()).toEqual(links("a", 2));

@@ -88,6 +88,31 @@ test("events request carries days", async () => {
   expect(fetch.mock.calls[0][0]).toBe("/api/events?days=7");
 });
 
+test("eventsOn asks for one range and page", async () => {
+  const page = () => respond(200, { events: [], next: null });
+  const from = new Date("2026-10-15T04:00:00.000Z");
+  const to = new Date("2026-10-16T04:00:00.000Z");
+  const first = page();
+  await new ApiClient(() => "t", first).eventsOn(from, to, 10);
+  expect(first.mock.calls[0][0]).toBe(
+    "/api/events?from=2026-10-15T04%3A00%3A00.000Z&to=2026-10-16T04%3A00%3A00.000Z&limit=10",
+  );
+  const second = page();
+  await new ApiClient(() => "t", second).eventsOn(from, to, 10, "ab/c");
+  expect(second.mock.calls[0][0]).toBe(
+    "/api/events?from=2026-10-15T04%3A00%3A00.000Z&to=2026-10-16T04%3A00%3A00.000Z&limit=10&cursor=ab%2Fc",
+  );
+});
+
+test("deleteEvent sends DELETE with the token", async () => {
+  const fetch = respond(200, { id: "e/1" });
+  await new ApiClient(() => "t", fetch).deleteEvent("e/1");
+  const [path, init] = fetch.mock.calls[0];
+  expect(path).toBe("/api/events/e%2F1");
+  expect(init.method).toBe("DELETE");
+  expect(new Headers(init.headers).get("authorization")).toBe("Bearer t");
+});
+
 const CONFIG = { instructions: "", references: [] };
 
 test.each([

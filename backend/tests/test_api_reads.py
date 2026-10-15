@@ -129,6 +129,7 @@ def test_range_limit(owner):
     put_event(int(NOW * 1000) - 10 * DAY_MS)
     events = call("GET", "/api/events", token=owner)[1]["events"]
     assert [base64.urlsafe_b64decode(e["id"] + "==").decode() for e in events] == [recent]
+    assert call("GET", "/api/events", token=owner)[1]["next"] is None
 
 
 def test_events_newest_first(owner):
