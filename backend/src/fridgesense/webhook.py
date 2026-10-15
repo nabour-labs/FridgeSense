@@ -13,10 +13,10 @@ import boto3
 from botocore.exceptions import ClientError
 
 from fridgesense.crypto import verify_signature
-from fridgesense.devices import account_pk
 from fridgesense.logs import log_event
 from fridgesense.store import AppConfig
 from fridgesense.store import table_name as table_name_default
+from fridgesense.table import account_pk
 from fridgesense.web import Request, json_response
 
 DEDUPE_TTL_S = 7 * 24 * 3600
