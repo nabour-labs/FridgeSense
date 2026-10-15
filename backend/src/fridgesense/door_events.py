@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 from PIL import Image, ImageStat
 
+from fridgesense.faces import FaceBlurrer
 from fridgesense.logs import log_event
 from fridgesense.oauth import OAuthRejected, OAuthUnavailable
 from fridgesense.ring import RingAuthError, RingClient
@@ -134,10 +135,14 @@ def download_stills(
     http: httpx.Client,
     s3,
     bucket: str,
+    blurrer: FaceBlurrer,
     state: dict,
     sleep: Callable[[float], None] = time.sleep,
 ) -> list[tuple[str, bytes]]:
-    """Download the stills for the window and store them in S3; returns (key, bytes) pairs."""
+    """Download the stills for the window, blur faces and store them in S3.
+
+    Returns (key, blurred bytes) pairs. Only blurred stills are ever stored.
+    """
     window = state["window"]
     prefix = stills_prefix(state["account_id"], state["device_id"], window["start_ms"])
     saved = []
@@ -145,6 +150,11 @@ def download_stills(
         data = _download_still(ring, http, state["device_id"], ts, sleep)
         if data is None:
             continue
+        data = blurrer.blur(
+            data, {"account_id": state["account_id"], "device_id": state["device_id"], "still": n}
+        )
+        if data is None:
+            continue  # face detection failed: never store an unblurred still
         key = f"{prefix}still-{n}.jpg"
         s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType="image/jpeg")
         saved.append((key, data))
@@ -191,6 +201,7 @@ def fetch_stills(
     table: FridgeTable,
     bucket: str,
     check: DoorCheck,
+    blurrer: FaceBlurrer,
     state: dict,
     sleep: Callable[[float], None] = time.sleep,
 ) -> dict:
@@ -199,7 +210,7 @@ def fetch_stills(
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
     """
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
-    stills = download_stills(ring, http, s3, bucket, state, sleep)
+    stills = download_stills(ring, http, s3, bucket, blurrer, state, sleep)
     still_keys = [k for k, _ in stills]
 
     if len(stills) >= MIN_STILLS:
