@@ -51,3 +51,12 @@ export interface Pending {
   confidence: number;
   opened_at: string;
 }
+
+export type AskIntent = "find_item" | "get_inventory" | "fridge_activity" | "last_opened" | "unknown";
+
+/** A fridge question's answer: the sentence to speak plus the structured result. */
+export interface AskResult {
+  intent: AskIntent;
+  answer: string;
+  data: Record<string, unknown> | null;
+}

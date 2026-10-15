@@ -32,6 +32,8 @@ export interface AppSiteProps {
   tokenSecret: ISecret;
   stillsBucket: IBucket;
   logGroup: (id: string) => LogGroup;
+  /** IANA zone for "today" in answers to fridge questions. */
+  timeZone: string;
 }
 
 /** The phone app: an /api Lambda on the HTTP API, and the PWA on S3 + CloudFront. */
@@ -50,8 +52,12 @@ export class AppSite extends Construct {
       memorySize: 256,
       timeout: Duration.seconds(10),
       logGroup: props.logGroup("ApiFunction"),
-      description: "App API: sign-in, inventory, door events, pending changes",
-      environment: { ...props.baseEnvironment, STILLS_BUCKET: props.stillsBucket.bucketName },
+      description: "App API: sign-in, inventory, door events, pending changes, questions",
+      environment: {
+        ...props.baseEnvironment,
+        STILLS_BUCKET: props.stillsBucket.bucketName,
+        TIME_ZONE: props.timeZone,
+      },
     });
     props.table.grantReadWriteData(fn);
     props.appSecret.grantRead(fn);
