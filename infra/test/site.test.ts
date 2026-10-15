@@ -37,7 +37,7 @@ const CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad";
 const ALL_VIEWER_EXCEPT_HOST = "b689b0a8-53d0-40ab-baf2-68738e2966ac";
 
 describe("app API", () => {
-  it("is a Python 3.13 arm64 Lambda with 256 MB and 10 s", () => {
+  it("is a Python 3.13 arm64 Lambda with 256 MB, 10 s and the household time zone", () => {
     const [, fn] = apiFunction();
     expect(fn.Properties.Runtime).toBe("python3.13");
     expect(fn.Properties.Architectures).toEqual(["arm64"]);
@@ -49,7 +49,17 @@ describe("app API", () => {
       "RING_TOKENS_SECRET_ID",
       "STILLS_BUCKET",
       "TABLE_NAME",
+      "TIME_ZONE",
     ]);
+    expect(vars.TIME_ZONE).toBe("America/Toronto");
+  });
+
+  it("takes the time zone from the timeZone context", () => {
+    const other = synthTemplate({ timeZone: "America/Vancouver" });
+    const fns = Object.values(other.findResources("AWS::Lambda::Function") as Record<string, Resource>);
+    const fn = fns.find((r) => r.Properties.Handler === "fridgesense.handlers.api.handler")!;
+    const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    expect(vars.TIME_ZONE).toBe("America/Vancouver");
   });
 
   it("serves every /api path through one catch-all route", () => {

@@ -2,6 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { Inventory, Item } from "../api/types";
+import { ApiError, Offline } from "../api/client";
 import { fakeApi, signedIn } from "../test-utils";
 
 function item(key: string, quantity: number, category: string, name = key): Item {
@@ -120,4 +121,104 @@ test("tapping an item lets the owner fix its quantity", async () => {
   expect(api.setQuantity).toHaveBeenCalledWith("eggs", 12);
   expect(await screen.findByText("×12")).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+// Summary card
+test("a summary card shows the in-stock count and the last change", async () => {
+  const twoMinAgo = new Date(Date.now() - 2 * 60_000).toISOString();
+  renderFridge({
+    ...STOCKED,
+    items: STOCKED.items.map((i) => (i.key === "milk" ? { ...i, last_changed_at: twoMinAgo } : i)),
+  });
+  const summary = await screen.findByRole("region", { name: "Fridge summary" });
+  expect(within(summary).getByText("3 in stock")).toBeInTheDocument();
+  expect(within(summary).getByText("Last change 2 min ago")).toBeInTheDocument();
+});
+
+// Summary with nothing changed yet
+test("the summary leaves out the last change when nothing has changed", async () => {
+  renderFridge({ items: STOCKED.items.map((i) => ({ ...i, last_changed_at: null })), pending_count: 0 });
+  const summary = await screen.findByRole("region", { name: "Fridge summary" });
+  expect(within(summary).getByText("3 in stock")).toBeInTheDocument();
+  expect(within(summary).queryByText(/Last change/)).not.toBeInTheDocument();
+});
+
+// Pending banner (inside the summary card)
+test("the pending link sits in the summary card", async () => {
+  renderFridge({ ...STOCKED, pending_count: 2 });
+  const summary = await screen.findByRole("region", { name: "Fridge summary" });
+  expect(within(summary).getByRole("link", { name: /2 items to confirm/ })).toBeInTheDocument();
+});
+
+// Item icons from name
+test("each item row shows its icon", async () => {
+  renderFridge({
+    items: [item("milk", 1, "dairy", "Milk"), item("apple", 3, "produce"), item("leftover pasta", 2, "leftovers")],
+    pending_count: 0,
+  });
+  await screen.findByText("Milk");
+  const icons = Array.from(document.querySelectorAll("[data-icon]")).map((e) => e.getAttribute("data-icon"));
+  expect(icons).toEqual(["🥛", "🍎", "🍝"]);
+});
+
+describe("no data", () => {
+  // No camera linked
+  test("a 409 shows No Data instead of the skeleton", async () => {
+    renderFailing(new ApiError(409));
+    expect(await screen.findByText("No Data")).toBeInTheDocument();
+    expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+  });
+
+  // First load fails
+  test.each([
+    ["a server error", new ApiError(500)],
+    ["being offline", new Offline("x")],
+  ])("a first load failing with %s shows No Data", async (_, error) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    renderFailing(error);
+    expect(await screen.findByText("No Data")).toBeInTheDocument();
+    expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+  });
+
+  test("offline on first load also shows the offline banner", async () => {
+    renderFailing(new Offline("x"));
+    expect(await screen.findByText("No Data")).toBeInTheDocument();
+    expect(screen.getByText(/Can't reach FridgeSense/)).toBeInTheDocument();
+  });
+
+  // Still loading
+  test("the skeleton shows while the first request is in flight", () => {
+    signedIn();
+    location.hash = "";
+    render(<App api={fakeApi({ inventory: vi.fn(() => new Promise(() => {})) })} />);
+    expect(screen.getByTestId("loading")).toBeInTheDocument();
+    expect(screen.queryByText("No Data")).not.toBeInTheDocument();
+  });
+
+  // Data arrives later
+  test("data from a later poll replaces No Data", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      signedIn();
+      location.hash = "";
+      const inventory = vi.fn().mockRejectedValueOnce(new ApiError(409)).mockResolvedValue({
+        items: [item("eggs", 6, "dairy", "Eggs")],
+        pending_count: 0,
+      });
+      render(<App api={fakeApi({ inventory })} />);
+      expect(await screen.findByText("No Data")).toBeInTheDocument();
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(await screen.findByText("Eggs")).toBeInTheDocument();
+      expect(screen.getByText("×6")).toBeInTheDocument();
+      expect(screen.queryByText("No Data")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  function renderFailing(error: Error) {
+    signedIn();
+    location.hash = "";
+    render(<App api={fakeApi({ inventory: vi.fn().mockRejectedValue(error) })} />);
+  }
 });

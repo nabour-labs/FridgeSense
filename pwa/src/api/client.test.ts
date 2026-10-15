@@ -33,6 +33,17 @@ test("item keys are URL-encoded", async () => {
   expect(fetch.mock.calls[0][1].method).toBe("PUT");
 });
 
+test("ask posts the question", async () => {
+  const fetch = respond(200, { intent: "find_item", answer: "Yes.", data: {} });
+  const result = await new ApiClient(() => "tok", fetch).ask("do I have milk?");
+  expect(result.answer).toBe("Yes.");
+  const [url, init] = fetch.mock.calls[0];
+  expect(url).toBe("/api/ask");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body)).toEqual({ question: "do I have milk?" });
+  expect(new Headers(init.headers).get("authorization")).toBe("Bearer tok");
+});
+
 test("sign-in sends no token", async () => {
   const fetch = respond(200, { token: "t", expires_at: "x", role: "owner" });
   await new ApiClient(() => null, fetch).signIn("open-sesame");

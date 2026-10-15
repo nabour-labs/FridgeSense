@@ -52,3 +52,9 @@ test("no openings gives zeros and no average", () => {
   expect(perHour([], UTC)).toEqual(Array(24).fill(0));
   expect(averageDuration([])).toBeNull();
 });
+
+// Today marked
+test("only today is marked as today", () => {
+  const days = perDay(WEEK, NOW, UTC);
+  expect(days.map((d) => d.isToday)).toEqual([false, false, false, false, false, false, true]);
+});

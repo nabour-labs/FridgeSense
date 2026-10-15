@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { DoorEvent } from "../api/types";
+import { ApiError } from "../api/client";
 import { fakeApi, signedIn } from "../test-utils";
 
 const opened = new Date();
@@ -58,15 +59,52 @@ test("unconfirmed changes are marked", async () => {
 });
 
 // Stills
-test("stills show as thumbnails that open full size", async () => {
-  const stills = [1, 2, 3, 4].map((n) => `https://stills.example.com/still-${n}.jpg?sig=x`);
-  renderActivity([event({ stills })]);
+const STILLS = [1, 2, 3, 4].map((n) => `https://stills.example.com/still-${n}.jpg?sig=x`);
+
+test("stills show with the first one featured, and open full size", async () => {
+  renderActivity([event({ stills: STILLS })]);
   const card = await screen.findByRole("article");
   const thumbs = within(card).getAllByRole("button", { name: /Still \d of 4/ });
   expect(thumbs).toHaveLength(4);
+  expect(thumbs[0]).toHaveAttribute("data-featured");
+  expect(thumbs[1]).not.toHaveAttribute("data-featured");
   await userEvent.click(thumbs[2]);
   const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByRole("img")).toHaveAttribute("src", stills[2]);
+  expect(within(dialog).getByRole("img")).toHaveAttribute("src", STILLS[2]);
+});
+
+// Step through stills
+test("the viewer steps to the next and previous still", async () => {
+  renderActivity([event({ stills: STILLS })]);
+  const card = await screen.findByRole("article");
+  await userEvent.click(within(card).getByRole("button", { name: "Still 3 of 4" }));
+  const dialog = screen.getByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next still" }));
+  expect(within(dialog).getByRole("img")).toHaveAttribute("src", STILLS[3]);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Previous still" }));
+  expect(within(dialog).getByRole("img")).toHaveAttribute("src", STILLS[2]);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Previous still" }));
+  expect(within(dialog).getByRole("img")).toHaveAttribute("src", STILLS[1]);
+  expect(within(dialog).getByRole("heading", { name: "Still 2 of 4" })).toBeInTheDocument();
+});
+
+// Viewer at the ends
+test("the viewer can't step past the first or last still", async () => {
+  renderActivity([event({ stills: STILLS })]);
+  const card = await screen.findByRole("article");
+  await userEvent.click(within(card).getByRole("button", { name: "Still 1 of 4" }));
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Previous still" })).toBeDisabled();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(within(card).getByRole("button", { name: "Still 4 of 4" }));
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Next still" })).toBeDisabled();
+});
+
+// No stills
+test("an event without stills shows no still area", async () => {
+  renderActivity([event({ stills: [] })]);
+  const card = await screen.findByRole("article");
+  expect(within(card).queryByRole("button", { name: /Still/ })).not.toBeInTheDocument();
+  expect(card.querySelector("[data-stills]")).toBeNull();
 });
 
 // Failed analysis
@@ -79,4 +117,32 @@ test("a failed analysis says so instead of listing changes", async () => {
 test("no door openings yet", async () => {
   renderActivity([]);
   expect(await screen.findByText(/No door openings in the last 7 days/)).toBeInTheDocument();
+});
+
+// No camera linked
+test("a 409 shows No Data instead of the skeleton", async () => {
+  signedIn();
+  location.hash = "#activity";
+  render(<App api={fakeApi({ events: vi.fn().mockRejectedValue(new ApiError(409)) })} />);
+  expect(await screen.findByText("No Data")).toBeInTheDocument();
+  expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+});
+
+// Later poll fails
+test("door openings stay listed when a later poll fails", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    signedIn();
+    location.hash = "#activity";
+    const events = vi.fn().mockResolvedValueOnce({ events: [event()] }).mockRejectedValue(new ApiError(500));
+    render(<App api={fakeApi({ events })} />);
+    expect(await screen.findByRole("article")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(events).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("article")).toBeInTheDocument();
+    expect(screen.queryByText("No Data")).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });

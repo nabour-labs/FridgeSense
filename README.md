@@ -191,6 +191,13 @@ FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec
 - "How many times did we open the fridge today?"
 - "When was the fridge last opened, and what changed?"
 
+**Ask screen.** The app's **Ask** tab answers the same questions without a voice assistant:
+- **Ways to ask:** tap the mic and speak, type a question, or tap one of the examples.
+- **Answers:** it shows the answer and reads it aloud. Answers come from the same data as the MCP tools, matched by keywords, so there's no AI-model call and no per-question cost.
+- **Browsers:** speech input works in Chrome and Safari, including on iPhone. Other browsers get the text box.
+- **Demo passcode:** it works with the read-only demo passcode, so judges can try it.
+- **Time zone:** "today" uses the same `timeZone` as the MCP server.
+
 **Turn it on.** The URL contains a random key; without it the endpoint answers 404. Set the key and print the full URL:
 
 ```bash

@@ -1,25 +1,22 @@
-import { Check, Pencil, X } from "lucide-react";
+import { Check, CheckCheck, Pencil, X } from "lucide-react";
 import { useCallback, useState, type FormEvent } from "react";
 import type { Pending } from "../api/types";
 import { useApp } from "../AppContext";
+import { EmptyState } from "../components/EmptyState";
+import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
 import { changeLabel, clock, dayLabel } from "../format";
-import { usePolling } from "../usePolling";
+import { useLoad } from "../useLoad";
 
 export function Review() {
-  const { api, report, online, role } = useApp();
+  const { api, report, role } = useApp();
   const canAct = role === "owner";
-  const [items, setItems] = useState<Pending[] | null>(null);
+  const { data: items, setData: setItems, failed } = useLoad(
+    useCallback(() => api.pending().then((r) => r.pending), [api]),
+    10_000,
+  );
   const [editing, setEditing] = useState<Pending | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    api.pending().then((r) => {
-      setItems(r.pending);
-      online();
-    }, report);
-  }, [api, report, online]);
-  usePolling(load, 10_000);
 
   async function act(p: Pending, action: () => Promise<unknown>) {
     setBusy(p.id);
@@ -34,16 +31,17 @@ export function Review() {
     }
   }
 
-  if (!items) return <div aria-hidden className="h-32 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  if (!items) {
+    if (failed) return <NoData />;
+    return <div aria-hidden data-testid="loading" className="h-32 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  }
   if (items.length === 0) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-300 px-6 py-12 text-center dark:border-slate-700">
-        <Check aria-hidden className="mx-auto mb-2 size-8 text-emerald-500" />
-        <p className="font-medium">Everything is confirmed.</p>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Changes the camera is unsure about show up here.
-        </p>
-      </div>
+      <EmptyState
+        Icon={CheckCheck}
+        title="Everything is confirmed."
+        hint="Changes the camera is unsure about show up here."
+      />
     );
   }
 
@@ -57,18 +55,19 @@ export function Review() {
       <ul className="space-y-3">
         {items.map((p) => (
           <li key={p.id}>
-            <article className="rounded-2xl bg-white p-4 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+            <article className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-900/5 ring-1 ring-slate-200 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-lg font-semibold">{changeLabel(p)}</p>
+                <div className="min-w-0">
+                  <p className="text-lg font-bold">{changeLabel(p)}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {dayLabel(p.opened_at)} · {clock(p.opened_at)}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                <span className="shrink-0 pt-1 text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">
                   {Math.round(p.confidence * 100)}% sure
                 </span>
               </div>
+              <ConfidenceMeter confidence={p.confidence} />
               {canAct && (
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <ActionButton
@@ -102,6 +101,26 @@ export function Review() {
   );
 }
 
+const METER_TONES = { low: "bg-rose-500", medium: "bg-warm-500", high: "bg-brand-500" } as const;
+
+function ConfidenceMeter({ confidence }: { confidence: number }) {
+  const value = Math.round(confidence * 100);
+  const tone = confidence < 0.5 ? "low" : confidence < 0.7 ? "medium" : "high";
+  return (
+    <div
+      role="meter"
+      aria-label="Confidence"
+      aria-valuenow={value}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      data-tone={tone}
+      className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+    >
+      <div className={`h-full rounded-full ${METER_TONES[tone]}`} style={{ width: `${value}%` }} />
+    </div>
+  );
+}
+
 function ActionButton({
   label,
   Icon,
@@ -120,9 +139,9 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-sm font-semibold disabled:opacity-50 ${
+      className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl text-sm font-semibold transition active:scale-[0.97] disabled:opacity-50 ${
         tone === "primary"
-          ? "bg-sky-600 text-white hover:bg-sky-700"
+          ? "bg-brand-600 text-white shadow-sm shadow-brand-700/30 hover:bg-brand-700"
           : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
       }`}
     >
@@ -152,7 +171,7 @@ function EditSheet({
   }
 
   const input =
-    "h-12 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-base outline-none focus:border-sky-500 dark:border-slate-700 dark:bg-slate-950";
+    "h-12 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-base outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950";
   return (
     <Sheet title={pending.direction === "added" ? "What was put in?" : "What was taken out?"} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
@@ -177,7 +196,7 @@ function EditSheet({
         <button
           type="submit"
           disabled={!valid}
-          className="h-12 w-full rounded-xl bg-sky-600 font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+          className="h-12 w-full rounded-xl bg-brand-600 font-semibold text-white transition hover:bg-brand-700 active:scale-[0.98] disabled:opacity-50"
         >
           Confirm
         </button>
