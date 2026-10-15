@@ -1,11 +1,74 @@
 @import "tailwindcss";
+@import "@fontsource-variable/plus-jakarta-sans";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* "Frost": a cool teal accent. */
+  --color-brand-50: oklch(0.98 0.02 192);
+  --color-brand-100: oklch(0.95 0.045 190);
+  --color-brand-200: oklch(0.9 0.08 188);
+  --color-brand-300: oklch(0.84 0.11 186);
+  --color-brand-400: oklch(0.77 0.13 185);
+  --color-brand-500: oklch(0.69 0.13 186);
+  --color-brand-600: oklch(0.59 0.115 188);
+  --color-brand-700: oklch(0.5 0.095 190);
+  --color-brand-800: oklch(0.42 0.075 192);
+  --color-brand-900: oklch(0.36 0.06 194);
+  --color-brand-950: oklch(0.26 0.045 196);
+
+  /* Warm accent for things that need attention. */
+  --color-warm-50: var(--color-amber-50);
+  --color-warm-100: var(--color-amber-100);
+  --color-warm-200: var(--color-amber-200);
+  --color-warm-300: var(--color-amber-300);
+  --color-warm-400: var(--color-amber-400);
+  --color-warm-500: var(--color-amber-500);
+  --color-warm-600: var(--color-amber-600);
+  --color-warm-700: var(--color-amber-700);
+  --color-warm-800: var(--color-amber-800);
+  --color-warm-900: var(--color-amber-900);
+  --color-warm-950: var(--color-amber-950);
+
+  /* "backwards", not "both": a transform left on <main> after the animation would trap fixed-position children. */
+  --animate-fade-up: fade-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  --animate-sheet-up: sheet-up 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  --animate-fade-in: fade-in 200ms ease-out backwards;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  @keyframes sheet-up {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+}
 
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
   }
   body {
-    @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    @apply bg-slate-50 font-sans text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

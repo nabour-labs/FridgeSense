@@ -1,0 +1,75 @@
+/** An emoji for an item: from its name, else its category, else a plate. */
+
+// Checked in order, so more specific words come first ("orange juice" before "orange").
+const BY_NAME: [RegExp, string][] = [
+  [/juice|smoothie/, "🧃"],
+  [/oat milk|almond milk|soy milk/, "🥛"],
+  [/milk|cream(?!\s*cheese)/, "🥛"],
+  [/yog(h)?urt/, "🥣"],
+  [/butter/, "🧈"],
+  [/cheese|cheddar|mozzarella|parmesan/, "🧀"],
+  [/eggplant|aubergine/, "🍆"],
+  [/egg/, "🥚"],
+  [/apple/, "🍎"],
+  [/banana/, "🍌"],
+  [/orange|clementine|mandarin/, "🍊"],
+  [/lemon|lime/, "🍋"],
+  [/grape/, "🍇"],
+  [/strawberr|berr/, "🍓"],
+  [/melon/, "🍉"],
+  [/pear/, "🍐"],
+  [/peach/, "🍑"],
+  [/avocado/, "🥑"],
+  [/tomato/, "🍅"],
+  [/carrot/, "🥕"],
+  [/broccoli/, "🥦"],
+  [/cucumber|pickle/, "🥒"],
+  [/pepper/, "🫑"],
+  [/corn/, "🌽"],
+  [/spinach|lettuce|salad|kale|greens|cabbage/, "🥬"],
+  [/mushroom/, "🍄"],
+  [/pasta|spaghetti|noodle/, "🍝"],
+  [/rice/, "🍚"],
+  [/pizza/, "🍕"],
+  [/soup|stew|curry/, "🍲"],
+  [/sandwich/, "🥪"],
+  [/chicken/, "🍗"],
+  [/bacon/, "🥓"],
+  [/steak|beef|pork|meat|sausage|ham/, "🥩"],
+  [/fish|salmon|tuna/, "🐟"],
+  [/shrimp|prawn/, "🦐"],
+  [/tofu/, "🧊"],
+  [/bread|bagel|tortilla/, "🍞"],
+  [/chocolate|candy/, "🍫"],
+  [/cake|pie|dessert/, "🍰"],
+  [/ice cream/, "🍨"],
+  [/soda|cola|can\b/, "🥤"],
+  [/beer/, "🍺"],
+  [/wine/, "🍷"],
+  [/water/, "💧"],
+  [/coffee/, "☕"],
+  [/ketchup|mustard|mayo|sauce|jam|dressing|salsa/, "🫙"],
+  [/bottle/, "🍾"],
+];
+
+const BY_CATEGORY: Record<string, string> = {
+  dairy: "🧀",
+  produce: "🥬",
+  fruit: "🍎",
+  vegetable: "🥕",
+  beverage: "🧃",
+  drink: "🧃",
+  leftovers: "🍱",
+  meat: "🥩",
+  seafood: "🐟",
+  snack: "🍫",
+  condiment: "🫙",
+  bakery: "🍞",
+  frozen: "🧊",
+};
+
+export function itemIcon(name: string, category: string): string {
+  const n = name.toLowerCase();
+  for (const [re, icon] of BY_NAME) if (re.test(n)) return icon;
+  return BY_CATEGORY[category.toLowerCase()] ?? "🍽️";
+}
