@@ -8,12 +8,12 @@ logger = logging.getLogger("fridgesense")
 
 REDACTED = "[redacted]"
 _EXACT = {"code", "passcode", "hmac_key", "authorization"}
-_PARTS = ("token", "secret")
 
 
 def _is_secret(key: str) -> bool:
+    # "access_token" is secret; token counts like "input_tokens" are not.
     k = key.lower()
-    return k in _EXACT or any(part in k for part in _PARTS)
+    return k in _EXACT or k.endswith("token") or "secret" in k
 
 
 def redact(value: Any) -> Any:

@@ -96,6 +96,16 @@ class FridgeTable:
             ),
         )
 
+    def add(self, pk: str, sk: str, field: str, amount: float) -> None:
+        """Atomically add `amount` to a number attribute (created at 0)."""
+        self.client.update_item(
+            TableName=self.name,
+            Key=serialize({"pk": pk, "sk": sk}),
+            UpdateExpression="ADD #f :a",
+            ExpressionAttributeNames={"#f": field},
+            ExpressionAttributeValues=serialize({":a": amount}),
+        )
+
     def transact(self, items: list[dict]) -> None:
         """Write items atomically. Each entry is {"Put": {...}} or {"Update": {...}} with
         plain values; TableName and serialization are filled in here."""

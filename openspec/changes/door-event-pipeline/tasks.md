@@ -28,13 +28,13 @@
 
 ## 5. Nova analysis
 
-- [ ] 5.1 Write failing Stubber tests for "Request built from stills and inventory", "Empty inventory", "Stills sent as bytes" (exact `converse` request); verify they fail
-- [ ] 5.2 Implement request building (labels, images, prompt, forced tool, temperature 0, model from config) to make the tests pass
-- [ ] 5.3 Write failing tests for "Valid answer", "Text before the tool call", "Values out of range", "Invalid answer retried once", "Invalid answer twice"; verify they fail
-- [ ] 5.4 Implement response parsing, normalization and the one retry on an invalid answer to make the tests pass
-- [ ] 5.5 Write failing tests for "Throttled once" (task raises `BedrockRetryable`, then succeeds on the next call) and "Request rejected" (`ValidationException` and `AccessDeniedException` mark the door event `analysis_failed` without raising `BedrockRetryable`); verify they fail
-- [ ] 5.6 Implement Bedrock error mapping and the `analyze` and `mark_failed` tasks to make the tests pass
-- [ ] 5.7 Write failing tests for "Cost of one analysis" and "Cost of a retried analysis" (`nova_cost` log lines and `nova_usd`); then implement cost calculation and logging, and verify they pass
+- [x] 5.1 Write failing Stubber tests for "Request built from stills and inventory", "Empty inventory", "Stills sent as bytes" (exact `converse` request); verify they fail
+- [x] 5.2 Implement request building (labels, images, prompt, forced tool, temperature 0, model from config) to make the tests pass
+- [x] 5.3 Write failing tests for "Valid answer", "Text before the tool call", "Values out of range", "Invalid answer retried once", "Invalid answer twice"; verify they fail
+- [x] 5.4 Implement response parsing, normalization and the one retry on an invalid answer to make the tests pass
+- [x] 5.5 Write failing tests for "Throttled once" (task raises `BedrockRetryable`, then succeeds on the next call) and "Request rejected" (`ValidationException` and `AccessDeniedException` mark the door event `analysis_failed` without raising `BedrockRetryable`); verify they fail
+- [x] 5.6 Implement Bedrock error mapping and the `analyze` and `mark_failed` tasks to make the tests pass
+- [x] 5.7 Write failing tests for "Cost of one analysis" and "Cost of a retried analysis" (`nova_cost` log lines and `nova_usd`); then implement cost calculation and logging, and verify they pass
 
 ## 6. Inventory
 
