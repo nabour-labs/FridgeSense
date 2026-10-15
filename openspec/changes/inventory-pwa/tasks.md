@@ -43,7 +43,7 @@
 - [x] 6.7 Implement `stats.ts` and the Stats screen (Recharts bars, today, average) to make the tests pass, including a component test that renders the numbers for "Stats from events"
 - [x] 6.8 Write failing tests for "Manifest" (from `src/manifest.ts`) and "Offline shell" (workbox `navigateFallback` and `/api` denylist; the app shows the can't-reach message when `ApiClient` throws `Offline`); then add the manifest, icons and PWA config, and verify they pass
 - [x] 6.9 Write failing component tests for "Demo sign-in", "No edits on Fridge", "No actions on Review" and "Write refused"; then store the role, add the badge and gate the edit controls, and verify they pass
-- [ ] 6.10 Polish pass: dark mode, 360 px layout with no horizontal scroll, 44 px touch targets, no layout jumps while polling. Verify with `npm run build && npm run preview` in the browser at 360×740 and at desktop width, light and dark
+- [x] 6.10 Polish pass: dark mode, 360 px layout with no horizontal scroll, 44 px touch targets, no layout jumps while polling. Verify with `npm run build && npm run preview` in the browser at 360×740 and at desktop width, light and dark
 
 ## 7. Infrastructure
 
