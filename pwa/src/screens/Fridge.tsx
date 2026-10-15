@@ -7,7 +7,8 @@ import { ago, plural, titleCase } from "../format";
 import { usePolling } from "../usePolling";
 
 export function Fridge() {
-  const { api, report, online, go } = useApp();
+  const { api, report, online, go, role } = useApp();
+  const canEdit = role === "owner";
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [editing, setEditing] = useState<Item | null>(null);
 
@@ -62,7 +63,7 @@ export function Fridge() {
           <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200 dark:divide-slate-800 dark:bg-slate-900 dark:ring-slate-800">
             {items.map((item) => (
               <li key={item.key}>
-                <ItemRow item={item} onEdit={() => setEditing(item)} />
+                <ItemRow item={item} onEdit={canEdit ? () => setEditing(item) : undefined} />
               </li>
             ))}
           </ul>
@@ -82,7 +83,7 @@ export function Fridge() {
           <ul className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
             {outOf.map((item) => (
               <li key={item.key}>
-                <ItemRow item={item} onEdit={() => setEditing(item)} />
+                <ItemRow item={item} onEdit={canEdit ? () => setEditing(item) : undefined} />
               </li>
             ))}
           </ul>
