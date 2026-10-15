@@ -9,6 +9,7 @@ from botocore.config import Config
 
 from fridgesense import deps, door_events, inventory
 from fridgesense.analysis import NovaAnalyzer
+from fridgesense.faces import DEFAULT_PRICE, FaceBlurrer
 from fridgesense.table import FridgeTable
 
 sleep = time.sleep
@@ -19,6 +20,18 @@ def bedrock_client():
     return boto3.client(
         "bedrock-runtime", config=Config(retries={"max_attempts": 1}, read_timeout=60)
     )
+
+
+def rekognition_client():
+    return boto3.client(
+        "rekognition",
+        config=Config(retries={"max_attempts": 2}, connect_timeout=5, read_timeout=10),
+    )
+
+
+def _blurrer() -> FaceBlurrer:
+    price = float(os.environ.get("FACE_DETECT_PRICE") or DEFAULT_PRICE)
+    return FaceBlurrer(rekognition_client(), price)
 
 
 def _bucket() -> str:
@@ -43,6 +56,7 @@ def handler(event, context):
             FridgeTable(),
             _bucket(),
             check,
+            _blurrer(),
             state,
             sleep,
         )

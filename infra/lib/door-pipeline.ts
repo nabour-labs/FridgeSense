@@ -34,6 +34,7 @@ export interface DoorPipelineProps {
   novaModelId: string;
   novaPriceIn: string;
   novaPriceOut: string;
+  faceDetectPrice: string;
 }
 
 /** ARNs a Bedrock model ID may route to: a `us.` profile fans out to three US regions. */
@@ -86,6 +87,7 @@ export class DoorPipeline extends Construct {
         NOVA_MODEL_ID: props.novaModelId,
         NOVA_PRICE_IN: props.novaPriceIn,
         NOVA_PRICE_OUT: props.novaPriceOut,
+        FACE_DETECT_PRICE: props.faceDetectPrice,
       },
     });
     this.bucket.grantReadWrite(fn);
@@ -98,6 +100,10 @@ export class DoorPipeline extends Construct {
         actions: ["bedrock:InvokeModel"],
         resources: bedrockResources(stack, props.novaModelId),
       }),
+    );
+    // Faces in stills are blurred before storage. DetectFaces has no resource-level scoping.
+    fn.addToRolePolicy(
+      new PolicyStatement({ actions: ["rekognition:DetectFaces"], resources: ["*"] }),
     );
 
     const step = (name: string, task: string) =>
