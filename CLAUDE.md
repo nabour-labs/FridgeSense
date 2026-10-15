@@ -3,6 +3,8 @@
 A Ring Indoor Cam 2K watches the fridge. Each door opening triggers a Ring webhook; the clip and stills go to S3, Amazon Bedrock Nova lists what was added or removed, and the app keeps a running inventory plus open/close stats. Front ends: a PWA and an MCP server for Alexa+ ("do I have milk?").
 
 - Full plan, Ring API notes and hackathon rules: [docs/hackathon-plan.md](docs/hackathon-plan.md)
+- Friction log: [docs/friction-log.md](docs/friction-log.md)
+- **Scope: single-user demo MVP.** Build only what the "Demo MVP scope" section of the plan keeps; everything it cuts is a stretch goal for after the MVP works end to end.
 - Deadline: **Fri Oct 23 2026, 12:00 pm PT**. Prefer the smallest change that works; Fire TV only if everything else is done by Oct 20.
 
 ## Workflow: OpenSpec + TDD
@@ -23,11 +25,15 @@ TDD rules (also enforced in `openspec/config.yaml`):
 - Tests never hit live Ring, AWS or Bedrock: use recorded webhooks and canned responses under `tests/fixtures/`, moto or botocore Stubber for AWS, and stubbed Bedrock Converse responses.
 - Report the test command and its result when finishing a task.
 
+## Friction log
+
+Whenever you use a service the hackathon covers (Ring Partner API, Alexa+, any AWS service or AWS CDK, MCP or Strands, Fire TV) and hit friction, add an entry to [docs/friction-log.md](docs/friction-log.md) in the same task. Friction includes unclear or missing docs, surprising behavior, errors, missing features, awkward IAM, and slow or confusing setup. Use the template at the top of the file, newest first. Record only what actually happened, with exact commands and error text. If there was no friction, add nothing. Mention new entries when reporting the task.
+
 ## Stack
 
-- **Python 3.13** (uv, pytest, ruff, Pydantic): Ring client, Lambdas, Step Functions tasks, Nova analysis, Strands agent, MCP server (official Python SDK, Streamable HTTP, spec 2025-11-25)
+- **Python 3.13** (uv, pytest, ruff, Pydantic): Ring client, Lambdas, Step Functions tasks, Nova analysis, MCP server (official Python SDK, Streamable HTTP, spec 2025-11-25)
 - **TypeScript**: PWA (Vite + React + vite-plugin-pwa + Tailwind + Recharts, Vitest) and AWS CDK infrastructure
-- AWS us-east-1: API Gateway HTTP API, Lambda, Step Functions, DynamoDB (single table), S3, Secrets Manager, Cognito, Bedrock Nova
+- AWS us-east-1: API Gateway HTTP API, Lambda, Step Functions, DynamoDB (single table), S3, Secrets Manager, Bedrock Nova. No Cognito: one passcode in Secrets Manager
 
 ## Accounts and credentials
 
@@ -56,9 +62,12 @@ You have no AWS or GitHub accounts of your own. Every Bash command runs as Jayso
 
 **Branches and PRs**
 
-- `main` is protected: never commit or push to it directly. Work on a feature branch (e.g. `feat/<openspec-change-name>`) and merge through a PR.
+- `main` is protected: never commit or push to it directly.
+- All development starts from `local`, the integration branch. Branch each feature off `local` (e.g. `feat/<openspec-change-name>`), then merge it straight back into `local` with no PR, once its tests pass locally. Feature branches stay local too.
+- `local` has no remote: never push it or set an upstream for it. To ship to `main`, cut a branch from `local` (e.g. `release/<yyyy-mm-dd>`), push that branch and open the PR from it, with Jayson's OK.
+- `local` has no CI gate, so run the tests before merging into it.
 - Every PR to `main` must pass the `unit-tests` check ([.github/workflows/unit-tests.yml](.github/workflows/unit-tests.yml)). It runs pytest for each Python project and `npm test` for each Node package whenever the PR changes code; PRs that only touch docs, `openspec/`, `.claude/` or Markdown pass without running tests.
-- Run the same tests locally before opening a PR. New Python projects need a `pyproject.toml` with pytest as a dev dependency; new Node packages need a `test` script that runs once and exits (e.g. `vitest run`).
+- Run the same tests locally before merging into `local` and before opening the PR to `main`. New Python projects need a `pyproject.toml` with pytest as a dev dependency; new Node packages need a `test` script that runs once and exits (e.g. `vitest run`).
 - Branch protection is applied by [scripts/protect-main.sh](scripts/protect-main.sh). Only `jnabor` can merge into `main`. Because you run as `jnabor`, never merge a PR unless Jayson explicitly asks.
 
 ## Hard rules
@@ -66,6 +75,6 @@ You have no AWS or GitHub accounts of your own. Every Bash command runs as Jayso
 - Credentials and secrets live in config or Secrets Manager, never in code or commits. Ring Client Secret and webhook signing key are shown only once — keep them out of the repo.
 - Key all stored data by Ring `account_id` and device ID.
 - Webhook handler: verify `X-Signature` (HMAC-SHA256 of the raw body, `sha256=` hex) first, skip duplicates by `meta.request_id`, reply 200 within 5 s, and do the work asynchronously. Avoid 4xx responses to Ring (10+ in a row can disable the webhook).
-- Raw clips auto-delete after ~7 days; support "delete my data".
+- Raw stills and clips auto-delete after ~7 days (S3 lifecycle).
 - The product name never includes "Ring", "Amazon" or "Alexa".
 - AWS costs are paid out of pocket: only analyze real door openings and log Nova cost per clip.

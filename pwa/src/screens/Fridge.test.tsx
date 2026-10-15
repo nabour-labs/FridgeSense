@@ -1,0 +1,123 @@
+import { act, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import App from "../App";
+import type { Inventory, Item } from "../api/types";
+import { fakeApi, signedIn } from "../test-utils";
+
+function item(key: string, quantity: number, category: string, name = key): Item {
+  return { key, name, category, quantity, last_changed_at: "2026-10-15T08:00:00.000Z" };
+}
+
+const STOCKED: Inventory = {
+  items: [
+    item("soda can", 0, "beverage"),
+    item("eggs", 6, "dairy", "Eggs"),
+    item("milk", 1, "dairy", "Milk"),
+    item("apple", 3, "produce"),
+  ],
+  pending_count: 0,
+};
+
+function renderFridge(inventory: Inventory | (() => Inventory) = STOCKED, role?: "viewer") {
+  signedIn(role);
+  location.hash = "";
+  const get = typeof inventory === "function" ? inventory : () => inventory;
+  const api = fakeApi({ inventory: vi.fn(async () => get()) });
+  render(<App api={api} />);
+  return api;
+}
+
+// Items by category
+test("items are grouped by category", async () => {
+  renderFridge();
+  const dairy = await screen.findByRole("region", { name: "Dairy" });
+  expect(within(dairy).getByText("Eggs")).toBeInTheDocument();
+  expect(within(dairy).getByText("×6")).toBeInTheDocument();
+  expect(within(dairy).getByText("Milk")).toBeInTheDocument();
+  expect(within(dairy).getByText("×1")).toBeInTheDocument();
+  const produce = screen.getByRole("region", { name: "Produce" });
+  expect(within(produce).getByText("apple")).toBeInTheDocument();
+  expect(within(produce).getByText("×3")).toBeInTheDocument();
+});
+
+// Out of stock
+test("items with quantity 0 are only in the Out of section", async () => {
+  renderFridge();
+  await screen.findByRole("region", { name: "Dairy" });
+  expect(screen.queryByRole("region", { name: "Beverage" })).not.toBeInTheDocument();
+  const outOf = screen.getByRole("group", { name: /Out of/ });
+  expect(within(outOf).getByText("soda can")).toBeInTheDocument();
+  expect(outOf).not.toHaveAttribute("open");
+});
+
+// Pending banner
+test("a banner links to Review when changes are pending", async () => {
+  renderFridge({ ...STOCKED, pending_count: 2 });
+  const banner = await screen.findByRole("link", { name: /2 items to confirm/ });
+  await userEvent.click(banner);
+  expect(await screen.findByRole("heading", { name: "Review" })).toBeInTheDocument();
+});
+
+test("one pending change reads in the singular", async () => {
+  renderFridge({ ...STOCKED, pending_count: 1 });
+  expect(await screen.findByRole("link", { name: /1 item to confirm/ })).toBeInTheDocument();
+});
+
+// Empty fridge
+test("an empty fridge explains when items appear", async () => {
+  renderFridge({ items: [], pending_count: 0 });
+  expect(await screen.findByText(/fridge looks empty/i)).toBeInTheDocument();
+  expect(screen.getByText(/after the next door opening/i)).toBeInTheDocument();
+});
+
+describe("polling", () => {
+  let visibility: DocumentVisibilityState = "visible";
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    visibility = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  // Live refresh
+  test("the inventory refreshes every 10 s without a reload", async () => {
+    let eggs = 6;
+    const api = renderFridge(() => ({ items: [item("eggs", eggs, "dairy", "Eggs")], pending_count: 0 }));
+    expect(await screen.findByText("×6")).toBeInTheDocument();
+    eggs = 9;
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(await screen.findByText("×9")).toBeInTheDocument();
+    expect(api.inventory).toHaveBeenCalledTimes(2);
+  });
+
+  // Hidden app does not poll
+  test("no requests while the page is hidden", async () => {
+    const api = renderFridge();
+    await screen.findByRole("region", { name: "Dairy" });
+    visibility = "hidden";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(api.inventory).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Fix a quantity
+test("tapping an item lets the owner fix its quantity", async () => {
+  const api = renderFridge();
+  (api.setQuantity as ReturnType<typeof vi.fn>).mockResolvedValue({
+    items: [item("eggs", 12, "dairy", "Eggs")],
+    pending_count: 0,
+  });
+  await userEvent.click(await screen.findByRole("button", { name: /Eggs/ }));
+  const dialog = screen.getByRole("dialog", { name: "Eggs" });
+  const input = within(dialog).getByLabelText("Quantity");
+  await userEvent.clear(input);
+  await userEvent.type(input, "12");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(api.setQuantity).toHaveBeenCalledWith("eggs", 12);
+  expect(await screen.findByText("×12")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
