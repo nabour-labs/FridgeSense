@@ -1,0 +1,11 @@
+{
+  "FaceDetails": [
+    {
+      "BoundingBox": {"Width": 0.20, "Height": 0.30, "Left": 0.40, "Top": 0.20},
+      "Landmarks": [],
+      "Pose": {"Roll": 1.2, "Yaw": -8.4, "Pitch": 3.1},
+      "Quality": {"Brightness": 71.5, "Sharpness": 46.0},
+      "Confidence": 99.1
+    }
+  ]
+}

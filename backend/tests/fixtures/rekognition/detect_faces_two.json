@@ -1,0 +1,12 @@
+{
+  "FaceDetails": [
+    {
+      "BoundingBox": {"Width": 0.15, "Height": 0.25, "Left": 0.05, "Top": 0.10},
+      "Confidence": 98.7
+    },
+    {
+      "BoundingBox": {"Width": 0.15, "Height": 0.25, "Left": 0.70, "Top": 0.30},
+      "Confidence": 92.4
+    }
+  ]
+}
