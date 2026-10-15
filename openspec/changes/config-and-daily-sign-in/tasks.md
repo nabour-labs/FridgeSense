@@ -2,29 +2,29 @@
 
 ## 1. 24-hour session tokens (inventory-api)
 
-- [ ] 1.1 Write failing tests in `tests/test_session.py` for "Token one day old" (T + 24 h accepted, T + 24 h + 1 s rejected) and "Token from before the change" (a token signed with the `fridgesense-session-v1` label and a future `exp` is rejected), and update the existing `TTL_S == 30 days` assertion to 24 h; run `uv run pytest tests/test_session.py` and verify they fail on the TTL and label
-- [ ] 1.2 Set `TTL_S = 24 * 3600` and the key label to `fridgesense-session-v2` in `session.py`; verify 1.1 passes
-- [ ] 1.3 Update `tests/test_api_auth.py` "Correct passcode" and "Demo passcode" to expect `expires_at` = now + 24 h, add an API-level "Token one day old" test (`GET /api/inventory` at the boundary gives 200 then 401 `{"error": "sign in"}`), and verify `uv run pytest tests/test_api_auth.py tests/test_session.py` is green
+- [x] 1.1 Write failing tests in `tests/test_session.py` for "Token one day old" (T + 24 h accepted, T + 24 h + 1 s rejected) and "Token from before the change" (a token signed with the `fridgesense-session-v1` label and a future `exp` is rejected), and update the existing `TTL_S == 30 days` assertion to 24 h; run `uv run pytest tests/test_session.py` and verify they fail on the TTL and label
+- [x] 1.2 Set `TTL_S = 24 * 3600` and the key label to `fridgesense-session-v2` in `session.py`; verify 1.1 passes
+- [x] 1.3 Update `tests/test_api_auth.py` "Correct passcode" and "Demo passcode" to expect `expires_at` = now + 24 h, add an API-level "Token one day old" test (`GET /api/inventory` at the boundary gives 200 then 401 `{"error": "sign in"}`), and verify `uv run pytest tests/test_api_auth.py tests/test_session.py` is green
 
 ## 2. Sign-in expiry in the PWA (inventory-app)
 
-- [ ] 2.1 Write failing Vitest tests in `src/session.test.ts`: `saveSession` stores `expires_at`; `loadSession` returns null and clears storage for a past expiry ("Opened after 24 hours") and for a token with no stored expiry ("Token stored without expiry"); run `npm test -- session` and verify they fail
-- [ ] 2.2 Add `expiresAt` to `StoredSession` and `saveSession`/`loadSession`/`clearSession` in `session.ts`, and pass `expires_at` from `onSignedIn` in `App.tsx`; verify 2.1 passes
-- [ ] 2.3 Write failing tests in `App.test.tsx` for "Opened after 24 hours" (SignIn shown, no inventory call) and "Expires while open" (fake timers past `expires_at` → SignIn within 60 s with fetch failing as offline); verify they fail
-- [ ] 2.4 Add the 30 s interval and `visibilitychange` expiry check in `App.tsx`; verify 2.3 and the existing "Session expired" 401 test pass
+- [x] 2.1 Write failing Vitest tests in `src/session.test.ts`: `saveSession` stores `expires_at`; `loadSession` returns null and clears storage for a past expiry ("Opened after 24 hours") and for a token with no stored expiry ("Token stored without expiry"); run `npm test -- session` and verify they fail
+- [x] 2.2 Add `expiresAt` to `StoredSession` and `saveSession`/`loadSession`/`clearSession` in `session.ts`, and pass `expires_at` from `onSignedIn` in `App.tsx`; verify 2.1 passes
+- [x] 2.3 Write failing tests in `App.test.tsx` for "Opened after 24 hours" (SignIn shown, no inventory call) and "Expires while open" (fake timers past `expires_at` → SignIn within 60 s with fetch failing as offline); verify they fail
+- [x] 2.4 Add the 30 s interval and `visibilitychange` expiry check in `App.tsx`; verify 2.3 and the existing "Session expired" 401 test pass
 
 ## 3. Config storage and validation (analysis-config)
 
-- [ ] 3.1 Write failing tests in `tests/test_analysis_config.py` for the validators: annotation bounds (empty, spaces, 1, 80, 81 chars), image decode (bad base64, PNG magic, exactly 200,000 vs 200,001 bytes with JPEG magic) and instructions (trim, "" clears, 1,000 vs 1,001, non-string); run `uv run pytest tests/test_analysis_config.py` and verify they fail because the module is missing
-- [ ] 3.2 Implement `validate_annotation`, `decode_image` and `validate_instructions` in `fridgesense/analysis_config.py`; verify 3.1 passes
-- [ ] 3.3 Write failing moto-DynamoDB tests for `add_reference`/`delete_reference`/`save_instructions`/`load`: oldest-first order, "Seventh reference" raises `TooMany` with 6 kept, unknown id returns False, "Config kept per account", "Nothing configured" gives empty config; verify they fail
-- [ ] 3.4 Implement the storage functions with `CONFIG#instructions` and `REF#<created_ms>-<hex>` items; verify 3.3 passes and `uv run ruff check src tests` is clean
+- [x] 3.1 Write failing tests in `tests/test_analysis_config.py` for the validators: annotation bounds (empty, spaces, 1, 80, 81 chars), image decode (bad base64, PNG magic, exactly 200,000 vs 200,001 bytes with JPEG magic) and instructions (trim, "" clears, 1,000 vs 1,001, non-string); run `uv run pytest tests/test_analysis_config.py` and verify they fail because the module is missing
+- [x] 3.2 Implement `validate_annotation`, `decode_image` and `validate_instructions` in `fridgesense/analysis_config.py`; verify 3.1 passes
+- [x] 3.3 Write failing moto-DynamoDB tests for `add_reference`/`delete_reference`/`save_instructions`/`load`: oldest-first order, "Seventh reference" raises `TooMany` with 6 kept, unknown id returns False, "Config kept per account", "Nothing configured" gives empty config; verify they fail
+- [x] 3.4 Implement the storage functions with `CONFIG#instructions` and `REF#<created_ms>-<hex>` items; verify 3.3 passes and `uv run ruff check src tests` is clean
 
 ## 4. Config HTTP routes (analysis-config)
 
-- [ ] 4.1 Write failing contract tests in `tests/test_api_config.py` for "Config with references" (viewer read), "Nothing configured", "Save instructions", "Clear instructions", "Instructions too long or wrong type", "Add a reference", "Bad annotation", "Not a JPEG or too large", "Seventh reference" (409), "Delete a reference", "Unknown reference" (404), "Viewer cannot change config" (403 on all three writes) and "No token" (401); run them and verify they fail with 404 for the unknown routes
-- [ ] 4.2 Add `GET /api/config`, `PUT /api/config/instructions`, `POST /api/config/references` and `DELETE /api/config/references/{id}` (writes with `write=True`, ids via `encode_id`) in `handlers/api.py`, with error bodies exactly as specified; verify 4.1 passes
-- [ ] 4.3 Refactor shared "return full config" code with tests green; run `uv run pytest` for the whole backend
+- [x] 4.1 Write failing contract tests in `tests/test_api_config.py` for "Config with references" (viewer read), "Nothing configured", "Save instructions", "Clear instructions", "Instructions too long or wrong type", "Add a reference", "Bad annotation", "Not a JPEG or too large", "Seventh reference" (409), "Delete a reference", "Unknown reference" (404), "Viewer cannot change config" (403 on all three writes) and "No token" (401); run them and verify they fail with 404 for the unknown routes
+- [x] 4.2 Add `GET /api/config`, `PUT /api/config/instructions`, `POST /api/config/references` and `DELETE /api/config/references/{id}` (writes with `write=True`, ids via `encode_id`) in `handlers/api.py`, with error bodies exactly as specified; verify 4.1 passes
+- [x] 4.3 Refactor shared "return full config" code with tests green; run `uv run pytest` for the whole backend
 
 ## 5. Config in the Nova request (fridge-change-analysis)
 

@@ -112,6 +112,13 @@ class FridgeTable:
     def put(self, item: dict) -> None:
         self.client.put_item(TableName=self.name, Item=serialize(item))
 
+    def delete(self, pk: str, sk: str) -> bool:
+        """Delete one item; False if it did not exist."""
+        resp = self.client.delete_item(
+            TableName=self.name, Key=serialize({"pk": pk, "sk": sk}), ReturnValues="ALL_OLD"
+        )
+        return "Attributes" in resp
+
     def update(self, pk: str, sk: str, values: dict) -> None:
         names = {f"#{i}": k for i, k in enumerate(values)}
         expr = ", ".join(f"#{i} = :{i}" for i in range(len(values)))

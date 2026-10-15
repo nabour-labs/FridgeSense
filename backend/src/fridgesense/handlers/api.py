@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import boto3
 from botocore.config import Config
 
-from fridgesense import ask, inventory, session
+from fridgesense import analysis_config, ask, inventory, session
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.store import TokenStore, load_app_config
@@ -257,6 +257,64 @@ def put_item(ctx: Context) -> dict:
         ctx.table, ctx.account_id, unquote(ctx.params["key"]), quantity, now=_now_iso()
     )
     return json_response(200, inventory_body(ctx.table, ctx.account_id))
+
+
+def config_body(table: FridgeTable, account_id: str) -> dict:
+    loaded = analysis_config.load(table, account_id)
+    return {
+        "instructions": loaded.instructions,
+        "references": [
+            {
+                "id": encode_id(r.sk),
+                "annotation": r.annotation,
+                "image": base64.b64encode(r.image).decode(),
+                "created_at": r.created_at,
+            }
+            for r in loaded.references
+        ],
+    }
+
+
+@route("GET", "/api/config")
+def get_config(ctx: Context) -> dict:
+    return json_response(200, config_body(ctx.table, ctx.account_id))
+
+
+@route("PUT", "/api/config/instructions", write=True)
+def put_instructions(ctx: Context) -> dict:
+    try:
+        body = _json_body(ctx.req) or {}
+        text = analysis_config.validate_instructions(body.get("instructions"))
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    analysis_config.save_instructions(ctx.table, ctx.account_id, text, now_ms=int(now() * 1000))
+    return json_response(200, config_body(ctx.table, ctx.account_id))
+
+
+@route("POST", "/api/config/references", write=True)
+def post_reference(ctx: Context) -> dict:
+    body = _json_body(ctx.req) or {}
+    try:
+        annotation = analysis_config.validate_annotation(body.get("annotation"))
+        image = analysis_config.decode_image(body.get("image"))
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    try:
+        analysis_config.add_reference(
+            ctx.table, ctx.account_id, annotation, image, now_ms=int(now() * 1000)
+        )
+    except analysis_config.TooMany:
+        limit = analysis_config.MAX_REFERENCES
+        return json_response(409, {"error": f"at most {limit} reference images"})
+    return json_response(200, config_body(ctx.table, ctx.account_id))
+
+
+@route("DELETE", "/api/config/references/{id}", write=True)
+def delete_reference(ctx: Context) -> dict:
+    sk = decode_id(ctx.params["id"], analysis_config.REF_PREFIX)
+    if sk is None or not analysis_config.delete_reference(ctx.table, ctx.account_id, sk):
+        return json_response(404, {"error": "not found"})
+    return json_response(200, config_body(ctx.table, ctx.account_id))
 
 
 MAX_QUESTION = 200

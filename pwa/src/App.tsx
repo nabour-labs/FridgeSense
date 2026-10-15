@@ -39,6 +39,20 @@ export default function App({ api: injected }: { api?: Api }) {
     return () => removeEventListener("hashchange", onHash);
   }, []);
 
+  // Ask for the passcode again once the session expires, without waiting for a 401.
+  useEffect(() => {
+    if (!session) return;
+    const check = () => {
+      if (!loadSession()) setSession(null);
+    };
+    const t = setInterval(check, 30_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [session]);
+
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(null), 3000);
@@ -71,7 +85,7 @@ export default function App({ api: injected }: { api?: Api }) {
       <SignIn
         api={api}
         onSignedIn={(s) => {
-          const stored = { token: s.token, role: s.role };
+          const stored = { token: s.token, role: s.role, expiresAt: Date.parse(s.expires_at) };
           saveSession(stored);
           setSession(stored);
         }}
