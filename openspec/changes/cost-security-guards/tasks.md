@@ -2,10 +2,10 @@
 
 ## 1. Door check before face detection (`door-event-detection`)
 
-- [ ] 1.1 Write failing tests in `backend/tests/test_stills.py`: raw download returns `(n, bytes)` and writes no S3 object; "Four stills saved" (bright door box) and "Download link gets no token", "Still not ready yet", "Too few stills" (403) still hold against the split functions; `store_blurred_stills` stores only blurred bytes
-- [ ] 1.2 Write failing tests in `backend/tests/test_fetch_stills_task.py`: "Closed door costs no face detection", "Door stayed closed", "Too few stills" (no DetectFaces, `still_keys = []`), "Too few stills survive face detection", "Door check runs on downloaded stills", "Fridge light visible"; replace the two blurred-door-check tests that encode the old requirement
-- [ ] 1.3 Implement: split `download_stills` into raw download and `store_blurred_stills`, reorder `fetch_stills` (download → door check → blur and store only on `door_open`) to make tests pass
-- [ ] 1.4 Run `tests/test_faces.py`, `tests/test_analyze_task.py` and `tests/test_pipeline_e2e.py` to confirm "Analysis receives blurred bytes", the fail-closed scenarios and the end-to-end path still pass; refactor with tests green
+- [x] 1.1 Write failing tests in `backend/tests/test_stills.py`: raw download returns `(n, bytes)` and writes no S3 object; "Four stills saved" (bright door box) and "Download link gets no token", "Still not ready yet", "Too few stills" (403) still hold against the split functions; `store_blurred_stills` stores only blurred bytes
+- [x] 1.2 Write failing tests in `backend/tests/test_fetch_stills_task.py`: "Closed door costs no face detection", "Door stayed closed", "Too few stills" (no DetectFaces, `still_keys = []`), "Too few stills survive face detection", "Door check runs on downloaded stills", "Fridge light visible"; replace the two blurred-door-check tests that encode the old requirement
+- [x] 1.3 Implement: split `download_stills` into raw download and `store_blurred_stills`, reorder `fetch_stills` (download → door check → blur and store only on `door_open`) to make tests pass
+- [x] 1.4 Run `tests/test_faces.py`, `tests/test_analyze_task.py` and `tests/test_pipeline_e2e.py` to confirm "Analysis receives blurred bytes", the fail-closed scenarios and the end-to-end path still pass; refactor with tests green
 
 ## 2. Ring token takeover guard (`ring-account-link`)
 
