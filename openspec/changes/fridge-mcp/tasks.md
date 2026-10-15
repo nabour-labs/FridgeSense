@@ -26,8 +26,8 @@
 
 ## 5. Infrastructure
 
-- [ ] 5.1 Write failing Vitest assertions for the MCP Lambda (handler, arm64, 512 MB, 10 s, `TIME_ZONE` env, log group `/fridgesense/mcp`), the `ANY /mcp/{key}` route, the `rate(5 minutes)` warm-up rule with `{"warmup": true}`, read-only table access (no Put/Update/Delete/BatchWrite), secrets read-only, and no Bedrock, S3 or Step Functions permissions; verify they fail
-- [ ] 5.2 Implement the MCP construct and the `timeZone` context to make the tests pass; verify `cdk synth` with real bundling includes `mcp` and `mangum` in the Lambda asset
+- [x] 5.1 Write failing Vitest assertions for the MCP Lambda (handler, arm64, 512 MB, 10 s, `TIME_ZONE` env, log group `/fridgesense/mcp`), the `ANY /mcp/{key}` route, the `rate(5 minutes)` warm-up rule with `{"warmup": true}`, read-only table access (no Put/Update/Delete/BatchWrite), secrets read-only, and no Bedrock, S3 or Step Functions permissions; verify they fail
+- [x] 5.2 Implement the MCP construct and the `timeZone` context to make the tests pass; verify `cdk synth` with real bundling includes `mcp` and `mangum` in the Lambda asset
 
 ## 6. Docs and final check
 

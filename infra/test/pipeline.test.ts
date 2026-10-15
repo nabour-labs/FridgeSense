@@ -206,6 +206,7 @@ describe("logs", () => {
     expect(names).toEqual([
       "/fridgesense/api",
       "/fridgesense/http",
+      "/fridgesense/mcp",
       "/fridgesense/pipeline",
       "/fridgesense/token-refresh",
     ]);

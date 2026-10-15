@@ -21,6 +21,7 @@ import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import { AppSite } from "./app-site.js";
 import { DoorPipeline } from "./door-pipeline.js";
+import { McpEndpoint } from "./mcp-endpoint.js";
 
 const BACKEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../backend");
 
@@ -113,6 +114,7 @@ export class FridgeSenseStack extends Stack {
       TokenRefreshFunction: "/fridgesense/token-refresh",
       PipelineFunction: "/fridgesense/pipeline",
       ApiFunction: "/fridgesense/api",
+      McpFunction: "/fridgesense/mcp",
     };
     const logGroup = (id: string) =>
       new LogGroup(this, `${id}Logs`, {
@@ -205,6 +207,18 @@ export class FridgeSenseStack extends Stack {
       tokenSecret,
       stillsBucket: doors.bucket,
       logGroup,
+    });
+
+    new McpEndpoint(this, "Mcp", {
+      api,
+      code,
+      baseEnvironment: common.environment,
+      table,
+      appSecret,
+      tokenSecret,
+      logGroup,
+      // "today" in fridge_activity means the household's day: cdk deploy -c timeZone=America/Vancouver
+      timeZone: context("timeZone", "America/Toronto"),
     });
 
     const base = api.apiEndpoint;
