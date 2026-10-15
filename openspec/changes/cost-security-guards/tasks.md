@@ -9,8 +9,8 @@
 
 ## 2. Ring token takeover guard (`ring-account-link`)
 
-- [ ] 2.1 Write failing tests in `backend/tests/test_token_exchange.py` for "Different account while one is linked", "Different account while relink is needed", "Same account links again" and "Different account before anything is linked"
-- [ ] 2.2 Implement the refusal in `linking.token_exchange` (409, `token_exchange_refused` log, store untouched) to make tests pass; confirm "Valid authorization code", "Ring rejects the code" and "Secrets never logged" still pass
+- [x] 2.1 Write failing tests in `backend/tests/test_token_exchange.py` for "Different account while one is linked", "Different account while relink is needed", "Same account links again" and "Different account before anything is linked"
+- [x] 2.2 Implement the refusal in `linking.token_exchange` (409, `token_exchange_refused` log, store untouched) to make tests pass; confirm "Valid authorization code", "Ring rejects the code" and "Secrets never logged" still pass
 
 ## 3. API throttling (`cost-and-abuse-guards`)
 
