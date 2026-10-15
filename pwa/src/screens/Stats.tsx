@@ -47,7 +47,7 @@ export function Stats() {
           <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} />
           <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
           <Tooltip cursor={{ fill: "rgba(148,163,184,0.15)" }} />
-          <Bar dataKey="opens" name="Opens" fill={SKY} radius={[6, 6, 0, 0]} />
+          <Bar dataKey="opens" name="Opens" fill={SKY} radius={[6, 6, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </Chart>
       <Chart title="Opens by hour">
@@ -55,7 +55,7 @@ export function Stats() {
           <XAxis dataKey="hour" tick={AXIS} tickLine={false} axisLine={false} interval={5} />
           <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
           <Tooltip cursor={{ fill: "rgba(148,163,184,0.15)" }} labelFormatter={(h) => `${h}:00`} />
-          <Bar dataKey="opens" name="Opens" fill={SKY} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="opens" name="Opens" fill={SKY} radius={[4, 4, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </Chart>
     </div>
