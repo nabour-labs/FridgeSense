@@ -31,5 +31,5 @@
 
 ## 6. Docs and final check
 
-- [ ] 6.1 Update the README: setting `mcp_key` (generated with `openssl rand -hex 32`), building the URL from the `McpUrlTemplate` output, connecting MCP Inspector and Claude Desktop, the Alexa+ MCP Toolkit steps (`alexa-ai configure`, `alexa-ai new mcp --mcp-server-url …`, `alexa-ai deploy`, test in the developer console simulator), example questions, and keeping the URL private; verify the commands match the code
-- [ ] 6.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check` and `cd infra && npm test && npx tsc --noEmit`; all green
+- [x] 6.1 Update the README: setting `mcp_key` (generated with `openssl rand -hex 32`), building the URL from the `McpUrlTemplate` output, connecting MCP Inspector and Claude Desktop, the Alexa+ MCP Toolkit steps (`alexa-ai configure`, `alexa-ai new mcp --mcp-server-url …`, `alexa-ai deploy`, test in the developer console simulator), example questions, and keeping the URL private; verify the commands match the code
+- [x] 6.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check` and `cd infra && npm test && npx tsc --noEmit`; all green
