@@ -2,6 +2,7 @@ import { ChartColumn, History, ListChecks, Refrigerator, WifiOff } from "lucide-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
+import { Activity } from "./screens/Activity";
 import { Fridge } from "./screens/Fridge";
 import { SignIn } from "./screens/SignIn";
 import { clearSession, loadSession, saveSession, type StoredSession } from "./session";
@@ -90,7 +91,8 @@ export default function App({ api: injected }: { api?: Api }) {
             Can't reach FridgeSense. Showing the last data.
           </p>
         )}
-        <main className="flex-1 px-4 pb-28">{tab === "fridge" && <Fridge />}</main>
+        <main className="flex-1 px-4 pb-28">{tab === "fridge" && <Fridge />}
+          {tab === "activity" && <Activity />}</main>
         {notice && (
           <p
             role="status"
