@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Protects the main branch: changes land only through PRs, and the "unit-tests" check must pass.
+# Protects the main branch: changes land only through PRs, the "unit-tests" check must pass,
+# and only jnabor can push or merge into main (admins included).
 # Run once after the GitHub repo exists and the workflow has run at least once.
 # Usage: scripts/protect-main.sh [owner/repo]   (defaults to the current repo)
 set -euo pipefail
@@ -17,7 +18,7 @@ gh api --method PUT "repos/$repo/branches/main/protection" --input - <<'JSON'
     "required_approving_review_count": 0,
     "dismiss_stale_reviews": true
   },
-  "restrictions": null,
+  "restrictions": { "users": ["jnabor"], "teams": [], "apps": [] },
   "required_linear_history": true,
   "allow_force_pushes": false,
   "allow_deletions": false,
