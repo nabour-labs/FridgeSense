@@ -54,6 +54,7 @@ describe("Lambdas", () => {
   it("run the Ring endpoints and token refresh with 256 MB, 10 s and the shared env vars", () => {
     const expected: Record<string, string[]> = {
       "fridgesense.handlers.http.handler": [
+        "APP_URL",
         "RING_APP_SECRET_ID",
         "RING_TOKENS_SECRET_ID",
         "STATE_MACHINE_ARN",
@@ -74,6 +75,16 @@ describe("Lambdas", () => {
       const env = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
       expect(Object.keys(env).sort()).toEqual(vars);
     }
+  });
+
+  it("passes the app site URL to the HTTP function", () => {
+    const [fn] = Object.values(resourcesOf("AWS::Lambda::Function")).filter(
+      (f) => f.Properties.Handler === "fridgesense.handlers.http.handler",
+    );
+    const env = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    const [distributionId] = Object.keys(resourcesOf("AWS::CloudFront::Distribution"));
+    expect(JSON.stringify(env.APP_URL)).toContain(distributionId);
+    expect(JSON.stringify(env.APP_URL)).toContain("https://");
   });
 
   it("refreshes Ring tokens every 3 hours", () => {
