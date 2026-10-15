@@ -29,8 +29,8 @@
 ## 5. PWA scaffold and data layer
 
 - [x] 5.1 Create `pwa/` (Vite 8, React 19, TypeScript, Tailwind v4, Recharts, lucide-react, vite-plugin-pwa, Vitest + Testing Library + jsdom; `npm test` = `vitest run`); verify `npm test` runs and `npm run build` produces `dist/index.html`
-- [ ] 5.2 Write failing tests for `ApiClient`: bearer header, JSON bodies, 401 → `Unauthorized`, 403 → `ReadOnly`, network failure → `Offline`; then implement it and verify the tests pass
-- [ ] 5.3 Write failing tests for `usePolling` (fake timers): immediate call, repeat every 10 s, no calls while `document.visibilityState` is hidden, a call on becoming visible; then implement it and verify the tests pass
+- [x] 5.2 Write failing tests for `ApiClient`: bearer header, JSON bodies, 401 → `Unauthorized`, 403 → `ReadOnly`, network failure → `Offline`; then implement it and verify the tests pass
+- [x] 5.3 Write failing tests for `usePolling` (fake timers): immediate call, repeat every 10 s, no calls while `document.visibilityState` is hidden, a call on becoming visible; then implement it and verify the tests pass
 
 ## 6. PWA screens
 
