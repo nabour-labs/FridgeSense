@@ -1,4 +1,4 @@
-import { ApiClient, Offline, ReadOnly, Unauthorized } from "./client";
+import { ApiClient, ApiError, Offline, ReadOnly, Unauthorized } from "./client";
 
 function respond(status: number, body: unknown = {}) {
   return vi.fn().mockResolvedValue(
@@ -74,4 +74,47 @@ test("events request carries days", async () => {
   const fetch = respond(200, { events: [] });
   await new ApiClient(() => "t", fetch).events(7);
   expect(fetch.mock.calls[0][0]).toBe("/api/events?days=7");
+});
+
+const CONFIG = { instructions: "", references: [] };
+
+test.each([
+  ["config", (api: ApiClient) => api.config(), "GET", "/api/config", undefined],
+  [
+    "saveInstructions",
+    (api: ApiClient) => api.saveInstructions("Count yogurt cups individually."),
+    "PUT",
+    "/api/config/instructions",
+    { instructions: "Count yogurt cups individually." },
+  ],
+  [
+    "addReference",
+    (api: ApiClient) => api.addReference("soda can", "/9j/AAA="),
+    "POST",
+    "/api/config/references",
+    { annotation: "soda can", image: "/9j/AAA=" },
+  ],
+  ["deleteReference", (api: ApiClient) => api.deleteReference("UkVGIzE="), "DELETE", "/api/config/references/UkVGIzE%3D", undefined],
+])("%s sends the right request", async (_, callApi, method, path, body) => {
+  const fetch = respond(200, CONFIG);
+  await expect(callApi(new ApiClient(() => "t", fetch))).resolves.toEqual(CONFIG);
+  const [url, init] = fetch.mock.calls[0];
+  expect(url).toBe(path);
+  expect(init.method).toBe(method);
+  expect(init.body === undefined ? undefined : JSON.parse(init.body)).toEqual(body);
+});
+
+test("ApiError carries the server's error text", async () => {
+  const api = new ApiClient(() => "t", respond(409, { error: "at most 6 reference images" }));
+  const err = await api.addReference("x", "y").catch((e) => e);
+  expect(err).toBeInstanceOf(ApiError);
+  expect(err.status).toBe(409);
+  expect(err.message).toBe("at most 6 reference images");
+});
+
+test("ApiError falls back to the status when the body has no error text", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response("oops", { status: 500 }));
+  const err = await new ApiClient(() => "t", fetch).inventory().catch((e) => e);
+  expect(err).toBeInstanceOf(ApiError);
+  expect(err.message).toBe("HTTP 500");
 });

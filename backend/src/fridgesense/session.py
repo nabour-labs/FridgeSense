@@ -11,12 +11,13 @@ from typing import Literal
 
 from fridgesense.store import AppConfig
 
-TTL_S = 30 * 24 * 3600
+TTL_S = 24 * 3600  # sign in again once a day
 Role = Literal["owner", "viewer"]
 
 
 def _key(passcode: str) -> bytes:
-    return hmac.new(passcode.encode(), b"fridgesense-session-v1", hashlib.sha256).digest()
+    # v2 since tokens last 24 h: v1 (30-day) tokens no longer verify.
+    return hmac.new(passcode.encode(), b"fridgesense-session-v2", hashlib.sha256).digest()
 
 
 def _passcode_for(cfg: AppConfig, role: str) -> str:

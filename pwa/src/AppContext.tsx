@@ -4,7 +4,18 @@ import type { Role } from "./api/types";
 
 export type Api = Pick<
   ApiClient,
-  "signIn" | "inventory" | "events" | "pending" | "confirm" | "reject" | "setQuantity" | "ask"
+  | "signIn"
+  | "inventory"
+  | "events"
+  | "pending"
+  | "confirm"
+  | "reject"
+  | "setQuantity"
+  | "ask"
+  | "config"
+  | "saveInstructions"
+  | "addReference"
+  | "deleteReference"
 >;
 
 export interface AppContextValue {
@@ -17,7 +28,7 @@ export interface AppContextValue {
   go: (tab: Tab) => void;
 }
 
-export type Tab = "fridge" | "activity" | "review" | "stats" | "ask";
+export type Tab = "fridge" | "activity" | "review" | "stats" | "ask" | "config";
 
 export const AppContext = createContext<AppContextValue | null>(null);
 

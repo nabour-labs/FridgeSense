@@ -18,6 +18,16 @@ export function mockApi(): Plugin {
   ].map(([key, name, category, quantity, ago]) => ({
     key, name, category, quantity, last_changed_at: iso(ago as number),
   }));
+  // A 2×2 grey JPEG so the reference grid has something to show.
+  const tiny =
+    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAACAAIBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
+  let config: {
+    instructions: string;
+    references: { id: string; annotation: string; image: string; created_at: string }[];
+  } = {
+    instructions: "Count yogurt cups individually.",
+    references: [{ id: "ref1", annotation: "milk bag (2 L, white with blue print)", image: tiny, created_at: new Date().toISOString() }],
+  };
   let pending = [
     { id: "p1", door_event_id: "e1", item: "chocolate bar", category: "snack", direction: "removed",
       quantity: 1, confidence: 0.62, opened_at: iso(50 * MIN) },
@@ -65,7 +75,7 @@ export function mockApi(): Plugin {
           res.end(JSON.stringify(body));
         };
         const url = req.url ?? "";
-        if (req.method === "POST" && url === "/session") return send(200, { token: "mock", expires_at: iso(-30 * 24 * HOUR), role: process.env.FRIDGESENSE_MOCK === "viewer" ? "viewer" : "owner" });
+        if (req.method === "POST" && url === "/session") return send(200, { token: "mock", expires_at: iso(-24 * HOUR), role: process.env.FRIDGESENSE_MOCK === "viewer" ? "viewer" : "owner" });
         // FRIDGESENSE_MOCK=nocamera: signed in, but no Ring account linked yet.
         if (process.env.FRIDGESENSE_MOCK === "nocamera") return send(409, { error: "no camera linked" });
         if (url === "/inventory") return send(200, inventory());
@@ -85,6 +95,38 @@ export function mockApi(): Plugin {
             send(200, { intent: "unknown", answer: `Mock answer to "${question}".`, data: null });
           });
           return;
+        }
+        if (url === "/config" && req.method === "GET") return send(200, config);
+        if (url.startsWith("/config/") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+        if (req.method === "PUT" && url === "/config/instructions") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            config = { ...config, instructions: String(JSON.parse(body).instructions ?? "").trim() };
+            send(200, config);
+          });
+          return;
+        }
+        if (req.method === "POST" && url === "/config/references") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { annotation, image } = JSON.parse(body);
+            if (config.references.length >= 6) return send(409, { error: "at most 6 reference images" });
+            const id = `ref${Date.now()}`;
+            config = {
+              ...config,
+              references: [...config.references, { id, annotation: String(annotation).trim(), image, created_at: new Date().toISOString() }],
+            };
+            send(200, config);
+          });
+          return;
+        }
+        const ref = url.match(/^\/config\/references\/(.+)$/);
+        if (req.method === "DELETE" && ref) {
+          const before = config.references.length;
+          config = { ...config, references: config.references.filter((r) => r.id !== decodeURIComponent(ref[1])) };
+          return config.references.length < before ? send(200, config) : send(404, { error: "not found" });
         }
         const put = url.match(/^\/items\/(.+)$/);
         if (req.method === "PUT" && put) {

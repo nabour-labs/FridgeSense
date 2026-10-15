@@ -14,6 +14,13 @@
       "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5174", "--strictPort"],
       "env": { "FRIDGESENSE_MOCK": "nocamera" },
       "port": 5174
+    },
+    {
+      "name": "pwa-mock-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5175", "--strictPort"],
+      "env": { "FRIDGESENSE_MOCK": "1" },
+      "port": 5175
     }
   ]
 }

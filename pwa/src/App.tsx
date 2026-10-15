@@ -1,9 +1,10 @@
-import { ChartColumn, History, ListChecks, Mic, Refrigerator, WifiOff } from "lucide-react";
+import { ChartColumn, History, ListChecks, Mic, Refrigerator, Settings, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient, ApiError, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
 import { Activity } from "./screens/Activity";
 import { Ask } from "./screens/Ask";
+import { Config } from "./screens/Config";
 import { Fridge } from "./screens/Fridge";
 import { Review } from "./screens/Review";
 import { Stats } from "./screens/Stats";
@@ -20,6 +21,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Refrigerator }[] = [
 
 function tabFromHash(): Tab {
   const id = location.hash.replace("#", "");
+  if (id === "config") return "config"; // opened from the header gear, not a bottom tab
   return TABS.some((t) => t.id === id) ? (id as Tab) : "fridge";
 }
 
@@ -38,6 +40,20 @@ export default function App({ api: injected }: { api?: Api }) {
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);
+
+  // Ask for the passcode again once the session expires, without waiting for a 401.
+  useEffect(() => {
+    if (!session) return;
+    const check = () => {
+      if (!loadSession()) setSession(null);
+    };
+    const t = setInterval(check, 30_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [session]);
 
   useEffect(() => {
     if (!notice) return;
@@ -71,7 +87,7 @@ export default function App({ api: injected }: { api?: Api }) {
       <SignIn
         api={api}
         onSignedIn={(s) => {
-          const stored = { token: s.token, role: s.role };
+          const stored = { token: s.token, role: s.role, expiresAt: Date.parse(s.expires_at) };
           saveSession(stored);
           setSession(stored);
         }}
@@ -79,17 +95,30 @@ export default function App({ api: injected }: { api?: Api }) {
     );
   }
 
-  const current = TABS.find((t) => t.id === tab)!;
+  const title = tab === "config" ? "Config" : TABS.find((t) => t.id === tab)!.label;
   return (
     <AppContext.Provider value={{ api, role: session.role, report, online, go }}>
       <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-50/90 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur dark:bg-slate-950/90">
-          <h1 className="text-[1.75rem] font-bold tracking-tight">{current.label}</h1>
-          {session.role === "viewer" && (
-            <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-900">
-              Demo · read-only
-            </span>
-          )}
+          <h1 className="text-[1.75rem] font-bold tracking-tight">{title}</h1>
+          <div className="flex items-center gap-2">
+            {session.role === "viewer" && (
+              <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-900">
+                Demo · read-only
+              </span>
+            )}
+            <a
+              href="#config"
+              onClick={() => setTab("config")}
+              aria-label="Config"
+              aria-current={tab === "config" ? "page" : undefined}
+              className={`grid size-11 place-items-center rounded-full transition hover:bg-slate-200/70 dark:hover:bg-slate-800 ${
+                tab === "config" ? "text-brand-600 dark:text-brand-400" : "text-slate-500 dark:text-slate-400"
+              }`}
+            >
+              <Settings aria-hidden className="size-5" />
+            </a>
+          </div>
         </header>
         {offline && (
           <p className="mx-4 mb-3 flex animate-fade-in items-center gap-2 rounded-xl bg-warm-50 px-3 py-2 text-sm text-warm-800 ring-1 ring-warm-200 dark:bg-warm-950/60 dark:text-warm-200 dark:ring-warm-900">
@@ -103,6 +132,7 @@ export default function App({ api: injected }: { api?: Api }) {
           {tab === "review" && <Review />}
           {tab === "stats" && <Stats />}
           {tab === "ask" && <Ask />}
+          {tab === "config" && <Config />}
         </main>
         {notice && (
           <p

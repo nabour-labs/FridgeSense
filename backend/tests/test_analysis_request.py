@@ -73,3 +73,63 @@ def test_analyzer_sends_exactly_the_built_request():
         stub.add_response("converse", load_fixture("nova/converse_tool_use.json"), expected)
         NovaAnalyzer(client).analyze(STILLS, ["milk"])
         stub.assert_no_pending_responses()
+
+
+REFS = [("milk bag", jpeg(0.7)), ("soda can", jpeg(0.8))]
+REF_HEADER = (
+    "Reference images: examples of items in this fridge. They are not part of this door opening."
+)
+
+
+# References before stills
+def test_references_before_stills():
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS, ["milk"], references=REFS))
+    assert content[0] == {"text": REF_HEADER}
+    assert content[1] == {"text": "Reference 1: milk bag"}
+    assert content[2] == {"image": {"format": "jpeg", "source": {"bytes": REFS[0][1]}}}
+    assert content[3] == {"text": "Reference 2: soda can"}
+    assert content[4] == {"image": {"format": "jpeg", "source": {"bytes": REFS[1][1]}}}
+    assert content[5] == {"text": "Image 1 of 4"}
+    assert content[6]["image"]["source"]["bytes"] == STILLS[0]
+    assert "[milk]" in content[-1]["text"]
+
+
+# Reference images as bytes
+def test_reference_images_as_bytes_and_still_cap():
+    six_stills = STILLS + [jpeg(0.5), jpeg(0.6)]
+    content = content_of(build_request(DEFAULT_MODEL_ID, six_stills, [], references=REFS))
+    images = [c["image"]["source"]["bytes"] for c in content if "image" in c]
+    assert images == [REFS[0][1], REFS[1][1], *STILLS]
+    assert [c["text"] for c in content if c.get("text", "").startswith("Image ")] == [
+        f"Image {n} of 4" for n in range(1, 5)
+    ]
+
+
+# Custom instructions in the final text
+def test_custom_instructions_in_the_final_text():
+    final = content_of(
+        build_request(
+            DEFAULT_MODEL_ID, STILLS, ["milk"], instructions="Count yogurt cups individually."
+        )
+    )[-1]["text"]
+    owner = "Owner's instructions: Count yogurt cups individually."
+    assert owner in final
+    assert final.index("[milk]") < final.index(owner)
+    assert final.endswith(f"Call {TOOL_NAME} with your answer.")
+
+
+def test_custom_instructions_with_braces_are_kept_verbatim():
+    final = content_of(build_request(DEFAULT_MODEL_ID, STILLS, [], instructions="Use {x} as is"))
+    assert "Owner's instructions: Use {x} as is" in final[-1]["text"]
+
+
+# No config
+def test_no_config_request_is_unchanged():
+    plain = build_request(DEFAULT_MODEL_ID, STILLS, ["milk", "eggs"])
+    assert (
+        build_request(DEFAULT_MODEL_ID, STILLS, ["milk", "eggs"], references=[], instructions="")
+        == plain
+    )
+    text = content_of(plain)[-1]["text"]
+    assert "Owner's instructions" not in text
+    assert content_of(plain)[0] == {"text": "Image 1 of 4"}
