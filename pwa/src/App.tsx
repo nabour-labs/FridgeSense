@@ -1,8 +1,9 @@
-import { ChartColumn, History, ListChecks, Refrigerator, WifiOff } from "lucide-react";
+import { ChartColumn, History, ListChecks, Mic, Refrigerator, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
 import { Activity } from "./screens/Activity";
+import { Ask } from "./screens/Ask";
 import { Fridge } from "./screens/Fridge";
 import { Review } from "./screens/Review";
 import { Stats } from "./screens/Stats";
@@ -14,6 +15,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Refrigerator }[] = [
   { id: "activity", label: "Activity", Icon: History },
   { id: "review", label: "Review", Icon: ListChecks },
   { id: "stats", label: "Stats", Icon: ChartColumn },
+  { id: "ask", label: "Ask", Icon: Mic },
 ];
 
 function tabFromHash(): Tab {
@@ -98,6 +100,7 @@ export default function App({ api: injected }: { api?: Api }) {
           {tab === "activity" && <Activity />}
           {tab === "review" && <Review />}
           {tab === "stats" && <Stats />}
+          {tab === "ask" && <Ask />}
         </main>
         {notice && (
           <p
@@ -111,7 +114,7 @@ export default function App({ api: injected }: { api?: Api }) {
           aria-label="Screens"
           className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200/80 bg-white/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/85"
         >
-          <ul className="mx-auto grid max-w-xl grid-cols-4 px-2">
+          <ul className="mx-auto grid max-w-xl grid-cols-5 px-2">
             {TABS.map(({ id, label, Icon }) => (
               <li key={id}>
                 <a
