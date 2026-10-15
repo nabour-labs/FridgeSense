@@ -7,11 +7,23 @@ Gives the signed-in user's app HTTP access to the fridge inventory, door events,
 ## ADDED Requirements
 
 ### Requirement: Passcode sign-in returns a session token
-`POST /api/session` with `{"passcode": "<passcode>"}` SHALL return 200 `{"token": "<token>", "expires_at": "<ISO 8601>"}` when the passcode matches the configured one, with a token valid for 30 days. Changing the passcode SHALL invalidate existing tokens.
+`POST /api/session` with `{"passcode": "<passcode>"}` SHALL return 200 `{"token": "<token>", "expires_at": "<ISO 8601>", "role": "owner" | "viewer"}` when the passcode matches the configured owner passcode (role `owner`) or the optional configured demo passcode (role `viewer`), with a token valid for 30 days. Changing either passcode SHALL invalidate the existing tokens of that role only. When no demo passcode is configured, only the owner passcode SHALL sign in.
 
 #### Scenario: Correct passcode
 - **WHEN** the configured passcode is `open-sesame` and the body is `{"passcode": "open-sesame"}`
-- **THEN** the response is 200 with a non-empty `token` and an `expires_at` 30 days from now
+- **THEN** the response is 200 with a non-empty `token`, an `expires_at` 30 days from now and `role` `"owner"`
+
+#### Scenario: Demo passcode
+- **WHEN** the configured demo passcode is `look-only` and the body is `{"passcode": "look-only"}`
+- **THEN** the response is 200 with a non-empty `token`, an `expires_at` 30 days from now and `role` `"viewer"`
+
+#### Scenario: No demo passcode configured
+- **WHEN** no demo passcode is configured and the body is `{"passcode": ""}` or any value other than the owner passcode
+- **THEN** the response is 401 `{"error": "wrong passcode"}`
+
+#### Scenario: Demo passcode changed
+- **WHEN** an owner token and a viewer token were issued and the demo passcode then changes
+- **THEN** a request with the old viewer token gets 401 and a request with the owner token still succeeds
 
 #### Scenario: Wrong passcode
 - **WHEN** the body is `{"passcode": "guess"}` or has no `passcode`
@@ -39,6 +51,17 @@ Every `/api` route except `POST /api/session` SHALL require `Authorization: Bear
 #### Scenario: No linked Ring account
 - **WHEN** a signed-in request arrives but no Ring account is linked
 - **THEN** the response is 409 `{"error": "no camera linked"}`
+
+### Requirement: Viewer tokens are read-only
+A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be refused on every write route (`POST /api/pending/{id}/confirm`, `POST /api/pending/{id}/reject`, `PUT /api/items/{key}`) with 403 `{"error": "read-only"}`, changing nothing.
+
+#### Scenario: Viewer write refused
+- **WHEN** a viewer token calls `POST /api/pending/{id}/confirm` for an existing pending change, or `PUT /api/items/milk` with `{"quantity": 2}`
+- **THEN** the response is 403 `{"error": "read-only"}`, the pending change still exists and the inventory is unchanged
+
+#### Scenario: Viewer reads
+- **WHEN** a viewer token calls `GET /api/inventory`, `GET /api/events` and `GET /api/pending`
+- **THEN** each responds 200 with the same body an owner token gets
 
 ### Requirement: Inventory listing
 `GET /api/inventory` SHALL return `{"items": [...], "pending_count": n}`, where each item is `{"key", "name", "category", "quantity", "last_changed_at"}`, sorted by category then name, including items with quantity 0.

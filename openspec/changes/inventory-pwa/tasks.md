@@ -10,9 +10,9 @@
 
 ## 2. API: sessions and routing
 
-- [ ] 2.1 Write failing unit tests for token signing and verification: valid, expired, tampered, and signed with an old passcode; verify they fail
-- [ ] 2.2 Implement `session.py` (issue and verify, key derived from the passcode) to make the tests pass
-- [ ] 2.3 Write failing handler tests for "Correct passcode", "Wrong passcode", "Passcode changed", "No token", "Tampered or expired token", "Unknown route" and "No linked Ring account"; verify they fail
+- [ ] 2.1 Write failing unit tests for token signing and verification: valid, expired, tampered, signed with an old passcode, viewer role, viewer token after the demo passcode changes, and viewer token with no demo passcode configured; verify they fail
+- [ ] 2.2 Implement `session.py` (issue and verify with a `role` claim, key derived from that role's passcode) to make the tests pass
+- [ ] 2.3 Write failing handler tests for "Correct passcode", "Wrong passcode", "Passcode changed", "Demo passcode", "No demo passcode configured", "Demo passcode changed", "No token", "Tampered or expired token", "Unknown route" and "No linked Ring account"; verify they fail
 - [ ] 2.4 Implement `handlers/api.py` with the dispatch table, `POST /api/session` and auth gating to make the tests pass
 
 ## 3. API: reads
@@ -23,13 +23,13 @@
 
 ## 4. API: writes
 
-- [ ] 4.1 Write failing tests for `GET /api/pending`, "Confirm over HTTP", "Pending change not found" and "Invalid quantity" (confirm and `PUT /api/items/{key}`), plus reject over HTTP; verify they fail
-- [ ] 4.2 Implement the pending, confirm, reject and set-quantity routes on top of the inventory functions to make the tests pass
+- [ ] 4.1 Write failing tests for `GET /api/pending`, "Confirm over HTTP", "Pending change not found" and "Invalid quantity" (confirm and `PUT /api/items/{key}`), plus reject over HTTP, "Viewer write refused" and "Viewer reads"; verify they fail
+- [ ] 4.2 Implement the pending, confirm, reject and set-quantity routes on top of the inventory functions, with write routes refusing viewer tokens, to make the tests pass
 
 ## 5. PWA scaffold and data layer
 
 - [ ] 5.1 Create `pwa/` (Vite 8, React 19, TypeScript, Tailwind v4, Recharts, lucide-react, vite-plugin-pwa, Vitest + Testing Library + jsdom; `npm test` = `vitest run`); verify `npm test` runs and `npm run build` produces `dist/index.html`
-- [ ] 5.2 Write failing tests for `ApiClient`: bearer header, JSON bodies, 401 → `Unauthorized`, network failure → `Offline`; then implement it and verify the tests pass
+- [ ] 5.2 Write failing tests for `ApiClient`: bearer header, JSON bodies, 401 → `Unauthorized`, 403 → `ReadOnly`, network failure → `Offline`; then implement it and verify the tests pass
 - [ ] 5.3 Write failing tests for `usePolling` (fake timers): immediate call, repeat every 10 s, no calls while `document.visibilityState` is hidden, a call on becoming visible; then implement it and verify the tests pass
 
 ## 6. PWA screens
@@ -42,7 +42,8 @@
 - [ ] 6.6 Write failing unit tests for `stats.ts` covering "Stats from events", "Local time zone" and "No openings yet"; verify they fail
 - [ ] 6.7 Implement `stats.ts` and the Stats screen (Recharts bars, today, average) to make the tests pass, including a component test that renders the numbers for "Stats from events"
 - [ ] 6.8 Write failing tests for "Manifest" (from `src/manifest.ts`) and "Offline shell" (workbox `navigateFallback` and `/api` denylist; the app shows the can't-reach message when `ApiClient` throws `Offline`); then add the manifest, icons and PWA config, and verify they pass
-- [ ] 6.9 Polish pass: dark mode, 360 px layout with no horizontal scroll, 44 px touch targets, no layout jumps while polling. Verify with `npm run build && npm run preview` in the browser at 360×740 and at desktop width, light and dark
+- [ ] 6.9 Write failing component tests for "Demo sign-in", "No edits on Fridge", "No actions on Review" and "Write refused"; then store the role, add the badge and gate the edit controls, and verify they pass
+- [ ] 6.10 Polish pass: dark mode, 360 px layout with no horizontal scroll, 44 px touch targets, no layout jumps while polling. Verify with `npm run build && npm run preview` in the browser at 360×740 and at desktop width, light and dark
 
 ## 7. Infrastructure
 
@@ -52,5 +53,5 @@
 
 ## 8. Docs and final check
 
-- [ ] 8.1 Update the README: opening the app (the `SiteUrl` output), the passcode command, installing to the home screen, local PWA development (`npm run dev` with a proxy to the deployed API), and the localStorage token note; verify the commands match the code
+- [ ] 8.1 Update the README: opening the app (the `SiteUrl` output), the passcode command, installing to the home screen, local PWA development (`npm run dev` with a proxy to the deployed API), the localStorage token note, and a "Try it (judges)" section with the `SiteUrl`, the demo passcode, what a viewer can see, the command that sets `demo_passcode` in `fridgesense/ring-app`, and a reminder to remove it after judging; verify the commands match the code
 - [ ] 8.2 Run `cd backend && uv run pytest && uv run ruff check && uv run ruff format --check`, `cd pwa && npm test && npx tsc --noEmit && npm run build`, and `cd infra && npm test && npx tsc --noEmit`; all green

@@ -10,11 +10,12 @@ Tracks: **Ring** (the main front end of the Ring-triggered product) and **AWS Bu
 
 - **A JSON API under `/api`** on the existing HTTP API, served by a new API Lambda:
   - a passcode sign-in that returns a signed session token
+  - a second, **read-only demo passcode** for judges: it signs in to the same data but can't confirm, reject or edit
   - inventory, door events (with short-lived links to their stills), and pending changes
   - confirm or reject a pending change, and set an item's quantity by hand
 - **Inventory rules for confirm, reject and manual fixes**, sharing the save step's name normalization and quantity floor.
 - **A PWA (`pwa/`)** built with Vite, React, TypeScript, Tailwind, Recharts and vite-plugin-pwa:
-  - **Sign in:** the passcode.
+  - **Sign in:** the passcode. With the demo passcode, the app shows a "Demo · read-only" badge and hides every edit control.
   - **Fridge:** items by category with quantities, a banner for items to confirm, and an "out of" section.
   - **Activity:** door openings newest first, with time, duration, changes and still thumbnails.
   - **Review:** confirm, edit or reject pending changes.
@@ -41,7 +42,7 @@ Tracks: **Ring** (the main front end of the Ring-triggered product) and **AWS Bu
 ## Out of scope
 
 - Voice, Alexa+ and MCP (`fridge-mcp`).
-- Push notifications, multiple users and accounts, and passcode changes from the app.
+- Push notifications, multiple users and accounts (the demo viewer is read-only access to the same account, not a second user), and passcode changes from the app.
 - Reference photos, item photos, expiry dates and recipes.
 - Offline editing. The installed app shell opens offline; data needs the network.
 - A custom domain (the CloudFront domain is enough for the demo).

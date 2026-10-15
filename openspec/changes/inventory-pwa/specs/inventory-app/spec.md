@@ -115,3 +115,22 @@ The app SHALL ship a web app manifest (name "FridgeSense", standalone display, i
 #### Scenario: Offline shell
 - **WHEN** the installed app is opened without a network
 - **THEN** the app shell loads and shows that it can't reach FridgeSense, instead of a browser error page
+
+### Requirement: Read-only demo mode
+When the session's role is `viewer`, the app SHALL show a "Demo · read-only" badge on every screen, SHALL make Fridge items not editable, SHALL list pending changes on Review without Confirm, Edit or "Not right" buttons, and SHALL show "Read-only demo" without changing the screen's data if the API answers 403.
+
+#### Scenario: Demo sign-in
+- **WHEN** the user signs in with the demo passcode and the API returns `role` `"viewer"`
+- **THEN** the token and role are stored, the Fridge screen is shown and a "Demo · read-only" badge is visible
+
+#### Scenario: No edits on Fridge
+- **WHEN** the role is `viewer` and the user taps eggs
+- **THEN** no quantity editor opens and no `PUT` request is sent
+
+#### Scenario: No actions on Review
+- **WHEN** the role is `viewer` and one change is pending
+- **THEN** Review lists it with item, direction, quantity and confidence, and shows no Confirm, Edit or "Not right" buttons
+
+#### Scenario: Write refused
+- **WHEN** a write request answers 403
+- **THEN** the app shows "Read-only demo" and the list on screen is unchanged
