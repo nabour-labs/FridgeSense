@@ -4,6 +4,15 @@ A Ring Indoor Cam 2K watches your fridge. Each time the door opens, the clip goe
 
 See [docs/hackathon-plan.md](docs/hackathon-plan.md) for the full plan.
 
+## Try it (judges)
+
+> **TODO before submitting:** replace the two placeholders below after `cdk deploy` and after setting the demo passcode (see [Demo access](#demo-access)).
+
+- App: **`<SiteUrl>`** (open it on a phone and add it to the home screen)
+- Demo passcode: **`<demo passcode>`**
+
+The demo passcode signs in **read-only** to the live fridge: the current inventory, every door opening from the last 7 days with the stills the camera took, items waiting for confirmation, and open/close stats. A "Demo · read-only" badge shows on every screen; confirming, editing and fixing counts are disabled.
+
 ## Development
 
 The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec) and built test-first. See [CLAUDE.md](CLAUDE.md) for the workflow.
@@ -12,6 +21,7 @@ The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpe
 
 - `backend/`: Python 3.13 package `fridgesense` (Ring client, Lambda handlers, CLI). uv + pytest.
 - `infra/`: AWS CDK app in TypeScript. Vitest.
+- `pwa/`: the phone app (Vite, React, Tailwind, Recharts, vite-plugin-pwa). Vitest + Testing Library.
 - `openspec/`: specs and changes.
 
 ### Run the tests
@@ -24,6 +34,10 @@ cd backend && uv sync && uv run pytest && uv run ruff check
 
 ```bash
 cd infra && npm ci && npm test
+```
+
+```bash
+cd pwa && npm ci && npm test
 ```
 
 Tests never call Ring or AWS: Ring responses come from `backend/tests/fixtures/`, AWS is mocked with moto.
@@ -115,6 +129,48 @@ set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --f
 ```
 
 Each door event also stores its total as `nova_usd`. Expect about $0.0014 per opening with Nova 2 Lite.
+
+### 7. Open the app
+
+`cdk deploy` builds the app and prints `SiteUrl`. Read it again any time:
+
+```bash
+set -a; source .env; set +a; aws cloudformation describe-stacks --stack-name FridgeSense --query "Stacks[0].Outputs[?OutputKey=='SiteUrl'].OutputValue" --output text
+```
+
+Sign in with the link passcode from step 3. To install it, open the URL on the phone, then use **Share → Add to Home Screen** (iPhone, Safari) or **⋮ → Install app** (Android, Chrome).
+
+The app keeps its session token in the browser's local storage for 30 days. That's fine for a single-user app on your own phone; changing the passcode signs every device out.
+
+### Demo access
+
+A second, read-only passcode lets judges look without changing anything. Set it (typed without echo):
+
+```bash
+set -a; source .env; set +a; read -rs "DEMO?Demo passcode: "; echo; aws secretsmanager get-secret-value --secret-id fridgesense/ring-app --query SecretString --output text | jq --arg d "$DEMO" '.demo_passcode=$d' | aws secretsmanager put-secret-value --secret-id fridgesense/ring-app --secret-string file:///dev/stdin
+```
+
+The Lambdas cache this secret for up to 5 minutes. After judging, remove it, which also signs out every demo session:
+
+```bash
+set -a; source .env; set +a; aws secretsmanager get-secret-value --secret-id fridgesense/ring-app --query SecretString --output text | jq 'del(.demo_passcode)' | aws secretsmanager put-secret-value --secret-id fridgesense/ring-app --secret-string file:///dev/stdin
+```
+
+Keep Ring active and use the fridge normally during judging (Nov 9–20) so the 7-day Activity, Stats and stills never run empty.
+
+### Work on the app locally
+
+Against the deployed backend (the dev server proxies `/api` to it):
+
+```bash
+cd pwa && FRIDGESENSE_URL=https://<your-distribution>.cloudfront.net npm run dev
+```
+
+Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in as the read-only demo):
+
+```bash
+cd pwa && FRIDGESENSE_MOCK=1 npm run dev
+```
 
 ### Remove
 
