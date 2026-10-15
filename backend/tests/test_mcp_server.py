@@ -10,7 +10,14 @@ from fridgesense.table import FridgeTable
 from tests.mcp_helpers import ACCOUNT, NOW, change, put_door, put_item
 
 pytestmark = pytest.mark.anyio
-TOOLS = ["find_item", "get_inventory", "fridge_activity", "last_opened"]
+TOOLS = [
+    "find_item",
+    "get_inventory",
+    "fridge_activity",
+    "last_opened",
+    "oldest_items",
+    "low_stock",
+]
 
 
 @pytest.fixture
@@ -76,6 +83,41 @@ async def test_last_opened_call(server):
     assert result.structured_content["added"] == [{"name": "milk", "count": 1}]
 
 
+async def test_oldest_items_call(server):
+    put_item("milk", 1, stocked_at="2026-10-11T00:00:00.000Z")
+    put_item("ketchup", 1, "condiment", stocked_at="2026-09-01T00:00:00.000Z")
+    async with Client(server, mode="legacy") as client:
+        result = await client.call_tool("oldest_items", {})
+        condiments = await client.call_tool("oldest_items", {"category": "condiment", "limit": 1})
+    assert result.is_error is False
+    assert result.structured_content["items"][0]["name"] == "milk"
+    assert result.structured_content["items"][0]["days_in_fridge"] == 5
+    assert condiments.structured_content["items"][0]["name"] == "ketchup"
+
+
+async def test_low_stock_call(server):
+    put_item("milk", 0, minutes_ago=90)
+    put_item("eggs", 2, peak_quantity=12)
+    async with Client(server, mode="legacy") as client:
+        result = await client.call_tool("low_stock", {})
+    assert result.is_error is False
+    assert result.structured_content["ran_out"][0]["name"] == "milk"
+    assert result.structured_content["running_low"][0]["usual_count"] == 12
+
+
+# Limit out of range
+@pytest.mark.parametrize("limit", [0, 21])
+async def test_limit_out_of_range(server, monkeypatch, limit):
+    calls = []
+    monkeypatch.setattr(FridgeTable, "query", lambda *a, **k: calls.append(a) or [])
+    async with Client(server, mode="legacy") as client:
+        result = await client.call_tool("oldest_items", {"limit": limit})
+    assert result.is_error is True
+    text = " ".join(getattr(c, "text", "") for c in result.content)
+    assert "limit" in text and ("1" in text or "20" in text)
+    assert calls == []
+
+
 # Unknown period
 async def test_unknown_period(server, monkeypatch):
     calls = []
@@ -89,10 +131,13 @@ async def test_unknown_period(server, monkeypatch):
 
 
 # Not linked
-async def test_not_linked(aws):
+@pytest.mark.parametrize(
+    ("tool", "args"), [("find_item", {"name": "milk"}), ("oldest_items", {}), ("low_stock", {})]
+)
+async def test_not_linked(aws, tool, args):
     from fridgesense.mcp_server import default_context
 
     async with Client(build_server(default_context), mode="legacy") as client:
-        result = await client.call_tool("find_item", {"name": "milk"})
+        result = await client.call_tool(tool, args)
     assert result.is_error is True
     assert "No camera is linked" in " ".join(getattr(c, "text", "") for c in result.content)

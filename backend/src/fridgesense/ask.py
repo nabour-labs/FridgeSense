@@ -16,15 +16,37 @@ from fridgesense.fridge_answers import (
     FindItemResult,
     InventoryResult,
     LastOpenedResult,
+    LowStockResult,
+    OldestItemsResult,
     normalize_query,
 )
 
-IntentName = Literal["find_item", "get_inventory", "fridge_activity", "last_opened", "unknown"]
+IntentName = Literal[
+    "find_item",
+    "get_inventory",
+    "fridge_activity",
+    "last_opened",
+    "oldest_items",
+    "low_stock",
+    "unknown",
+]
 
 
 HINT = "Try asking: do I have milk, what's in my fridge, or when was the fridge last opened?"
 LISTED_ITEMS = 5  # items named aloud before "and N more"
 ACTIVITY_CUES = ("how many times", "how often", "today", "this week")
+EAT_FIRST_CUES = ("eat first", "use first", "use up", "oldest", "going bad", "go bad", "expir")
+SHOPPING_CUES = (
+    "need to buy",
+    "should i buy",
+    "shopping list",
+    "grocery list",
+    "running low",
+    "what ran out",
+    "what have i run out of",
+    "what am i out of",
+)
+OLDEST_SPOKEN = 3  # items named aloud for "eat first"
 # Longest first where one lead-in starts another ("got any" before "any").
 ITEM_LEAD_INS = ("do i have", "do we have", "have i got", "is there", "are there", "got any", "any")
 ARTICLES = {"any", "some", "a", "an", "the", "more"}
@@ -91,6 +113,12 @@ def ask(table, account_id: str, question: str, now: datetime, tz: ZoneInfo) -> A
         case "last_opened":
             result = answers.last_opened(table, account_id, now=now)
             answer = say_last_opened(result)
+        case "oldest_items":
+            result = answers.oldest_items(table, account_id, now=now)
+            answer = say_oldest(result)
+        case "low_stock":
+            result = answers.low_stock(table, account_id, now=now)
+            answer = say_low_stock(result)
         case _:
             return AskResult(intent="unknown", answer=HINT, data=None)
     return AskResult(intent=intent.name, answer=answer, data=result.model_dump())
@@ -109,6 +137,10 @@ def _mentions_open(words: list[str]) -> bool:
 def parse(question: str) -> Intent:
     text = normalize(question)
     words = text.split()
+    if any(c in text for c in EAT_FIRST_CUES):
+        return Intent(name="oldest_items")
+    if any(c in text for c in SHOPPING_CUES):
+        return Intent(name="low_stock")
     if ("last" in words and _mentions_open(words)) or "what changed" in text:
         return Intent(name="last_opened")
     if _mentions_open(words) and any(c in text for c in ACTIVITY_CUES):
@@ -201,11 +233,8 @@ def say_inventory(result: InventoryResult, category: str | None) -> str:
     items = result.items
     if not items:
         return f"You have no {category} right now." if category else "Your fridge looks empty."
-    parts = [plural(i.count, i.name) for i in items[:LISTED_ITEMS]]
-    if len(items) > LISTED_ITEMS:
-        parts.append(f"{len(items) - LISTED_ITEMS} more")
     noun = "item" if len(items) == 1 else "items"
-    return f"You have {len(items)} {noun}: {spoken_list(parts)}."
+    return f"You have {len(items)} {noun}: {_listed([plural(i.count, i.name) for i in items])}."
 
 
 def _count(n: int, noun: str) -> str:
@@ -233,3 +262,39 @@ def say_last_opened(result: LastOpenedResult) -> str:
     if result.unsure_count:
         parts.append(f"{_count(result.unsure_count, 'change')} to check in the app.")
     return " ".join(parts)
+
+
+def _days(days: int) -> str:
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    return f"{days} days ago"
+
+
+def say_oldest(result: OldestItemsResult) -> str:
+    if not result.items:
+        return "Nothing in the fridge needs using up."
+    parts = [
+        f"{plural(i.count, i.name)} from {_days(i.days_in_fridge)}"
+        for i in result.items[:OLDEST_SPOKEN]
+    ]
+    return f"Use these first: {spoken_list(parts)}."
+
+
+def _listed(parts: list[str]) -> str:
+    """Up to LISTED_ITEMS parts, then "and N more"."""
+    shown = parts[:LISTED_ITEMS]
+    if len(parts) > LISTED_ITEMS:
+        shown.append(f"{len(parts) - LISTED_ITEMS} more")
+    return spoken_list(shown)
+
+
+def say_low_stock(result: LowStockResult) -> str:
+    sentences = []
+    if result.ran_out:
+        sentences.append(f"You're out of {_listed([i.name.lower() for i in result.ran_out])}.")
+    if result.running_low:
+        low = [plural(i.count, i.name) for i in result.running_low]
+        sentences.append(f"Running low: {_listed(low)}.")
+    return " ".join(sentences) or "Nothing has run out or is running low."

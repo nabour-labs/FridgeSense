@@ -17,6 +17,8 @@ def test_quantity_put_creates_new_item():
         "quantity": 2,
         "first_seen_at": WHEN,
         "last_changed_at": WHEN,
+        "stocked_at": WHEN,
+        "peak_quantity": 2,
     }
 
 

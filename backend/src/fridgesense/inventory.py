@@ -82,14 +82,28 @@ def quantity_put(
     if current is None and delta <= 0:
         return None
     current = current or {}
+    quantity = max(0, current.get("quantity", 0) + delta)
     return {
         "pk": pk,
         "sk": f"ITEM#{key}",
         "name": current.get("name", display),
         "category": current.get("category", category),
-        "quantity": max(0, current.get("quantity", 0) + delta),
+        "quantity": quantity,
         "first_seen_at": current.get("first_seen_at", when),
         "last_changed_at": when,
+        **stock_age(current, quantity, when),
+    }
+
+
+def stock_age(current: dict, quantity: int, when: str) -> dict:
+    """`stocked_at` and `peak_quantity` after a change: reset on restock, dropped at 0."""
+    if quantity <= 0:
+        return {}
+    if current.get("quantity", 0) <= 0:
+        return {"stocked_at": when, "peak_quantity": quantity}
+    return {
+        "stocked_at": current.get("stocked_at") or current.get("first_seen_at", when),
+        "peak_quantity": max(current.get("peak_quantity", current["quantity"]), quantity),
     }
 
 
@@ -288,6 +302,7 @@ def set_quantity(
             "quantity": quantity,
             "first_seen_at": current.get("first_seen_at", when),
             "last_changed_at": when,
+            **stock_age(current, quantity, when),
         }
     )
     log_event("quantity_set", account_id=account_id, item=key, quantity=quantity)

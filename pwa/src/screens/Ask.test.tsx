@@ -74,11 +74,21 @@ test("tapping an example asks it", async () => {
   await userEvent.click(screen.getByRole("button", { name: "What's in my fridge?" }));
   expect(await screen.findByText("Answer to What's in my fridge?")).toBeInTheDocument();
   expect(ask).toHaveBeenCalledWith("What's in my fridge?");
+});
+
+// Five examples
+test("five example questions, in order", async () => {
+  const ask = renderAsk().ask;
   expect(screen.getAllByRole("button", { name: /\?$/ }).map((b) => b.textContent)).toEqual([
     "Do I have milk?",
     "What's in my fridge?",
+    "What should I eat first?",
+    "What do I need to buy?",
     "When was the fridge last opened?",
   ]);
+  await userEvent.click(screen.getByRole("button", { name: "What should I eat first?" }));
+  expect(await screen.findByText("Answer to What should I eat first?")).toBeInTheDocument();
+  expect(ask).toHaveBeenCalledWith("What should I eat first?");
 });
 
 // Newest first

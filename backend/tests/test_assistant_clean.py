@@ -10,7 +10,14 @@ from fridgesense.mcp_server import FridgeContext, build_server
 from fridgesense.table import FridgeTable
 from tests.mcp_helpers import ACCOUNT, NOW
 
-TOOLS = ["find_item", "get_inventory", "fridge_activity", "last_opened"]
+TOOLS = [
+    "find_item",
+    "get_inventory",
+    "fridge_activity",
+    "last_opened",
+    "oldest_items",
+    "low_stock",
+]
 
 
 # Thinking and markdown removed

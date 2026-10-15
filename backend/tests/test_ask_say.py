@@ -14,15 +14,22 @@ from fridgesense.ask import (
     say_find,
     say_inventory,
     say_last_opened,
+    say_low_stock,
+    say_oldest,
 )
 from fridgesense.fridge_answers import (
     ActivityResult,
+    AgedItem,
     Counted,
     FindItemResult,
     InventoryItem,
     InventoryResult,
     ItemMatch,
     LastOpenedResult,
+    LowStockResult,
+    OldestItemsResult,
+    RanOut,
+    RunningLow,
 )
 
 
@@ -278,3 +285,72 @@ def test_hint_without_reading_the_table():
     )
     assert result.data is None
     assert table.calls == 0
+
+
+def aged(name, count, days):
+    return AgedItem(
+        name=name, category="dairy", count=count, in_fridge_since="x", days_in_fridge=days
+    )
+
+
+def oldest_result(*items):
+    return OldestItemsResult(items=list(items), skipped_categories=[])
+
+
+# Three oldest
+def test_three_oldest():
+    result = oldest_result(
+        aged("milk", 1, 9), aged("apple", 3, 6), aged("leftovers", 1, 0), aged("eggs", 6, 2)
+    )
+    assert say_oldest(result) == (
+        "Use these first: 1 milk from 9 days ago, 3 apples from 6 days ago "
+        "and 1 leftovers from today."
+    )
+
+
+# Yesterday
+def test_yesterday():
+    assert (
+        say_oldest(oldest_result(aged("yogurt", 2, 1)))
+        == "Use these first: 2 yogurts from yesterday."
+    )
+
+
+# Nothing to use up
+def test_nothing_to_use_up():
+    assert say_oldest(oldest_result()) == "Nothing in the fridge needs using up."
+
+
+def ran_out(name):
+    return RanOut(name=name, category="dairy", ran_out_at="x", days_ago=1)
+
+
+def low(name, count):
+    return RunningLow(name=name, category="dairy", count=count, usual_count=12)
+
+
+# Out and low
+def test_out_and_low():
+    result = LowStockResult(
+        ran_out=[ran_out("milk"), ran_out("Butter")], running_low=[low("eggs", 2)]
+    )
+    assert say_low_stock(result) == "You're out of milk and butter. Running low: 2 eggs."
+
+
+def test_long_lists_end_with_more():
+    result = LowStockResult(ran_out=[ran_out(f"item {n}") for n in range(7)], running_low=[])
+    assert say_low_stock(result) == (
+        "You're out of item 0, item 1, item 2, item 3, item 4 and 2 more."
+    )
+
+
+# Only low
+def test_only_low():
+    result = LowStockResult(ran_out=[], running_low=[low("apple", 3)])
+    assert say_low_stock(result) == "Running low: 3 apples."
+
+
+# Nothing to buy
+def test_nothing_to_buy():
+    result = LowStockResult(ran_out=[], running_low=[])
+    assert say_low_stock(result) == "Nothing has run out or is running low."
