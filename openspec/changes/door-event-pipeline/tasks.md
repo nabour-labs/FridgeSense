@@ -2,8 +2,8 @@
 
 ## 1. Setup and fixtures
 
-- [ ] 1.1 Add `pillow` to backend dependencies and a test helper that makes solid and half-bright JPEGs; verify `uv run pytest` still passes and `uv export --no-dev` lists pillow
-- [ ] 1.2 Add fixtures `ring/history_events.json`, `ring/history_events_pending.json`, `ring/history_events_string_ts.json`, `nova/converse_tool_use.json`, `nova/converse_text_then_tool.json`, `nova/converse_end_turn.json`; extend the fixture-parsing test and verify it passes
+- [x] 1.1 Add `pillow` to backend dependencies and a test helper that makes solid and half-bright JPEGs; verify `uv run pytest` still passes and `uv export --no-dev` lists pillow
+- [x] 1.2 Add fixtures `ring/history_events.json`, `ring/history_events_pending.json`, `ring/history_events_string_ts.json`, `nova/converse_tool_use.json`, `nova/converse_text_then_tool.json`, `nova/converse_end_turn.json`; extend the fixture-parsing test and verify it passes
 
 ## 2. Webhook hand-over to Step Functions
 
