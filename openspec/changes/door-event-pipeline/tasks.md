@@ -46,9 +46,9 @@
 
 ## 7. Infrastructure
 
-- [ ] 7.1 Write failing Vitest assertions: a state machine with Wait 20 s → FindWindow → Choice loop → FetchStills → Choice → Analyze (Retry on `BedrockRetryable`: 2 retries, 5 s, backoff 2; Catch → MarkFailed) → Save; the pipeline Lambda (arm64, 512 MB, 90 s, env `DOOR_BOX`, `DOOR_THRESHOLD`, `NOVA_MODEL_ID`, `NOVA_PRICE_IN`, `NOVA_PRICE_OUT`, `STILLS_BUCKET`, plus the shared vars); verify they fail
-- [ ] 7.2 Write failing Vitest assertions for the stills bucket ("Stills deleted after 7 days": a lifecycle expiration of 7 days; public access blocked; SSL enforced; encrypted) and for IAM (Bedrock `InvokeModel` only on the Nova 2 Lite profile and its three regional model ARNs; the webhook Lambda has `states:StartExecution` only on this state machine and gets `STATE_MACHINE_ARN`); verify they fail
-- [ ] 7.3 Implement the bucket, pipeline Lambda, state machine, IAM and CDK context (`doorBox`, `doorThreshold`, `novaModelId`) to make the tests pass; verify `cdk synth` with real bundling includes Pillow's arm64 binaries
+- [x] 7.1 Write failing Vitest assertions: a state machine with Wait 20 s → FindWindow → Choice loop → FetchStills → Choice → Analyze (Retry on `BedrockRetryable`: 2 retries, 5 s, backoff 2; Catch → MarkFailed) → Save; the pipeline Lambda (arm64, 512 MB, 90 s, env `DOOR_BOX`, `DOOR_THRESHOLD`, `NOVA_MODEL_ID`, `NOVA_PRICE_IN`, `NOVA_PRICE_OUT`, `STILLS_BUCKET`, plus the shared vars); verify they fail
+- [x] 7.2 Write failing Vitest assertions for the stills bucket ("Stills deleted after 7 days": a lifecycle expiration of 7 days; public access blocked; SSL enforced; encrypted) and for IAM (Bedrock `InvokeModel` only on the Nova 2 Lite profile and its three regional model ARNs; the webhook Lambda has `states:StartExecution` only on this state machine and gets `STATE_MACHINE_ARN`); verify they fail
+- [x] 7.3 Implement the bucket, pipeline Lambda, state machine, IAM and CDK context (`doorBox`, `doorThreshold`, `novaModelId`) to make the tests pass; verify `cdk synth` with real bundling includes Pillow's arm64 binaries
 
 ## 8. Docs and final check
 
