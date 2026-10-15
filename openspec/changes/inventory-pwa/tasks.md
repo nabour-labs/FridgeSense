@@ -38,7 +38,7 @@
 - [x] 6.2 Write failing component tests for "Items by category", "Out of stock", "Pending banner", "Empty fridge", "Live refresh", "Hidden app does not poll" and "Fix a quantity"; verify they fail
 - [x] 6.3 Implement the Fridge screen (grouping, out-of section, banner, quantity editor) to make the tests pass
 - [x] 6.4 Write failing component tests for "Door opening shown", "Stills" and "Failed analysis"; then implement the Activity screen and stills dialog, and verify they pass
-- [ ] 6.5 Write failing component tests for "Confirm", "Edit and confirm", "Reject" and "Nothing to review"; then implement the Review screen and verify they pass
+- [x] 6.5 Write failing component tests for "Confirm", "Edit and confirm", "Reject" and "Nothing to review"; then implement the Review screen and verify they pass
 - [ ] 6.6 Write failing unit tests for `stats.ts` covering "Stats from events", "Local time zone" and "No openings yet"; verify they fail
 - [ ] 6.7 Implement `stats.ts` and the Stats screen (Recharts bars, today, average) to make the tests pass, including a component test that renders the numbers for "Stats from events"
 - [ ] 6.8 Write failing tests for "Manifest" (from `src/manifest.ts`) and "Offline shell" (workbox `navigateFallback` and `/api` denylist; the app shows the can't-reach message when `ApiClient` throws `Offline`); then add the manifest, icons and PWA config, and verify they pass

@@ -4,6 +4,7 @@ import { ApiClient, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
 import { Activity } from "./screens/Activity";
 import { Fridge } from "./screens/Fridge";
+import { Review } from "./screens/Review";
 import { SignIn } from "./screens/SignIn";
 import { clearSession, loadSession, saveSession, type StoredSession } from "./session";
 
@@ -92,7 +93,8 @@ export default function App({ api: injected }: { api?: Api }) {
           </p>
         )}
         <main className="flex-1 px-4 pb-28">{tab === "fridge" && <Fridge />}
-          {tab === "activity" && <Activity />}</main>
+          {tab === "activity" && <Activity />}
+          {tab === "review" && <Review />}</main>
         {notice && (
           <p
             role="status"
