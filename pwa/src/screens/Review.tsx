@@ -7,7 +7,8 @@ import { changeLabel, clock, dayLabel } from "../format";
 import { usePolling } from "../usePolling";
 
 export function Review() {
-  const { api, report, online } = useApp();
+  const { api, report, online, role } = useApp();
+  const canAct = role === "owner";
   const [items, setItems] = useState<Pending[] | null>(null);
   const [editing, setEditing] = useState<Pending | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -49,7 +50,9 @@ export function Review() {
   return (
     <div className="space-y-3">
       <p className="px-1 text-sm text-slate-500 dark:text-slate-400">
-        The camera wasn't sure about these. Confirm, fix or dismiss each one.
+        {canAct
+          ? "The camera wasn't sure about these. Confirm, fix or dismiss each one."
+          : "The camera wasn't sure about these. The owner confirms them."}
       </p>
       <ul className="space-y-3">
         {items.map((p) => (
@@ -66,6 +69,7 @@ export function Review() {
                   {Math.round(p.confidence * 100)}% sure
                 </span>
               </div>
+              {canAct && (
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <ActionButton
                   label="Confirm"
@@ -82,6 +86,7 @@ export function Review() {
                   onClick={() => act(p, () => api.reject(p.id))}
                 />
               </div>
+              )}
             </article>
           </li>
         ))}
