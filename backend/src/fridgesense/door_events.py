@@ -133,31 +133,40 @@ def stills_prefix(account_id: str, device_id: str, start_ms: int) -> str:
 def download_stills(
     ring: RingClient,
     http: httpx.Client,
-    s3,
-    bucket: str,
-    blurrer: FaceBlurrer,
     state: dict,
     sleep: Callable[[float], None] = time.sleep,
+) -> list[tuple[int, bytes]]:
+    """Download the stills for the window into memory: (still number, raw bytes) pairs.
+
+    Nothing is stored here; raw stills only feed the door check and face detection.
+    """
+    window = state["window"]
+    raw = []
+    for n, ts in enumerate(still_times(window["start_ms"], window["end_ms"]), start=1):
+        data = _download_still(ring, http, state["device_id"], ts, sleep)
+        if data is not None:
+            raw.append((n, data))
+    return raw
+
+
+def store_blurred_stills(
+    s3, bucket: str, blurrer: FaceBlurrer, state: dict, raw: list[tuple[int, bytes]]
 ) -> list[tuple[str, bytes]]:
-    """Download the stills for the window, blur faces and store them in S3.
+    """Blur faces in each still and store it in S3.
 
     Returns (key, blurred bytes) pairs. Only blurred stills are ever stored.
     """
-    window = state["window"]
-    prefix = stills_prefix(state["account_id"], state["device_id"], window["start_ms"])
+    prefix = stills_prefix(state["account_id"], state["device_id"], state["window"]["start_ms"])
     saved = []
-    for n, ts in enumerate(still_times(window["start_ms"], window["end_ms"]), start=1):
-        data = _download_still(ring, http, state["device_id"], ts, sleep)
-        if data is None:
-            continue
-        data = blurrer.blur(
+    for n, data in raw:
+        blurred = blurrer.blur(
             data, {"account_id": state["account_id"], "device_id": state["device_id"], "still": n}
         )
-        if data is None:
+        if blurred is None:
             continue  # face detection failed: never store an unblurred still
         key = f"{prefix}still-{n}.jpg"
-        s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType="image/jpeg")
-        saved.append((key, data))
+        s3.put_object(Bucket=bucket, Key=key, Body=blurred, ContentType="image/jpeg")
+        saved.append((key, blurred))
     return saved
 
 
@@ -207,14 +216,17 @@ def fetch_stills(
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
+    The door check runs on the raw stills in memory; only door openings pay for
+    face detection, and only their blurred stills are stored.
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
     """
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
-    stills = download_stills(ring, http, s3, bucket, blurrer, state, sleep)
-    still_keys = [k for k, _ in stills]
+    raw = download_stills(ring, http, state, sleep)
+    still_keys: list[str] = []
+    status = "no_media"
 
-    if len(stills) >= MIN_STILLS:
-        is_open, brightest = check.evaluate([data for _, data in stills])
+    if len(raw) >= MIN_STILLS:
+        is_open, brightest = check.evaluate([data for _, data in raw])
         if not is_open:
             log_event(
                 "motion_not_door",
@@ -224,9 +236,10 @@ def fetch_stills(
                 threshold=check.threshold,
             )
             return {**state, "outcome": "not_door", "brightest": round(brightest, 3)}
-        status = "analyzing"
-    else:
-        status = "no_media"
+        stills = store_blurred_stills(s3, bucket, blurrer, state, raw)
+        still_keys = [k for k, _ in stills]
+        if len(stills) >= MIN_STILLS:
+            status = "analyzing"
 
     door_sk = f"DOOR#{iso_utc(window['start_ms'])}#{device_id}"
     claim = window["ring_event_id"] or f"ts-{state['timestamp_ms']}"

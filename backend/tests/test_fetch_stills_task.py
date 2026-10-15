@@ -130,9 +130,12 @@ def test_same_ring_event_in_two_runs(aws, ring_http):
 def test_door_stayed_closed(aws, ring_http, caplog):
     caplog.set_level(logging.INFO)
     ring_serves([jpeg(0.1), jpeg(0.3)])
-    out = run(ring_http)
+    blurrer = FakeBlurrer()
+    out = run(ring_http, blurrer=blurrer)
     assert out["outcome"] == "not_door"
     assert door_events() == []
+    assert blurrer.contexts == []
+    assert stored_keys() == []
     [line] = [r.getMessage() for r in caplog.records if "motion_not_door" in r.getMessage()]
     assert '"brightest": 0.3' in line or '"brightest": 0.29' in line or '"brightest": 0.31' in line
 
@@ -141,8 +144,11 @@ def test_door_stayed_closed(aws, ring_http, caplog):
 @respx.mock
 def test_too_few_stills_records_no_media(aws, ring_http):
     ring_serves(None)
-    out = run(ring_http)
+    blurrer = FakeBlurrer()
+    out = run(ring_http, blurrer=blurrer)
     assert out["outcome"] == "no_media"
+    assert blurrer.contexts == []
+    assert stored_keys() == []
     [event] = door_events()
     assert event["status"] == "no_media"
     assert event["still_keys"] == []
@@ -161,11 +167,14 @@ def test_one_still_is_too_few(aws, ring_http):
     answers = iter([httpx.Response(303, headers={"Location": "https://dl.example.com/0"})])
     respx.post(DOWNLOAD).mock(side_effect=lambda request: next(answers, httpx.Response(403)))
     respx.get("https://dl.example.com/0").respond(200, content=jpeg(0.9))
-    out = run(ring_http)
+    blurrer = FakeBlurrer()
+    out = run(ring_http, blurrer=blurrer)
     assert out["outcome"] == "no_media"
+    assert blurrer.contexts == []
+    assert stored_keys() == []
     [event] = door_events()
     assert event["status"] == "no_media"
-    assert len(event["still_keys"]) == 1
+    assert event["still_keys"] == []
 
 
 # Detection fails for one still
@@ -192,18 +201,43 @@ def test_detection_fails_for_every_still(aws, ring_http):
     assert event["still_keys"] == []
 
 
+# Too few stills survive face detection
 @respx.mock
 def test_too_few_stills_after_blur_failures(aws, ring_http):
     ring_serves([jpeg(0.8)])
     out = run(ring_http, blurrer=FakeBlurrer(drop={1, 2, 3}))
     assert out["outcome"] == "no_media"
     [event] = door_events()
-    assert len(event["still_keys"]) == 1
+    assert event["status"] == "no_media"
+    assert event["still_keys"] == [f"{PREFIX}still-4.jpg"]
+    assert stored_keys() == [f"{PREFIX}still-4.jpg"]
 
 
-# Door check runs on blurred stills
+# Fridge light visible
 @respx.mock
-def test_door_check_runs_on_blurred_stills(aws, ring_http):
+def test_fridge_light_visible(aws, ring_http):
+    ring_serves([jpeg(0.1), jpeg(0.8)])
+    blurrer = FakeBlurrer()
+    out = run(ring_http, blurrer=blurrer)
+    assert out["outcome"] == "door_open"
+    assert len(blurrer.contexts) == 4
+    assert len(stored_keys()) == 4
+
+
+# Closed door costs no face detection
+@respx.mock
+def test_closed_door_costs_no_face_detection(aws, ring_http):
+    ring_serves([jpeg(0.1), jpeg(0.2), jpeg(0.3), jpeg(0.1)])
+    blurrer = FakeBlurrer()
+    out = run(ring_http, blurrer=blurrer)
+    assert out["outcome"] == "not_door"
+    assert blurrer.contexts == []
+    assert stored_keys() == []
+
+
+# Door check runs on downloaded stills
+@respx.mock
+def test_door_check_runs_on_downloaded_stills(aws, ring_http):
     ring_serves([jpeg(0.8)])
     face = (0.40, 0.20, 0.20, 0.30)  # inside the door box (whole image)
     out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: blur_regions(data, [face])))
@@ -213,7 +247,9 @@ def test_door_check_runs_on_blurred_stills(aws, ring_http):
 
 
 @respx.mock
-def test_door_check_uses_the_blurred_bytes_not_the_download(aws, ring_http):
+def test_door_check_uses_the_download_not_the_blurred_bytes(aws, ring_http):
     ring_serves([jpeg(0.8)])
     out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: jpeg(0.1)))
-    assert out["outcome"] == "not_door"
+    assert out["outcome"] == "door_open"
+    body = boto3.client("s3").get_object(Bucket=BUCKET, Key=out["still_keys"][0])["Body"].read()
+    assert body == jpeg(0.1)  # only the blurred result is stored

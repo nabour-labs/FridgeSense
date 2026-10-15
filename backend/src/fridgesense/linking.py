@@ -54,6 +54,20 @@ def token_exchange(
     except (OAuthRejected, OAuthUnavailable, RingLookupFailed) as e:
         log_event("token_exchange_failed", logging.ERROR, error=str(e), **shape)
         return json_response(502, {"error": "token exchange failed"})
+    # /ring/token has no auth: never let a new grant replace a different linked account.
+    current = store.load()
+    if (
+        current is not None
+        and current.link_status in ("linked", "needs_relink")
+        and current.account_id != account_id
+    ):
+        log_event(
+            "token_exchange_refused",
+            logging.WARNING,
+            account_id=current.account_id,
+            new_account_id=account_id,
+        )
+        return json_response(409, {"error": "another account is linked"})
     store.save(
         Tokens(
             account_id=account_id,

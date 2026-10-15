@@ -100,8 +100,7 @@ def test_door_opening_updates_inventory(env, faces):
 
 @respx.mock
 def test_closed_door_stops_before_nova(env, faces):
-    no_faces(faces)
-    ring_serves(0.1)
+    ring_serves(0.1)  # no DetectFaces responses queued: a call would fail the stubber
     state = step("fetch_stills", step("find_window", RUN_INPUT))
     assert state["outcome"] == "not_door"
     assert FridgeTable().query(ACCOUNT, "DOOR#") == []

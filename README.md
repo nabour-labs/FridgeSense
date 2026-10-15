@@ -51,14 +51,18 @@ You need an AWS account (us-east-1), a Ring account with a camera and a Ring pla
 The first deploy in an account needs a one-time CDK bootstrap:
 
 ```bash
-set -a; source .env; set +a; cd infra && npm ci && npx cdk bootstrap
+set -a; source .env; set +a; cd infra && npm ci && npx cdk bootstrap -c alertEmail=you@example.com
 ```
 
 Then deploy. Lambda packages are built locally with uv (no Docker):
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk deploy
+set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com
 ```
+
+Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $20/month budget alert (at 80%) and the alarm for failed door-event runs. To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
+
+The API is throttled at 10 requests/s (burst 20) per route, and the two passcode checks (`POST /api/session`, `POST /ring/link`) at 1 request/s (burst 3).
 
 The outputs list three URLs: `TokenExchangeUrl`, `AccountLinkUrl` and `WebhookUrl`.
 
@@ -117,7 +121,7 @@ set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 1h --fi
 Each line shows `brightest` and `threshold`. Pick a threshold between the closed-door values and the open-door ones, adjust the box if needed, and deploy:
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk deploy -c doorBox=0.25,0.1,0.5,0.8 -c doorThreshold=0.5
+set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c doorBox=0.25,0.1,0.5,0.8 -c doorThreshold=0.5
 ```
 
 ### Nova cost per opening
