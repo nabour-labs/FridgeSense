@@ -6,12 +6,12 @@
 
 ## 2. Answer functions
 
-- [ ] 2.1 Write failing unit tests for `normalize` and matching ("eggs" vs "egg", "milk" vs "whole milk", "glass" keeps its "ss", case and spaces); then implement them and verify the tests pass
-- [ ] 2.2 Write failing moto tests for "Do I have milk?", "Plural and partial names", "Several matches", "Run out" and "Never seen"; verify they fail
-- [ ] 2.3 Implement the find answer (with `minutes_ago` from an injected clock) to make the tests pass
-- [ ] 2.4 Write failing moto tests for "Whole fridge" and "One category"; then implement the inventory answer and verify they pass
-- [ ] 2.5 Write failing moto tests for "Opens today" (America/Toronto, fixed clock) and "No opens"; then implement the activity answer with a local-midnight window and verify they pass
-- [ ] 2.6 Write failing moto tests for "Milk just went in" and "Never opened"; then implement the last-opened answer and verify they pass
+- [x] 2.1 Write failing unit tests for `normalize` and matching ("eggs" vs "egg", "milk" vs "whole milk", "glass" keeps its "ss", case and spaces); then implement them and verify the tests pass
+- [x] 2.2 Write failing moto tests for "Do I have milk?", "Plural and partial names", "Several matches", "Run out" and "Never seen"; verify they fail
+- [x] 2.3 Implement the find answer (with `minutes_ago` from an injected clock) to make the tests pass
+- [x] 2.4 Write failing moto tests for "Whole fridge" and "One category"; then implement the inventory answer and verify they pass
+- [x] 2.5 Write failing moto tests for "Opens today" (America/Toronto, fixed clock) and "No opens"; then implement the activity answer with a local-midnight window and verify they pass
+- [x] 2.6 Write failing moto tests for "Milk just went in" and "Never opened"; then implement the last-opened answer and verify they pass
 
 ## 3. MCP server
 

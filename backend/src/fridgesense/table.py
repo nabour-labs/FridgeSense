@@ -81,7 +81,12 @@ class FridgeTable:
                 return items
 
     def query_range(
-        self, account_id: str, low: str, high: str, newest_first: bool = False
+        self,
+        account_id: str,
+        low: str,
+        high: str,
+        newest_first: bool = False,
+        limit: int | None = None,
     ) -> list[dict]:
         """Items whose sort key is between `low` and `high` (inclusive)."""
         items, start = [], None
@@ -94,12 +99,14 @@ class FridgeTable:
                 ),
                 "ScanIndexForward": not newest_first,
             }
+            if limit:
+                kwargs["Limit"] = limit - len(items)
             if start:
                 kwargs["ExclusiveStartKey"] = start
             resp = self.client.query(**kwargs)
             items += [deserialize(i) for i in resp["Items"]]
             start = resp.get("LastEvaluatedKey")
-            if not start:
+            if not start or (limit and len(items) >= limit):
                 return items
 
     def put(self, item: dict) -> None:
