@@ -23,8 +23,8 @@
 
 ## 4. API: writes
 
-- [ ] 4.1 Write failing tests for `GET /api/pending`, "Confirm over HTTP", "Pending change not found" and "Invalid quantity" (confirm and `PUT /api/items/{key}`), plus reject over HTTP, "Viewer write refused" and "Viewer reads"; verify they fail
-- [ ] 4.2 Implement the pending, confirm, reject and set-quantity routes on top of the inventory functions, with write routes refusing viewer tokens, to make the tests pass
+- [x] 4.1 Write failing tests for `GET /api/pending`, "Confirm over HTTP", "Pending change not found" and "Invalid quantity" (confirm and `PUT /api/items/{key}`), plus reject over HTTP, "Viewer write refused" and "Viewer reads"; verify they fail
+- [x] 4.2 Implement the pending, confirm, reject and set-quantity routes on top of the inventory functions, with write routes refusing viewer tokens, to make the tests pass
 
 ## 5. PWA scaffold and data layer
 

@@ -8,11 +8,12 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from urllib.parse import unquote
 
 import boto3
 from botocore.config import Config
 
-from fridgesense import session
+from fridgesense import inventory, session
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.store import TokenStore, load_app_config
@@ -167,3 +168,90 @@ def get_events(ctx: Context) -> dict:
             }
         )
     return json_response(200, {"events": events})
+
+
+@route("GET", "/api/pending")
+def get_pending(ctx: Context) -> dict:
+    pending = [
+        {
+            "id": encode_id(p["sk"]),
+            "door_event_id": encode_id(p["door_sk"]) if p.get("door_sk") else None,
+            "item": p.get("item"),
+            "category": p.get("category", "other"),
+            "direction": p.get("direction"),
+            "quantity": p.get("quantity", 1),
+            "confidence": p.get("confidence", 0),
+            "opened_at": p["sk"].removeprefix("PENDING#").rsplit("#", 1)[0],
+        }
+        for p in ctx.table.query(ctx.account_id, "PENDING#")
+    ]
+    return json_response(200, {"pending": pending})
+
+
+def _json_body(req: Request) -> dict | None:
+    if not req.raw_body:
+        return {}
+    try:
+        body = json.loads(req.raw_body)
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def _whole_number(value, minimum: int) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        return None
+    return value
+
+
+def _now_iso() -> str:
+    return iso_utc(int(now() * 1000))
+
+
+@route("POST", "/api/pending/{id}/confirm", write=True)
+def confirm(ctx: Context) -> dict:
+    sk = decode_id(ctx.params["id"], "PENDING#")
+    body = _json_body(ctx.req)
+    if sk is None:
+        return json_response(404, {"error": "not found"})
+    if body is None:
+        return json_response(400, {"error": "invalid body"})
+    quantity = None
+    if "quantity" in body:
+        quantity = _whole_number(body["quantity"], 1)
+        if quantity is None:
+            return json_response(400, {"error": "quantity must be a whole number of 1 or more"})
+    item = body.get("item")
+    if item is not None and (not isinstance(item, str) or not item.strip()):
+        return json_response(400, {"error": "item must be a name"})
+    try:
+        inventory.confirm_pending(
+            ctx.table, ctx.account_id, sk, item=item, quantity=quantity, now=_now_iso()
+        )
+    except inventory.PendingNotFound:
+        return json_response(404, {"error": "not found"})
+    return json_response(200, inventory_body(ctx.table, ctx.account_id))
+
+
+@route("POST", "/api/pending/{id}/reject", write=True)
+def reject(ctx: Context) -> dict:
+    sk = decode_id(ctx.params["id"], "PENDING#")
+    if sk is None:
+        return json_response(404, {"error": "not found"})
+    try:
+        inventory.reject_pending(ctx.table, ctx.account_id, sk)
+    except inventory.PendingNotFound:
+        return json_response(404, {"error": "not found"})
+    return json_response(200, inventory_body(ctx.table, ctx.account_id))
+
+
+@route("PUT", "/api/items/{key}", write=True)
+def put_item(ctx: Context) -> dict:
+    body = _json_body(ctx.req)
+    quantity = _whole_number((body or {}).get("quantity"), 0)
+    if quantity is None:
+        return json_response(400, {"error": "quantity must be a whole number of 0 or more"})
+    inventory.set_quantity(
+        ctx.table, ctx.account_id, unquote(ctx.params["key"]), quantity, now=_now_iso()
+    )
+    return json_response(200, inventory_body(ctx.table, ctx.account_id))
