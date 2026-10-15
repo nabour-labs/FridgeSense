@@ -220,6 +220,22 @@ describe("Ask assistant", () => {
     expect(env.NOVA_MODEL_ID).toBe("us.amazon.nova-2-lite-v1:0");
     expect(env.NOVA_PRICE_IN).toBe("0.00033");
     expect(env.NOVA_PRICE_OUT).toBe("0.00275");
+    expect(env.NOVA_PRICE_CACHE_READ).toBe("0.0000825");
+    expect(env.NOVA_PRICE_CACHE_WRITE).toBe("0");
+  });
+
+  it("turns analysis prompt caching on only from context, and gives the pipeline the time zone", () => {
+    const pipelineEnv = (t: ReturnType<typeof synthTemplate>) => {
+      const [fn] = Object.values(t.findResources("AWS::Lambda::Function")).filter(
+        (r) => r.Properties.Handler === "fridgesense.handlers.pipeline.handler",
+      );
+      return (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    };
+    const on = pipelineEnv(
+      synthTemplate({ novaCacheAnalysis: "true", timeZone: "America/Vancouver" }),
+    );
+    expect(on.NOVA_CACHE_ANALYSIS).toBe("true");
+    expect(on.TIME_ZONE).toBe("America/Vancouver");
   });
 
   it("lets the API function invoke Nova through the inference profile", () => {

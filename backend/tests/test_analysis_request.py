@@ -1,6 +1,9 @@
 """fridge-change-analysis: One Nova request per door opening."""
 
+import copy
+
 import boto3
+import pytest
 from botocore.stub import Stubber
 
 from fridgesense.analysis import (
@@ -133,3 +136,85 @@ def test_no_config_request_is_unchanged():
     text = content_of(plain)[-1]["text"]
     assert "Owner's instructions" not in text
     assert content_of(plain)[0] == {"text": "Image 1 of 4"}
+
+
+CACHE_POINT = {"cachePoint": {"type": "default"}}
+REFS = [("milk bag", jpeg(0.3)), ("soda can", jpeg(0.6))]
+
+
+def has_cache_point(value) -> bool:
+    if isinstance(value, dict):
+        return "cachePoint" in value or any(has_cache_point(v) for v in value.values())
+    if isinstance(value, list):
+        return any(has_cache_point(v) for v in value)
+    return False
+
+
+# Caching off by default
+def test_caching_off_by_default():
+    req = build_request(DEFAULT_MODEL_ID, STILLS, ["milk"], REFS, "Count cups.")
+    assert not has_cache_point(req)
+    assert req == build_request(
+        DEFAULT_MODEL_ID, STILLS, ["milk"], REFS, "Count cups.", cache=False
+    )
+
+
+# Caching on with references
+def test_caching_on_with_references():
+    on = build_request(DEFAULT_MODEL_ID, STILLS, ["milk"], REFS, "Count cups.", cache=True)
+    off = build_request(DEFAULT_MODEL_ID, STILLS, ["milk"], REFS, "Count cups.")
+    content, plain = content_of(on), content_of(off)
+    # header + 2 x (label, image) = 5 blocks, then a cache point; 4 x (label, image), then one more
+    assert content[5] == CACHE_POINT
+    assert content[14] == CACHE_POINT
+    assert content[6] == {"text": "Image 1 of 4"}
+    assert [c for c in content if c != CACHE_POINT] == plain
+    assert content[-1] == plain[-1]
+
+
+# Caching on without references
+def test_caching_on_without_references():
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS[:2], [], cache=True))
+    assert [i for i, c in enumerate(content) if c == CACHE_POINT] == [4]
+    assert content[3]["image"]["source"]["bytes"] == STILLS[1]
+    assert "text" in content[5]
+
+
+# Cache point shape and placement limits
+def test_cache_point_shape_and_limits():
+    req = build_request(DEFAULT_MODEL_ID, STILLS, ["milk"], REFS, cache=True)
+    points = [c["cachePoint"] for c in content_of(req) if "cachePoint" in c]
+    assert points == [{"type": "default"}] * 2
+    [tool] = req["toolConfig"]["tools"]
+    assert set(tool) == {"toolSpec"}
+    assert "system" not in req
+
+
+@pytest.mark.parametrize(
+    "setting, expected", [("true", True), (None, False), ("yes please", False), ("false", False)]
+)
+def test_cache_setting_from_environment(monkeypatch, setting, expected):
+    # "Unrecognized setting value": anything but "true" leaves caching off
+    if setting is None:
+        monkeypatch.delenv("NOVA_CACHE_ANALYSIS", raising=False)
+    else:
+        monkeypatch.setenv("NOVA_CACHE_ANALYSIS", setting)
+    analyzer = NovaAnalyzer.from_env(boto3.client("bedrock-runtime", region_name="us-east-1"))
+    assert analyzer.cache_analysis is expected
+
+
+# Retry sends the same cached request
+def test_retry_sends_the_same_cached_request():
+    client = boto3.client("bedrock-runtime", region_name="us-east-1")
+    sent = []
+    client.meta.events.register(
+        "provide-client-params.bedrock-runtime.Converse",
+        lambda params, **_: sent.append(copy.deepcopy(params)),
+    )
+    with Stubber(client) as stub:
+        stub.add_response("converse", load_fixture("nova/converse_end_turn.json"))
+        stub.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+        NovaAnalyzer(client, cache_analysis=True).analyze(STILLS, ["milk"], references=REFS)
+    first, second = sent
+    assert first == second
+    assert has_cache_point(first)

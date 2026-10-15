@@ -23,6 +23,26 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-15 · Bedrock Nova · Nova 2 Lite caches a prefix under the documented 1K-token minimum
+
+- **Task:** check that the Ask assistant's system-block `cachePoint` caches before shipping it.
+- **Steps:** `set -a; source .env; set +a; cd backend && uv run python scripts/measure_prompt_cache.py --yes`. The script sent the same Converse request (2 tool specs, the system prompt and a cachePoint, then 3 messages) twice to `us.amazon.nova-2-lite-v1:0`.
+- **Expected:** per the caching guide ("1K" minimum per checkpoint for Nova), no caching until the prefix reaches about 1,000 tokens.
+- **Actual:** call 1 reported `cacheWriteInputTokens = 766` and call 2 `cacheReadInputTokens = 766`. Also, because cache writes are $0 for Nova 2 Lite and aren't counted in `inputTokens`, the call that writes the cache is cheaper than the call that reads it ($0.000156 against $0.000219). Not wrong, but surprising when reading cost logs.
+- **Severity:** Low
+- **Workaround:** none needed. We log cache reads and writes separately and price them from settings.
+- **Suggestion:** give each Nova model's exact minimum in the caching guide, and say plainly that cache-write tokens are free and left out of `inputTokens`.
+
+### 2026-10-15 · Bedrock Nova · Converse `cachePoint` after an image or toolResult block is rejected for Nova 2 Lite
+
+- **Task:** measure prompt caching on the app's real request shapes before turning it on: the door-opening analysis (cache point after the reference images) and the assistant's tool loop (cache point after the tool results).
+- **Steps:** `set -a; source .env; set +a; cd backend && uv run python scripts/measure_prompt_cache.py --yes`, which sends Converse requests to `us.amazon.nova-2-lite-v1:0` in us-east-1. The content is `[..., {"image": ...}, {"cachePoint": {"type": "default"}}, ...]` for analysis and `[{"toolResult": ...}, {"cachePoint": {"type": "default"}}]` for the assistant. Both pass botocore's offline parameter check.
+- **Expected:** a cache write on the first call and a cache read on the second, as in the caching guide's Converse example, which puts a `cachePoint` right after an `image` block.
+- **Actual:** every call failed with `ValidationException: ... Malformed input request: #/messages/0/content/4: extraneous key [cachePoint] is not permitted, please reformat your input and try again.` Index 4 is the image *before* the cache point. The assistant call failed the same way at `#/messages/2/content/0`, the `toolResult`. So Converse seems to fold the cache point into the preceding block, and Nova rejects it on image and toolResult blocks. Nothing in the guide or the API model says so, and botocore validation can't catch it.
+- **Severity:** Medium
+- **Workaround:** keep analysis caching off. Cache only the assistant's `system` block. Untested: cache points after a `text` block.
+- **Suggestion:** list in the Nova rows which content block types a `cachePoint` may follow, fix the Converse example (it shows the cache point after an image), and have Converse return a clear error such as "cachePoint must follow a text block for this model".
+
 ### 2026-10-15 · Bedrock Nova · Prompt caching docs don't say whether image blocks can be cached
 
 - **Task:** plan prompt caching for the door-opening analysis, whose stable prefix is mostly the owner's reference images (up to 6 JPEGs) and whose stills change every request.

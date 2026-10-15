@@ -142,6 +142,18 @@ class FridgeTable:
             ExpressionAttributeValues=serialize({":a": amount}),
         )
 
+    def add_many(self, pk: str, sk: str, amounts: dict[str, float]) -> None:
+        """Atomically add each amount to its number attribute (created at 0), in one update."""
+        names = {f"#f{i}": field for i, field in enumerate(amounts)}
+        values = {f":a{i}": amount for i, amount in enumerate(amounts.values())}
+        self.client.update_item(
+            TableName=self.name,
+            Key=serialize({"pk": pk, "sk": sk}),
+            UpdateExpression="ADD " + ", ".join(f"#f{i} :a{i}" for i in range(len(amounts))),
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=serialize(values),
+        )
+
     def increment_below(self, pk: str, sk: str, field: str, limit: int) -> bool:
         """Atomically add 1 to a counter (created at 0) unless it has reached `limit`."""
         try:

@@ -48,6 +48,8 @@ describe("app API", () => {
       "ASK_AGENT",
       "ASK_AGENT_DAILY_LIMIT",
       "NOVA_MODEL_ID",
+      "NOVA_PRICE_CACHE_READ",
+      "NOVA_PRICE_CACHE_WRITE",
       "NOVA_PRICE_IN",
       "NOVA_PRICE_OUT",
       "RING_APP_SECRET_ID",

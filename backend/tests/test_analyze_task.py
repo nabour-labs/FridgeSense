@@ -1,7 +1,12 @@
 """fridge-change-analysis: the analyze and mark_failed workflow tasks."""
 
+import json
+import logging
+from datetime import UTC, datetime
+
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from botocore.stub import ANY, Stubber
 
 from fridgesense import analysis_config
@@ -169,3 +174,49 @@ def test_no_config_sends_no_references(setup):
     request = captured_request(setup)
     assert texts(request)[0] == "Image 1 of 4"
     assert "Owner's instructions" not in texts(request)[-1]
+
+
+WHEN = datetime(2026, 10, 20, 14, 0, tzinfo=UTC)
+
+
+def run_tracked(setup):
+    table, client, _ = setup
+    return analyze_task(
+        NovaAnalyzer(client), boto3.client("s3"), table, BUCKET, STATE, clock=lambda: WHEN
+    )
+
+
+# Analysis call (llm-usage-tracking)
+def test_analysis_call_is_tracked(setup, caplog, monkeypatch):
+    monkeypatch.setenv("TIME_ZONE", "America/Toronto")
+    caplog.set_level(logging.INFO)
+    table, _, stub = setup
+    stub.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    run_tracked(setup)
+    [line] = [json.loads(r.getMessage()) for r in caplog.records if '"llm_usage"' in r.getMessage()]
+    assert line["source"] == "analysis"
+    assert line["account_id"] == ACCOUNT
+    assert (line["input_tokens"], line["output_tokens"], line["usd"]) == (1180, 96, 0.000653)
+    totals = table.get(account_pk(ACCOUNT), "USAGE#2026-10-20")
+    assert (totals["analysis_calls"], totals["usd"]) == (1, 0.000653)
+    assert door(table)["nova_usd"] == 0.000653
+
+
+# DynamoDB error during analysis
+def test_totals_failure_does_not_break_the_analysis(setup, caplog, monkeypatch):
+    caplog.set_level(logging.INFO)
+    table, _, stub = setup
+
+    def fail(*args, **kwargs):
+        raise ClientError(
+            {"Error": {"Code": "ProvisionedThroughputExceededException"}}, "UpdateItem"
+        )
+
+    monkeypatch.setattr(table, "add_many", fail)
+    stub.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    out = run_tracked(setup)
+    assert out["analysis"]["added"][0]["item"] == "milk"
+    assert door(table)["nova_usd"] == 0.000653
+    messages = [r.getMessage() for r in caplog.records]
+    assert any('"llm_usage_store_failed"' in m for m in messages)
+    assert any('"llm_usage"' in m for m in messages)

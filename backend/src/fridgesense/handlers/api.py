@@ -21,6 +21,7 @@ from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.store import TokenStore, load_app_config
 from fridgesense.table import FridgeTable
+from fridgesense.usage import Prices, UsageRecorder
 from fridgesense.web import Request, json_response
 
 now = time.time
@@ -467,15 +468,23 @@ def _ask_assistant(
     if os.environ.get("ASK_AGENT") != "on" or not key or not ctx.req.host:
         return None
     limit = int(os.environ.get("ASK_AGENT_DAILY_LIMIT") or assistant.DAILY_LIMIT)
+    model_id = os.environ.get("NOVA_MODEL_ID") or analysis.DEFAULT_MODEL_ID
     try:
         result = asyncio.run(
             assistant.run(
                 question,
                 server=assistant.mcp_url(ctx.req.host, key),
                 bedrock=bedrock_client(),
-                model_id=os.environ.get("NOVA_MODEL_ID") or analysis.DEFAULT_MODEL_ID,
-                price_in=float(os.environ.get("NOVA_PRICE_IN") or analysis.DEFAULT_PRICE_IN),
-                price_out=float(os.environ.get("NOVA_PRICE_OUT") or analysis.DEFAULT_PRICE_OUT),
+                model_id=model_id,
+                prices=Prices.from_env(),
+                on_usage=UsageRecorder(
+                    ctx.table,
+                    tz,
+                    source="assistant",
+                    account_id=ctx.account_id,
+                    model_id=model_id,
+                    clock=lambda: when,
+                ),
                 budget=lambda: assistant.take_budget(ctx.table, ctx.account_id, when, tz, limit),
             )
         )

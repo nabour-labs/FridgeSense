@@ -1,0 +1,23 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Yes, you have 1 milk, added 2 minutes ago."
+        }
+      ]
+    }
+  },
+  "stopReason": "end_turn",
+  "usage": {
+    "inputTokens": 300,
+    "cacheReadInputTokens": 1200,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 30,
+    "totalTokens": 1530
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}
