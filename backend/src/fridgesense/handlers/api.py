@@ -305,15 +305,56 @@ def reject(ctx: Context) -> dict:
     return json_response(200, inventory_body(ctx.table, ctx.account_id))
 
 
+@route("POST", "/api/items", write=True)
+def post_item(ctx: Context) -> dict:
+    body = _json_body(ctx.req)
+    if body is None:
+        return json_response(400, {"error": "invalid body"})
+    try:
+        inventory.add_item(
+            ctx.table,
+            ctx.account_id,
+            body.get("name"),
+            body.get("category"),
+            body.get("quantity"),
+            now=_now_iso(),
+        )
+    except inventory.InvalidItem as e:
+        return json_response(400, {"error": str(e)})
+    return json_response(200, inventory_body(ctx.table, ctx.account_id))
+
+
 @route("PUT", "/api/items/{key}", write=True)
 def put_item(ctx: Context) -> dict:
-    body = _json_body(ctx.req)
-    quantity = _whole_number((body or {}).get("quantity"), 0)
+    body = _json_body(ctx.req) or {}
+    quantity = _whole_number(body.get("quantity"), 0)
     if quantity is None:
         return json_response(400, {"error": "quantity must be a whole number of 0 or more"})
-    inventory.set_quantity(
-        ctx.table, ctx.account_id, unquote(ctx.params["key"]), quantity, now=_now_iso()
-    )
+    key, name, category = unquote(ctx.params["key"]), body.get("name"), body.get("category")
+    try:
+        if name is None:
+            inventory.set_quantity(
+                ctx.table, ctx.account_id, key, quantity, category=category, now=_now_iso()
+            )
+        else:
+            inventory.edit_item(
+                ctx.table, ctx.account_id, key, quantity, name, category, now=_now_iso()
+            )
+    except inventory.InvalidItem as e:
+        return json_response(400, {"error": str(e)})
+    except inventory.ItemExists:
+        return json_response(409, {"error": "item exists"})
+    except inventory.ItemNotFound:
+        return json_response(404, {"error": "not found"})
+    return json_response(200, inventory_body(ctx.table, ctx.account_id))
+
+
+@route("DELETE", "/api/items/{key}", write=True)
+def delete_item(ctx: Context) -> dict:
+    try:
+        inventory.delete_item(ctx.table, ctx.account_id, unquote(ctx.params["key"]))
+    except inventory.ItemNotFound:
+        return json_response(404, {"error": "not found"})
     return json_response(200, inventory_body(ctx.table, ctx.account_id))
 
 

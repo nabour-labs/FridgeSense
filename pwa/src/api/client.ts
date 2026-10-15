@@ -59,8 +59,21 @@ export class ApiClient {
     return this.request("POST", `/api/pending/${encodeURIComponent(id)}/reject`);
   }
 
+  addItem(item: { name: string; category: string; quantity: number }): Promise<Inventory> {
+    return this.request("POST", "/api/items", item);
+  }
+
+  /** Sends `name` and `category` only when given; a new name renames the item. */
+  editItem(key: string, changes: { quantity: number; name?: string; category?: string }): Promise<Inventory> {
+    return this.request("PUT", `/api/items/${encodeURIComponent(key)}`, changes);
+  }
+
+  deleteItem(key: string): Promise<Inventory> {
+    return this.request("DELETE", `/api/items/${encodeURIComponent(key)}`);
+  }
+
   setQuantity(key: string, quantity: number): Promise<Inventory> {
-    return this.request("PUT", `/api/items/${encodeURIComponent(key)}`, { quantity });
+    return this.editItem(key, { quantity });
   }
 
   ask(question: string): Promise<AskResult> {

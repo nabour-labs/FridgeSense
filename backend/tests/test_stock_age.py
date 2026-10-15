@@ -2,7 +2,7 @@
 
 import pytest
 
-from fridgesense.inventory import confirm_pending, save_task, set_quantity
+from fridgesense.inventory import add_item, confirm_pending, save_task, set_quantity
 from fridgesense.table import FridgeTable, account_pk
 
 ACCOUNT = "ava1.ring.account.A1"
@@ -117,3 +117,15 @@ def test_count_set_by_hand_keeps_age_while_in_stock(table):
     set_quantity(table, ACCOUNT, "eggs", 4, now="2026-10-17T10:00:00.000Z")
     eggs = item(table, "eggs")
     assert (eggs["stocked_at"], eggs["peak_quantity"]) == (EARLIER, 12)
+
+
+# Item added by hand
+def test_item_added_by_hand(table):
+    add_item(table, ACCOUNT, "cheese", "dairy", 2, now="2026-10-16T09:00:00.000Z")
+    add_item(table, ACCOUNT, "cheese", "dairy", 3, now="2026-10-17T09:00:00.000Z")
+    cheese = item(table, "cheese")
+    assert (cheese["quantity"], cheese["stocked_at"], cheese["peak_quantity"]) == (
+        5,
+        "2026-10-16T09:00:00.000Z",
+        5,
+    )
