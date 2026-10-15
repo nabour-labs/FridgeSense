@@ -6,6 +6,7 @@ import { CATEGORIES } from "../categories";
 import { useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
 import { NoData } from "../components/NoData";
+import { Select } from "../components/Select";
 import { Sheet } from "../components/Sheet";
 import { ago, plural, titleCase } from "../format";
 import { itemIcon } from "../itemIcon";
@@ -293,13 +294,15 @@ function AddButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-semibold text-brand-700 ring-1 ring-slate-200 transition hover:bg-brand-50 active:scale-[0.98] dark:bg-slate-900 dark:text-brand-300 dark:ring-slate-800 dark:hover:bg-slate-800"
+      className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white px-6 font-semibold text-brand-700 ring-1 ring-slate-200 transition hover:bg-brand-50 active:scale-[0.98] dark:bg-slate-900 dark:text-brand-300 dark:ring-slate-800 dark:hover:bg-slate-800"
     >
       <Plus aria-hidden className="size-5" />
       Add item
     </button>
   );
 }
+
+const CATEGORY_OPTIONS = CATEGORIES.map((c) => ({ value: c, label: titleCase(c) }));
 
 interface Fields {
   name: string;
@@ -326,7 +329,7 @@ function ItemFields({
   minimum: number;
 }) {
   const field =
-    "h-12 w-full rounded-xl border border-slate-300 bg-white px-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950";
+    "h-12 w-full rounded-xl border border-slate-300 bg-white px-4 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950";
   const stepper =
     "grid size-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700 transition hover:bg-slate-200 active:scale-95 dark:bg-slate-800 dark:text-slate-200";
   const step = (delta: number) =>
@@ -350,13 +353,7 @@ function ItemFields({
         <label htmlFor="item-category" className="mb-2 block text-sm font-medium">
           Category
         </label>
-        <select id="item-category" value={category} onChange={(e) => setCategory(e.target.value)} className={field}>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {titleCase(c)}
-            </option>
-          ))}
-        </select>
+        <Select id="item-category" value={category} onChange={setCategory} options={CATEGORY_OPTIONS} />
       </div>
       <div>
         <label htmlFor="quantity" className="mb-2 block text-sm font-medium">

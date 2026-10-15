@@ -80,10 +80,11 @@ describe("add item", () => {
     mock(api.addItem).mockResolvedValue({ ...STOCKED, items: [...STOCKED.items, item("butter", 2, "dairy", "Butter")] });
     await userEvent.click(await screen.findByRole("button", { name: "Add item" }));
     const dialog = screen.getByRole("dialog", { name: "Add item" });
-    expect(within(dialog).getByLabelText("Category")).toHaveValue("other");
+    expect(within(dialog).getByRole("combobox", { name: "Category" })).toHaveTextContent("Other");
     expect(within(dialog).getByLabelText("Quantity")).toHaveValue("1");
     await userEvent.type(within(dialog).getByLabelText("Name"), "Butter");
-    await userEvent.selectOptions(within(dialog).getByLabelText("Category"), "Dairy");
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "Category" }));
+    await userEvent.click(within(dialog).getByRole("option", { name: "Dairy" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "One more" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(api.addItem).toHaveBeenCalledWith({ name: "Butter", category: "dairy", quantity: 2 });
@@ -201,7 +202,7 @@ describe("edit and remove", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Eggs/ }));
     const dialog = screen.getByRole("dialog", { name: "Eggs" });
     expect(within(dialog).getByLabelText("Name")).toHaveValue("Eggs");
-    expect(within(dialog).getByLabelText("Category")).toHaveValue("dairy");
+    expect(within(dialog).getByRole("combobox", { name: "Category" })).toHaveTextContent("Dairy");
     expect(within(dialog).getByLabelText("Quantity")).toHaveValue("6");
   });
 
@@ -217,7 +218,8 @@ describe("edit and remove", () => {
     const name = within(dialog).getByLabelText("Name");
     await userEvent.clear(name);
     await userEvent.type(name, "Oat Milk");
-    await userEvent.selectOptions(within(dialog).getByLabelText("Category"), "Dairy");
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "Category" }));
+    await userEvent.click(within(dialog).getByRole("option", { name: "Dairy" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(api.editItem).toHaveBeenCalledWith("bottle", { quantity: 1, name: "Oat Milk", category: "dairy" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
