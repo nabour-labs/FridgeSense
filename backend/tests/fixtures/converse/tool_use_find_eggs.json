@@ -1,0 +1,27 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "toolUseId": "tu-eggs",
+            "name": "find_item",
+            "input": {
+              "name": "eggs"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "stopReason": "tool_use",
+  "usage": {
+    "inputTokens": 1500,
+    "outputTokens": 30,
+    "totalTokens": 1530
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}

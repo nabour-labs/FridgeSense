@@ -5,14 +5,57 @@ from datetime import UTC, datetime
 
 import pytest
 
+from fridgesense import assistant, voice
 from fridgesense.door_events import iso_utc
 from fridgesense.handlers import api
 from fridgesense.store import load_app_config
 from fridgesense.table import FridgeTable, account_pk
+from fridgesense.web import Request
 from tests.api_helpers import ACCOUNT, NOW, call, configure, link_account, sign_in
-from tests.conftest import api_event
+from tests.conftest import API_HOST, api_event
 
 PK = account_pk(ACCOUNT)
+AUDIO = "QVVESU8="
+REAL_SPEAK = voice.speak
+MCP_KEY = "k" * 64
+MILK = "Yes, you have 1 milk, changed 2 minutes ago."
+
+
+@pytest.fixture(autouse=True)
+def spoken(monkeypatch):
+    """Polly stand-in: every answer gets AUDIO; records the texts spoken."""
+    texts = []
+    monkeypatch.setattr(api.voice, "speak", lambda text, *a, **k: texts.append(text) or AUDIO)
+    monkeypatch.delenv("ASK_AGENT", raising=False)
+    return texts
+
+
+class FakeAssistant:
+    """Replaces assistant.run; returns `outcome` (or raises it) and records each call."""
+
+    def __init__(self, outcome):
+        self.outcome = outcome
+        self.calls = []
+
+    async def __call__(self, question, **kwargs):
+        self.calls.append({"question": question, **kwargs})
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+
+@pytest.fixture
+def agent_on(owner, monkeypatch):
+    monkeypatch.setenv("ASK_AGENT", "on")
+    configure(mcp_key=MCP_KEY)
+    load_app_config(refresh=True)
+
+    def use(outcome):
+        fake = FakeAssistant(outcome)
+        monkeypatch.setattr(api.assistant, "run", fake)
+        return fake
+
+    return use
 
 
 @pytest.fixture
@@ -40,8 +83,10 @@ def test_do_i_have_milk(owner):
     put_milk()
     status, body = call("POST", "/api/ask", {"question": "Do I have milk?"}, owner)
     assert status == 200
+    assert body["source"] == "keywords"
     assert body["intent"] == "find_item"
-    assert body["answer"] == "Yes, you have 1 milk, changed 2 minutes ago."
+    assert body["answer"] == MILK
+    assert body["audio"] == AUDIO
     assert body["data"]["query"] == "milk"
     assert body["data"]["in_fridge"] is True
     assert body["data"]["total_count"] == 1
@@ -57,6 +102,7 @@ def test_viewer_can_ask(owner):
     put_milk()
     status, body = call("POST", "/api/ask", {"question": "What's in my fridge?"}, viewer)
     assert status == 200
+    assert body["source"] == "keywords"
     assert body["intent"] == "get_inventory"
     assert body["answer"] == "You have 1 item: 1 milk."
 
@@ -66,8 +112,10 @@ def test_unknown_question(owner):
     status, body = call("POST", "/api/ask", {"question": "Play some jazz"}, owner)
     assert status == 200
     assert body["intent"] == "unknown"
+    assert body["source"] == "keywords"
     assert body["answer"].startswith("Try asking:")
     assert body["data"] is None
+    assert body["audio"] == AUDIO
 
 
 # No token
@@ -143,5 +191,140 @@ def test_activity_in_the_household_time_zone(aws, monkeypatch, time_zone, opens,
     question = {"question": "How many times did we open the fridge today?"}
     status, body = call("POST", "/api/ask", question, token)
     assert status == 200
+    assert body["source"] == "keywords"
     assert body["data"]["opens"] == opens
     assert body["answer"] == answer
+
+
+def test_request_keeps_api_host():
+    req = Request.from_event(api_event("POST", "/api/ask", "{}"))
+    assert req.host == API_HOST
+
+
+# Assistant answers
+def test_assistant_answers(agent_on, spoken):
+    fake = agent_on(
+        assistant.AssistantResult("Yes, you have 1 milk, added 2 minutes ago.", ["find_item"])
+    )
+    token = sign_in()
+    status, body = call("POST", "/api/ask", {"question": "Do I have milk?"}, token)
+    assert status == 200
+    assert body == {
+        "intent": "agent",
+        "answer": "Yes, you have 1 milk, added 2 minutes ago.",
+        "data": {"tools": ["find_item"]},
+        "source": "agent",
+        "audio": AUDIO,
+    }
+    [run] = fake.calls
+    assert run["question"] == "Do I have milk?"
+    assert run["server"] == f"https://{API_HOST}/mcp/{MCP_KEY}"
+    assert spoken == ["Yes, you have 1 milk, added 2 minutes ago."]
+
+
+def test_assistant_budget_is_counted(agent_on, monkeypatch):
+    fake = agent_on(assistant.AssistantResult("Hi.", []))
+    monkeypatch.setenv("ASK_AGENT_DAILY_LIMIT", "1")
+    token = sign_in()
+    call("POST", "/api/ask", {"question": "Hi"}, token)
+    budget = fake.calls[0]["budget"]
+    assert budget() is True  # the first question of the day
+    assert budget() is False  # limit 1 reached
+
+
+# Assistant off by setting
+@pytest.mark.parametrize("setting", [None, "off"])
+def test_assistant_off_by_setting(agent_on, monkeypatch, setting):
+    fake = agent_on(assistant.AssistantResult("never", []))
+    if setting is None:
+        monkeypatch.delenv("ASK_AGENT")
+    else:
+        monkeypatch.setenv("ASK_AGENT", setting)
+    put_milk()
+    status, body = call("POST", "/api/ask", {"question": "Do I have milk?"}, sign_in())
+    assert (status, body["source"], body["intent"]) == (200, "keywords", "find_item")
+    assert fake.calls == []
+
+
+# No MCP key
+def test_no_mcp_key(agent_on):
+    fake = agent_on(assistant.AssistantResult("never", []))
+    configure(mcp_key="")
+    load_app_config(refresh=True)
+    status, body = call("POST", "/api/ask", {"question": "Do I have milk?"}, sign_in())
+    assert (status, body["source"]) == (200, "keywords")
+    assert fake.calls == []
+
+
+# Assistant fails
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        assistant.AssistantFailure("timeout"),
+        assistant.AssistantFailure("bedrock_error"),
+        assistant.AssistantFailure("mcp_error"),
+        assistant.AssistantFailure("too_many_rounds"),
+        assistant.AssistantFailure("empty_answer"),
+        assistant.AssistantFailure("over_budget"),
+        RuntimeError("bug"),
+    ],
+)
+def test_assistant_fails(agent_on, outcome):
+    fake = agent_on(outcome)
+    put_milk()
+    status, body = call("POST", "/api/ask", {"question": "Do I have milk?"}, sign_in())
+    assert status == 200
+    assert (body["source"], body["intent"], body["answer"]) == ("keywords", "find_item", MILK)
+    assert len(fake.calls) == 1
+
+
+@pytest.fixture
+def polly(monkeypatch):
+    """The real voice.speak, with a stubbed Polly client."""
+    import io
+
+    import boto3
+    from botocore.response import StreamingBody
+    from botocore.stub import Stubber
+
+    client = boto3.client("polly", region_name="us-east-1")
+    monkeypatch.setattr(api.voice, "speak", REAL_SPEAK)
+    monkeypatch.setattr(api, "polly_client", lambda: client)
+    with Stubber(client) as stub:
+        stub.body = lambda data: StreamingBody(io.BytesIO(data), len(data))
+        yield stub
+
+
+# Audio returned (through the route)
+def test_route_audio_returned(owner, polly):
+    FridgeTable().put(
+        {
+            "pk": PK,
+            "sk": "ITEM#butter",
+            "name": "Butter",
+            "category": "dairy",
+            "quantity": 0,
+            "last_changed_at": iso_utc(int((NOW - 600) * 1000)),
+        }
+    )
+    polly.add_response(
+        "synthesize_speech",
+        {"AudioStream": polly.body(b"ID3fake")},
+        {
+            "Text": "You're out of butter.",
+            "Engine": "neural",
+            "VoiceId": "Joanna",
+            "OutputFormat": "mp3",
+            "SampleRate": "24000",
+        },
+    )
+    status, body = call("POST", "/api/ask", {"question": "Do I have butter?"}, owner)
+    assert (status, body["answer"], body["audio"]) == (200, "You're out of butter.", "SUQzZmFrZQ==")
+
+
+# Polly fails (through the route)
+def test_route_polly_fails(owner, polly):
+    put_milk()
+    polly.add_client_error("synthesize_speech", service_error_code="ServiceFailureException")
+    status, body = call("POST", "/api/ask", {"question": "Do I have milk?"}, owner)
+    assert (status, body["answer"], body["audio"]) == (200, MILK, None)

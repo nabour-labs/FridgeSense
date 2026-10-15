@@ -1,0 +1,25 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "toolUseId": "tu-inv",
+            "name": "get_inventory",
+            "input": {}
+          }
+        }
+      ]
+    }
+  },
+  "stopReason": "tool_use",
+  "usage": {
+    "inputTokens": 1200,
+    "outputTokens": 30,
+    "totalTokens": 1230
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}

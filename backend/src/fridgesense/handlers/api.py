@@ -1,5 +1,6 @@
 """App API Lambda: sign-in plus inventory, door events and pending changes under /api."""
 
+import asyncio
 import base64
 import json
 import logging
@@ -15,7 +16,7 @@ from zoneinfo import ZoneInfo
 import boto3
 from botocore.config import Config
 
-from fridgesense import analysis_config, ask, inventory, session
+from fridgesense import analysis, analysis_config, ask, assistant, inventory, session, voice
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.store import TokenStore, load_app_config
@@ -327,5 +328,60 @@ def post_ask(ctx: Context) -> dict:
         return json_response(400, {"error": "question required"})
     tz = ZoneInfo(os.environ.get("TIME_ZONE") or "America/Toronto")
     when = datetime.fromtimestamp(now(), UTC)
-    result = ask.ask(ctx.table, ctx.account_id, question, now=when, tz=tz)
-    return json_response(200, result.model_dump())
+    agent = _ask_assistant(ctx, question, when, tz)
+    if agent is not None:
+        body = {
+            "intent": "agent",
+            "answer": agent.answer,
+            "data": {"tools": agent.tools},
+            "source": "agent",
+        }
+    else:
+        result = ask.ask(ctx.table, ctx.account_id, question, now=when, tz=tz)
+        body = {**result.model_dump(), "source": "keywords"}
+    voice_id = os.environ.get("ASK_VOICE") or voice.DEFAULT_VOICE
+    body["audio"] = voice.speak(body["answer"], polly_client(), voice=voice_id)
+    return json_response(200, body)
+
+
+def bedrock_client():
+    # One HTTP attempt: the assistant's 12 s deadline is the retry budget, and a failure
+    # falls back to the keyword answer.
+    return boto3.client(
+        "bedrock-runtime",
+        config=Config(
+            retries={"total_max_attempts": 1, "mode": "standard"},
+            connect_timeout=3,
+            read_timeout=10,
+        ),
+    )
+
+
+def polly_client():
+    return boto3.client("polly")
+
+
+def _ask_assistant(
+    ctx: Context, question: str, when: datetime, tz: ZoneInfo
+) -> assistant.AssistantResult | None:
+    """The assistant's answer over MCP, or None to fall back to the keyword rules."""
+    key = load_app_config().mcp_key
+    if os.environ.get("ASK_AGENT") != "on" or not key or not ctx.req.host:
+        return None
+    limit = int(os.environ.get("ASK_AGENT_DAILY_LIMIT") or assistant.DAILY_LIMIT)
+    try:
+        result = asyncio.run(
+            assistant.run(
+                question,
+                server=assistant.mcp_url(ctx.req.host, key),
+                bedrock=bedrock_client(),
+                model_id=os.environ.get("NOVA_MODEL_ID") or analysis.DEFAULT_MODEL_ID,
+                price_in=float(os.environ.get("NOVA_PRICE_IN") or analysis.DEFAULT_PRICE_IN),
+                price_out=float(os.environ.get("NOVA_PRICE_OUT") or analysis.DEFAULT_PRICE_OUT),
+                budget=lambda: assistant.take_budget(ctx.table, ctx.account_id, when, tz, limit),
+            )
+        )
+    except Exception as e:
+        log_event("ask_agent", logging.ERROR, outcome="internal_error", error=type(e).__name__)
+        return None
+    return result if isinstance(result, assistant.AssistantResult) else None

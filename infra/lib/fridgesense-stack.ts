@@ -155,6 +155,11 @@ export class FridgeSenseStack extends Stack {
 
     const context = (key: string, fallback: string) =>
       String(this.node.tryGetContext(key) ?? fallback);
+    const nova = {
+      novaModelId: context("novaModelId", "us.amazon.nova-2-lite-v1:0"),
+      novaPriceIn: context("novaPriceIn", "0.00033"),
+      novaPriceOut: context("novaPriceOut", "0.00275"),
+    };
     const doors = new DoorPipeline(this, "Doors", {
       code,
       baseEnvironment: common.environment,
@@ -165,9 +170,7 @@ export class FridgeSenseStack extends Stack {
       // Tune on real footage: cdk deploy -c doorBox=x,y,w,h -c doorThreshold=0.5
       doorBox: context("doorBox", "0.25,0.1,0.5,0.8"),
       doorThreshold: context("doorThreshold", "0.5"),
-      novaModelId: context("novaModelId", "us.amazon.nova-2-lite-v1:0"),
-      novaPriceIn: context("novaPriceIn", "0.00033"),
-      novaPriceOut: context("novaPriceOut", "0.00275"),
+      ...nova,
       faceDetectPrice: context("faceDetectPrice", "0.001"),
     });
 
@@ -232,6 +235,10 @@ export class FridgeSenseStack extends Stack {
       stillsBucket: doors.bucket,
       logGroup,
       timeZone,
+      // The Ask screen's assistant; switch off with: cdk deploy -c askAgent=off
+      askAgent: context("askAgent", "on"),
+      askAgentDailyLimit: context("askAgentDailyLimit", "100"),
+      ...nova,
     });
     // Throttle the API; the two passcode checks much harder to slow brute force.
     // Limits are per route across all callers. API Gateway rejects route settings

@@ -104,12 +104,19 @@ export function mockApi(): Plugin {
           return send(200, inventory());
         }
         if (req.method === "POST" && url === "/ask") {
-          // Canned reply: the real wording comes from the backend's fridge-ask rules.
+          // Canned assistant reply (no audio, so the browser's own voice reads it): the real
+          // wording comes from Nova over MCP, or the backend's fridge-ask rules.
           let body = "";
           req.on("data", (c) => (body += c));
           req.on("end", () => {
             const question = String(JSON.parse(body || "{}").question ?? "");
-            send(200, { intent: "unknown", answer: `Mock answer to "${question}".`, data: null });
+            send(200, {
+              intent: "agent",
+              answer: `Mock answer to "${question}".`,
+              data: { tools: ["get_inventory", "find_item", "fridge_activity"] },
+              source: "agent",
+              audio: null,
+            });
           });
           return;
         }

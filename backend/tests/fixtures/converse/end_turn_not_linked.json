@@ -1,0 +1,21 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "No camera is linked yet, so I can't tell."
+        }
+      ]
+    }
+  },
+  "stopReason": "end_turn",
+  "usage": {
+    "inputTokens": 1400,
+    "outputTokens": 20,
+    "totalTokens": 1420
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}

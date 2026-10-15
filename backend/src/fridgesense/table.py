@@ -142,6 +142,21 @@ class FridgeTable:
             ExpressionAttributeValues=serialize({":a": amount}),
         )
 
+    def increment_below(self, pk: str, sk: str, field: str, limit: int) -> bool:
+        """Atomically add 1 to a counter (created at 0) unless it has reached `limit`."""
+        try:
+            self.client.update_item(
+                TableName=self.name,
+                Key=serialize({"pk": pk, "sk": sk}),
+                UpdateExpression="ADD #f :one",
+                ConditionExpression="attribute_not_exists(#f) OR #f < :limit",
+                ExpressionAttributeNames={"#f": field},
+                ExpressionAttributeValues=serialize({":one": 1, ":limit": limit}),
+            )
+        except self.client.exceptions.ConditionalCheckFailedException:
+            return False
+        return True
+
     def transact(self, items: list[dict]) -> None:
         """Write items atomically. Each entry is {"Put": {...}} or {"Update": {...}} with
         plain values; TableName and serialization are filled in here."""

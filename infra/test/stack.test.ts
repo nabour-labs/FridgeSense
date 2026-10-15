@@ -191,3 +191,52 @@ describe("IAM", () => {
     expect(tableActions("TokenRefreshFunction")).toEqual([]);
   });
 });
+
+describe("Ask assistant", () => {
+  type Statement = { Action: string | string[]; Resource: unknown };
+
+  function apiFunction(): Resource {
+    const [fn] = Object.values(resourcesOf("AWS::Lambda::Function")).filter(
+      (f) => f.Properties.Handler === "fridgesense.handlers.api.handler",
+    );
+    return fn;
+  }
+
+  function apiStatements(): Statement[] {
+    return Object.values(resourcesOf("AWS::IAM::Policy"))
+      .filter((p) => JSON.stringify(p.Properties.Roles).includes("ApiFunctionServiceRole"))
+      .flatMap((p) => (p.Properties.PolicyDocument as { Statement: Statement[] }).Statement);
+  }
+
+  it("gives the API function 20 s, under the HTTP API's 30 s cap", () => {
+    expect(apiFunction().Properties.Timeout).toBe(20);
+  });
+
+  it("turns the assistant on with a daily limit and the pipeline's Nova settings", () => {
+    const env = (apiFunction().Properties.Environment as { Variables: Record<string, unknown> })
+      .Variables;
+    expect(env.ASK_AGENT).toBe("on");
+    expect(env.ASK_AGENT_DAILY_LIMIT).toBe("100");
+    expect(env.NOVA_MODEL_ID).toBe("us.amazon.nova-2-lite-v1:0");
+    expect(env.NOVA_PRICE_IN).toBe("0.00033");
+    expect(env.NOVA_PRICE_OUT).toBe("0.00275");
+  });
+
+  it("lets the API function invoke Nova through the inference profile", () => {
+    const invoke = apiStatements().filter((s) =>
+      [s.Action].flat().includes("bedrock:InvokeModel"),
+    );
+    expect(invoke).toHaveLength(1);
+    const resources = JSON.stringify(invoke[0].Resource);
+    expect(resources).toContain("inference-profile/us.amazon.nova-2-lite-v1:0");
+    expect(resources).toContain("foundation-model/amazon.nova-2-lite-v1:0");
+  });
+
+  it("lets the API function synthesize speech with Polly", () => {
+    const speech = apiStatements().filter((s) =>
+      [s.Action].flat().includes("polly:SynthesizeSpeech"),
+    );
+    expect(speech).toHaveLength(1);
+    expect(speech[0].Resource).toBe("*");
+  });
+});

@@ -52,13 +52,23 @@ export interface Pending {
   opened_at: string;
 }
 
-export type AskIntent = "find_item" | "get_inventory" | "fridge_activity" | "last_opened" | "unknown";
+export type AskIntent =
+  | "agent"
+  | "find_item"
+  | "get_inventory"
+  | "fridge_activity"
+  | "last_opened"
+  | "unknown";
 
-/** A fridge question's answer: the sentence to speak plus the structured result. */
+/** A fridge question's answer: the sentence to speak plus the structured result. Assistant
+ * answers (source "agent") have intent "agent" and data `{ tools: [...] }`, the MCP tools it
+ * called; keyword answers have the matching tool's result. `audio` is base64 MP3 or null. */
 export interface AskResult {
   intent: AskIntent;
   answer: string;
   data: Record<string, unknown> | null;
+  source: "agent" | "keywords";
+  audio: string | null;
 }
 
 /** A photo of an item from this fridge, sent to the analysis with its annotation. */

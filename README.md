@@ -69,7 +69,7 @@ The outputs list three URLs: `TokenExchangeUrl`, `AccountLinkUrl` and `WebhookUr
 ### 2. Create the Ring private app
 
 1. Register at the [Ring developer console](https://developer.amazon.com/ring/console) and create a **Private** app with the Cameras and Doorbells scope.
-2. Paste the three URLs from the deploy outputs into the app.
+2. On the app's **Account linking** page, paste `AccountLinkUrl`, `TokenExchangeUrl` and `WebhookUrl` from the deploy outputs into the matching fields, and `SiteUrl` (the app) into **App Homepage URL**.
 3. Copy the **Client ID**, **Client Secret** and **webhook signing (HMAC) key**. Ring shows them only once.
 
 ### 3. Store the Ring credentials
@@ -208,7 +208,10 @@ FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec
 
 **Ask screen.** The app's **Ask** tab answers the same questions without a voice assistant:
 - **Ways to ask:** tap the mic and speak, type a question, or tap one of the examples.
-- **Answers:** it shows the answer and reads it aloud. Answers come from the same data as the MCP tools, matched by keywords, so there's no AI-model call and no per-question cost.
+- **Answers:** a stand-in for a voice assistant's model answers each question. Nova 2 Lite connects to the MCP server above as an MCP client (Streamable HTTP), lists its tools, chooses which to call through Bedrock Converse tool use, and replies in one or two spoken sentences. Under each answer, "Checked: find_item, …" shows the tools it called. It can also handle open questions such as "What can I cook tonight?".
+- **Voice:** answers are read aloud in an Amazon Polly neural voice (Joanna). If Polly fails or the browser blocks playback, the browser's own voice reads the answer.
+- **Fallback:** if the assistant is off, has no `mcp_key`, is over its daily limit, takes longer than 12 s or fails, the answer comes from keyword rules over the same data, with no model call. Nothing breaks during a demo.
+- **Cost:** each question takes about 2–3 Nova calls (well under $0.01) plus Polly. CloudWatch logs one `ask_agent` event per question with `outcome`, `tools`, tokens and `usd`. The question text isn't logged. At most `askAgentDailyLimit` questions a day (default 100) go to Nova. Switch the assistant off with `cdk deploy -c askAgent=off`, or change the limit with `-c askAgentDailyLimit=20`.
 - **Browsers:** speech input works in Chrome and Safari, including on iPhone. Other browsers get the text box.
 - **Demo passcode:** it works with the read-only demo passcode, so judges can try it.
 - **Time zone:** "today" uses the same `timeZone` as the MCP server.
