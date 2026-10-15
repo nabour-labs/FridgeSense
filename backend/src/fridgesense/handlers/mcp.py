@@ -17,6 +17,9 @@ from fridgesense.web import json_response
 
 server = build_server(default_context)
 
+# Mangum logs each request's method and path at INFO, and the path holds mcp_key.
+logging.getLogger("mangum.http").setLevel(logging.WARNING)
+
 # API Gateway is the only way in and the path key is the access control; the SDK's
 # DNS-rebinding check would reject the execute-api Host header.
 _SECURITY = TransportSecuritySettings(enable_dns_rebinding_protection=False)
