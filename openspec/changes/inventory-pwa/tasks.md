@@ -10,10 +10,10 @@
 
 ## 2. API: sessions and routing
 
-- [ ] 2.1 Write failing unit tests for token signing and verification: valid, expired, tampered, signed with an old passcode, viewer role, viewer token after the demo passcode changes, and viewer token with no demo passcode configured; verify they fail
-- [ ] 2.2 Implement `session.py` (issue and verify with a `role` claim, key derived from that role's passcode) to make the tests pass
-- [ ] 2.3 Write failing handler tests for "Correct passcode", "Wrong passcode", "Passcode changed", "Demo passcode", "No demo passcode configured", "Demo passcode changed", "No token", "Tampered or expired token", "Unknown route" and "No linked Ring account"; verify they fail
-- [ ] 2.4 Implement `handlers/api.py` with the dispatch table, `POST /api/session` and auth gating to make the tests pass
+- [x] 2.1 Write failing unit tests for token signing and verification: valid, expired, tampered, signed with an old passcode, viewer role, viewer token after the demo passcode changes, and viewer token with no demo passcode configured; verify they fail
+- [x] 2.2 Implement `session.py` (issue and verify with a `role` claim, key derived from that role's passcode) to make the tests pass
+- [x] 2.3 Write failing handler tests for "Correct passcode", "Wrong passcode", "Passcode changed", "Demo passcode", "No demo passcode configured", "Demo passcode changed", "No token", "Tampered or expired token", "Unknown route" and "No linked Ring account"; verify they fail
+- [x] 2.4 Implement `handlers/api.py` with the dispatch table, `POST /api/session` and auth gating to make the tests pass
 
 ## 3. API: reads
 
