@@ -69,7 +69,7 @@ The Fridge screen SHALL show a summary card with the number of in-stock items, w
 
 #### Scenario: Empty fridge
 - **WHEN** there are no items
-- **THEN** the screen says the fridge is empty and that items appear after the next door opening
+- **THEN** the screen says the fridge is empty and that items appear after the next door opening or can be added by hand
 
 #### Scenario: Live refresh
 - **WHEN** the app is visible and 10 s pass
@@ -189,7 +189,7 @@ The app SHALL ship a web app manifest (name "FridgeSense", standalone display, i
 - **THEN** the app shell loads and shows that it can't reach FridgeSense, instead of a browser error page
 
 ### Requirement: Read-only demo mode
-When the session's role is `viewer`, the app SHALL show a "Demo · read-only" badge on every screen, SHALL make Fridge items not editable, SHALL list pending changes on Review without Confirm, Edit or "Not right" buttons, and SHALL show "Read-only demo" without changing the screen's data if the API answers 403.
+When the session's role is `viewer`, the app SHALL show a "Demo · read-only" badge on every screen, SHALL make Fridge items not editable and hide "Add item", SHALL list pending changes on Review without Confirm, Edit or "Not right" buttons, and SHALL show "Read-only demo" without changing the screen's data if the API answers 403.
 
 #### Scenario: Demo sign-in
 - **WHEN** the user signs in with the demo passcode and the API returns `role` `"viewer"`
@@ -197,7 +197,11 @@ When the session's role is `viewer`, the app SHALL show a "Demo · read-only" ba
 
 #### Scenario: No edits on Fridge
 - **WHEN** the role is `viewer` and the user taps eggs
-- **THEN** no quantity editor opens and no `PUT` request is sent
+- **THEN** no item editor opens and no `PUT` or `DELETE` request is sent
+
+#### Scenario: No Add item for viewers
+- **WHEN** the role is `viewer`, with items or with an empty fridge
+- **THEN** no "Add item" button is shown
 
 #### Scenario: No actions on Review
 - **WHEN** the role is `viewer` and one change is pending
@@ -469,3 +473,41 @@ A screen that polls SHALL ignore a response from any request that started before
 #### Scenario: Out-of-order polls
 - **WHEN** poll A starts, poll B starts, B returns, and then A returns with older data
 - **THEN** the screen shows B's data
+
+### Requirement: Add an item from the Fridge screen
+For the owner, the Fridge screen SHALL show an "Add item" button that opens a sheet with a Name field, a Category picker (default Other) and a Quantity stepper (default 1, minimum 1). Saving SHALL send `POST /api/items`, close the sheet and show the returned list. Save SHALL stay disabled while the name is blank.
+
+#### Scenario: Add butter
+- **WHEN** the owner taps "Add item", types "Butter", picks Dairy, sets the quantity to 2 and taps Save
+- **THEN** `POST /api/items` is sent with `{"name": "Butter", "category": "dairy", "quantity": 2}`, the sheet closes and the Dairy group shows Butter ×2
+
+#### Scenario: Blank name
+- **WHEN** the Add item sheet is open and the name is empty or only spaces
+- **THEN** Save is disabled and no request is sent
+
+#### Scenario: Add from an empty fridge
+- **WHEN** the owner signs in and there are no items
+- **THEN** the empty-fridge message also shows an "Add item" button that opens the Add item sheet
+
+#### Scenario: Add fails
+- **WHEN** `POST /api/items` answers 400 `{"error": "unknown category"}`
+- **THEN** the sheet stays open, shows "unknown category" and the list is unchanged
+
+### Requirement: Edit or remove an item from the Fridge screen
+For the owner, tapping an item SHALL open an editor with its Name, Category and Quantity filled in. Save SHALL send `PUT /api/items/{key}` with `quantity`, plus `name` and `category` only when they changed. "Remove item" SHALL ask "Remove <name>?" first, and only on confirm send `DELETE /api/items/{key}`. Both SHALL show the returned list.
+
+#### Scenario: Rename and recategorize
+- **WHEN** the owner taps Bottle (other, ×1), changes the name to "Oat Milk" and the category to Dairy, and saves
+- **THEN** `PUT /api/items/bottle` is sent with `{"quantity": 1, "name": "Oat Milk", "category": "dairy"}`, the sheet closes and the Dairy group shows Oat Milk ×1
+
+#### Scenario: Name clash
+- **WHEN** the owner renames Bottle to "Oat Milk" and the API answers 409 `{"error": "item exists"}`
+- **THEN** the editor stays open and shows "You already have Oat Milk." and the list is unchanged
+
+#### Scenario: Remove an item
+- **WHEN** the owner taps Mystery Jar, taps "Remove item" and confirms "Remove Mystery Jar?"
+- **THEN** `DELETE /api/items/mystery%20jar` is sent, the sheet closes and Mystery Jar is no longer listed, in stock or under "Out of"
+
+#### Scenario: Remove cancelled
+- **WHEN** the owner taps "Remove item" and then cancels the confirmation
+- **THEN** no `DELETE` request is sent and the editor is still open
