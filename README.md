@@ -82,6 +82,40 @@ set -a; source .env; set +a; cd backend && uv run fridgesense-devices
 
 Ring tokens are refreshed every 3 hours. If a refresh is ever rejected, the logs show `token_refresh_rejected`; link again from the Ring app.
 
+### 5. What happens on a door opening
+
+1. Ring sends a motion webhook. FridgeSense starts one Step Functions run (`fridgesense-door-events`) for it.
+2. The run waits for Ring to finish the recording, then finds the event's start and end in Ring's history.
+3. It downloads 4 stills from across the opening into S3. The stills are deleted after 7 days.
+4. It checks the brightness of the area where the fridge light shows. Motion without the door opening stops here, so no Nova call is made.
+5. Amazon Nova 2 Lite compares the stills and lists items added and removed. Changes with confidence 0.7 or more update the inventory; the rest wait for confirmation.
+
+Nova 2 Lite runs through the `us.` cross-region inference profile, so a still may be processed in us-east-1, us-east-2 or us-west-2. To use Nova Lite v1 in us-east-1 only, deploy with `-c novaModelId=amazon.nova-lite-v1:0 -c novaPriceIn=0.00006 -c novaPriceOut=0.00024`.
+
+### 6. Tune the door check
+
+The door box (fractions `x,y,width,height` of the image) and the brightness threshold are guesses until the camera is mounted. Open and close the fridge a few times, wave at the camera with the door shut, then read the brightest values the pipeline saw:
+
+```bash
+set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 1h --filter-pattern '"motion_not_door"'
+```
+
+Each line shows `brightest` and `threshold`. Pick a threshold between the closed-door values and the open-door ones, adjust the box if needed, and deploy:
+
+```bash
+set -a; source .env; set +a; cd infra && npx cdk deploy -c doorBox=0.25,0.1,0.5,0.8 -c doorThreshold=0.5
+```
+
+### Nova cost per opening
+
+Every Nova call logs its token use and cost:
+
+```bash
+set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"nova_cost"'
+```
+
+Each door event also stores its total as `nova_usd`. Expect about $0.0014 per opening with Nova 2 Lite.
+
 ### Remove
 
 ```bash
