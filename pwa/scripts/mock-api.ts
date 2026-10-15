@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { Plugin } from "vite";
 
 /** Dev-only fake /api for layout work without a deployed backend: FRIDGESENSE_MOCK=1 npm run dev */
@@ -10,29 +11,51 @@ export function mockApi(): Plugin {
     ["milk", "Milk", "dairy", 1, 2 * MIN],
     ["eggs", "Eggs", "dairy", 10, 3 * HOUR],
     ["greek yogurt", "Greek yogurt", "dairy", 4, 26 * HOUR],
+    ["cheddar cheese", "Cheddar cheese", "dairy", 1, 3 * 24 * HOUR],
+    ["butter", "Butter", "dairy", 1, 6 * 24 * HOUR],
     ["apple", "Apple", "produce", 5, 5 * HOUR],
     ["baby spinach", "Baby spinach", "produce", 1, 30 * HOUR],
+    ["strawberries", "Strawberries", "produce", 1, 8 * HOUR],
+    ["bell pepper", "Bell pepper", "produce", 3, 2 * 24 * HOUR],
+    ["chicken breast", "Chicken breast", "meat", 2, 22 * HOUR],
+    ["salmon fillet", "Salmon fillet", "seafood", 1, 28 * HOUR],
     ["soda can", "Soda can", "beverage", 0, 50 * MIN],
     ["orange juice", "Orange juice", "beverage", 1, 2 * 24 * HOUR],
+    ["sparkling water", "Sparkling water", "beverage", 6, 4 * 24 * HOUR],
+    ["hummus", "Hummus", "snack", 1, 3 * 24 * HOUR],
+    ["ketchup", "Ketchup", "condiment", 1, 12 * 24 * HOUR],
     ["leftover pasta", "Leftover pasta", "leftovers", 2, 20 * HOUR],
+    ["sourdough loaf", "Sourdough loaf", "bakery", 1, 9 * HOUR],
   ].map(([key, name, category, quantity, ago]) => ({
     key, name, category, quantity, last_changed_at: iso(ago as number),
   }));
-  // A 2×2 grey JPEG so the reference grid has something to show.
-  const tiny =
-    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAACAAIBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
+  // Drawn stand-ins for reference photos, so the Config grid has something to show.
+  const photo = (name: string) => readFileSync(new URL(`./mock/${name}.jpg`, import.meta.url)).toString("base64");
   let config: {
     instructions: string;
     references: { id: string; annotation: string; image: string; created_at: string }[];
   } = {
     instructions: "Count yogurt cups individually.",
-    references: [{ id: "ref1", annotation: "milk bag (2 L, white with blue print)", image: tiny, created_at: new Date().toISOString() }],
+    references: [
+      { id: "ref1", annotation: "milk bag (2 L, white with blue print)", image: photo("ref-milk-bag"), created_at: iso(3 * 24 * HOUR) },
+      { id: "ref2", annotation: "Greek yogurt cups, one per lid colour", image: photo("ref-yogurt-cups"), created_at: iso(2 * 24 * HOUR) },
+    ],
   };
   let pending = [
     { id: "p1", door_event_id: "e1", item: "chocolate bar", category: "snack", direction: "removed",
       quantity: 1, confidence: 0.62, opened_at: iso(50 * MIN) },
     { id: "p2", door_event_id: "e2", item: "bottle", category: "beverage", direction: "added",
       quantity: 1, confidence: 0.48, opened_at: iso(5 * HOUR) },
+  ];
+  const grabs = [
+    { item: "sparkling water", category: "beverage", direction: "removed", quantity: 1, confidence: 0.93 },
+    { item: "strawberries", category: "produce", direction: "added", quantity: 1, confidence: 0.9 },
+    null,
+    { item: "hummus", category: "snack", direction: "removed", quantity: 1, confidence: 0.86 },
+    { item: "greek yogurt", category: "dairy", direction: "removed", quantity: 1, confidence: 0.92 },
+    null,
+    { item: "sourdough loaf", category: "bakery", direction: "added", quantity: 1, confidence: 0.89 },
+    { item: "orange juice", category: "beverage", direction: "removed", quantity: 1, confidence: 0.84 },
   ];
   const stills = [1, 2, 3, 4].map((n) => `/mock/still-${n}.svg`);
   let events = [
@@ -52,7 +75,7 @@ export function mockApi(): Plugin {
     // Quick grabs, so today runs past one page of 10.
     ...Array.from({ length: 8 }, (_, i) => ({
       id: `grab${i}`, opened_at: iso((8 + i * 4) * MIN), duration_s: 6 + i, status: "done", pending_count: 0,
-      stills: [], changes: [],
+      stills: i % 3 === 0 ? stills : [], changes: grabs[i] ? [{ ...grabs[i], applied: true }] : [],
     })),
     ...habit(),
   ];
@@ -136,7 +159,7 @@ export function mockApi(): Plugin {
             const question = String(JSON.parse(body || "{}").question ?? "");
             send(200, {
               intent: "agent",
-              answer: `Mock answer to "${question}".`,
+              answer: cannedAnswer(question),
               data: { tools: ["get_inventory", "find_item", "fridge_activity"] },
               source: "agent",
               audio: null,
@@ -256,6 +279,18 @@ function fakeStill(n: number): string {
     <rect x="160" y="140" width="18" height="32" rx="3" fill="#a3e635"/><rect x="184" y="144" width="18" height="28" rx="3" fill="#facc15"/>
   </g>
   <rect width="320" height="180" fill="url(#light)"/>
-  <text x="10" y="172" font-family="monospace" font-size="9" fill="#475569">MOCK STILL ${n}/4</text>
 </svg>`;
+}
+
+/** Plausible assistant replies for the example questions, so the Ask screen reads like the real thing. */
+function cannedAnswer(question: string): string {
+  const q = question.toLowerCase();
+  if (q.includes("milk")) return "Yes, you have 1 milk. It was added 2 minutes ago.";
+  if (q.includes("eat first"))
+    return "Eat the salmon fillet and baby spinach first: they've been in the fridge over a day. The leftover pasta is next.";
+  if (q.includes("buy")) return "You're out of soda cans, and down to 1 milk and 1 orange juice.";
+  if (q.includes("last opened")) return "The fridge was last opened 2 minutes ago, for 18 seconds. Milk went in.";
+  if (q.includes("what's in") || q.includes("what is in"))
+    return "You have 17 kinds of items: 10 eggs, 6 sparkling waters, 5 apples, 4 Greek yogurts, 3 bell peppers, 2 chicken breasts, leftover pasta, milk, cheese and more.";
+  return `I checked the fridge for "${question}" but couldn't find anything matching.`;
 }
