@@ -131,3 +131,30 @@ def jpeg(
     buf = io.BytesIO()
     img.convert("RGB").save(buf, format="JPEG", quality=95)
     return buf.getvalue()
+
+
+def checkerboard_jpeg(size: tuple[int, int] = (320, 180), square: int = 4) -> bytes:
+    """A high-contrast test JPEG: black and white squares of `square` px."""
+    import io
+
+    from PIL import Image
+
+    W, H = size
+    img = Image.new("L", size)
+    img.putdata([255 if (x // square + y // square) % 2 else 0 for y in range(H) for x in range(W)])
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+class FakeBlurrer:
+    """Stand-in for FaceBlurrer: returns `blurred(data)` per still, or None for `drop` stills."""
+
+    def __init__(self, blurred=lambda data: data, drop=()):
+        self.blurred = blurred
+        self.drop = set(drop)
+        self.contexts: list[dict] = []
+
+    def blur(self, jpeg: bytes, context: dict) -> bytes | None:
+        self.contexts.append(context)
+        return None if context["still"] in self.drop else self.blurred(jpeg)

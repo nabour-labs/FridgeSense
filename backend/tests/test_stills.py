@@ -11,7 +11,7 @@ from fridgesense.door_events import download_stills
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import API_BASE, RingClient
 from fridgesense.store import Tokens
-from tests.conftest import BUCKET, MemoryTokenStore, jpeg
+from tests.conftest import BUCKET, FakeBlurrer, MemoryTokenStore, jpeg
 
 NOW = 1_786_715_700.0
 DOWNLOAD = f"{API_BASE}/v1/devices/ava1.ring.device.D1/media/image/download"
@@ -52,11 +52,21 @@ class Sleeps(list):
         self.append(seconds)
 
 
-def run(clients, sleep=None):
+def run(clients, sleep=None, blurrer=None):
     ring, http = clients
     return download_stills(
-        ring, http, boto3.client("s3"), BUCKET, STATE, Sleeps() if sleep is None else sleep
+        ring,
+        http,
+        boto3.client("s3"),
+        BUCKET,
+        FakeBlurrer() if blurrer is None else blurrer,
+        STATE,
+        Sleeps() if sleep is None else sleep,
     )
+
+
+def stored(key: str) -> bytes:
+    return boto3.client("s3").get_object(Bucket=BUCKET, Key=key)["Body"].read()
 
 
 def redirect_for_each_request(request):
@@ -87,6 +97,22 @@ def test_four_stills_saved(aws, clients):
     assert [k for k, _ in stills] == keys
     head = boto3.client("s3").head_object(Bucket=BUCKET, Key=keys[0])
     assert head["ContentType"] == "image/jpeg"
+
+
+# Detection sees the downloaded bytes, S3 sees only the result
+@respx.mock
+def test_s3_stores_only_the_blurred_still(aws, clients):
+    respx.post(DOWNLOAD).mock(side_effect=redirect_for_each_request)
+    downloaded = jpeg(0.5)
+    respx.get(url__startswith="https://download-us.example.com/").respond(200, content=downloaded)
+    blurrer = FakeBlurrer(blurred=lambda data: b"blurred:" + data)
+    stills = run(clients, blurrer=blurrer)
+    assert [stored(k) for k, _ in stills] == [b"blurred:" + downloaded] * 4
+    assert [data for _, data in stills] == [b"blurred:" + downloaded] * 4
+    assert blurrer.contexts == [
+        {"account_id": "ava1.ring.account.A1", "device_id": "ava1.ring.device.D1", "still": n}
+        for n in range(1, 5)
+    ]
 
 
 # Download link gets no token
