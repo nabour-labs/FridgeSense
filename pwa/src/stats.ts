@@ -9,6 +9,7 @@ export interface DayCount {
   date: string; // YYYY-MM-DD in the time zone
   label: string; // short weekday, e.g. "Thu"
   opens: number;
+  isToday: boolean;
 }
 
 export function deviceTimeZone(): string {
@@ -43,7 +44,7 @@ export function perDay(events: Opening[], now: Date, timeZone: string, days = 7)
     const day = new Date(Date.UTC(y, m - 1, d - (days - 1 - i)));
     const date = day.toISOString().slice(0, 10);
     const label = day.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
-    return { date, label, opens: counts.get(date) ?? 0 };
+    return { date, label, opens: counts.get(date) ?? 0, isToday: i === days - 1 };
   });
 }
 

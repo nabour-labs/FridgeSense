@@ -121,3 +121,41 @@ test("tapping an item lets the owner fix its quantity", async () => {
   expect(await screen.findByText("×12")).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
+
+// Summary card
+test("a summary card shows the in-stock count and the last change", async () => {
+  const twoMinAgo = new Date(Date.now() - 2 * 60_000).toISOString();
+  renderFridge({
+    ...STOCKED,
+    items: STOCKED.items.map((i) => (i.key === "milk" ? { ...i, last_changed_at: twoMinAgo } : i)),
+  });
+  const summary = await screen.findByRole("region", { name: "Fridge summary" });
+  expect(within(summary).getByText("3 in stock")).toBeInTheDocument();
+  expect(within(summary).getByText("Last change 2 min ago")).toBeInTheDocument();
+});
+
+// Summary with nothing changed yet
+test("the summary leaves out the last change when nothing has changed", async () => {
+  renderFridge({ items: STOCKED.items.map((i) => ({ ...i, last_changed_at: null })), pending_count: 0 });
+  const summary = await screen.findByRole("region", { name: "Fridge summary" });
+  expect(within(summary).getByText("3 in stock")).toBeInTheDocument();
+  expect(within(summary).queryByText(/Last change/)).not.toBeInTheDocument();
+});
+
+// Pending banner (inside the summary card)
+test("the pending link sits in the summary card", async () => {
+  renderFridge({ ...STOCKED, pending_count: 2 });
+  const summary = await screen.findByRole("region", { name: "Fridge summary" });
+  expect(within(summary).getByRole("link", { name: /2 items to confirm/ })).toBeInTheDocument();
+});
+
+// Item icons from name
+test("each item row shows its icon", async () => {
+  renderFridge({
+    items: [item("milk", 1, "dairy", "Milk"), item("apple", 3, "produce"), item("leftover pasta", 2, "leftovers")],
+    pending_count: 0,
+  });
+  await screen.findByText("Milk");
+  const icons = Array.from(document.querySelectorAll("[data-icon]")).map((e) => e.getAttribute("data-icon"));
+  expect(icons).toEqual(["🥛", "🍎", "🍝"]);
+});
