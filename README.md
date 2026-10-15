@@ -11,7 +11,7 @@ See [docs/hackathon-plan.md](docs/hackathon-plan.md) for the full plan.
 - App: **`<SiteUrl>`** (open it on a phone and add it to the home screen)
 - Demo passcode: **`<demo passcode>`**
 
-The demo passcode signs in **read-only** to the live fridge: the current inventory, every door opening from the last 7 days with the stills the camera took, items waiting for confirmation, and open/close stats. A "Demo · read-only" badge shows on every screen; confirming, editing and fixing counts are disabled.
+The demo passcode signs in **read-only** to the live fridge: the current inventory, door openings day by day (stills for the last 7 days), items waiting for confirmation, and open/close stats. A "Demo · read-only" badge shows on every screen; confirming, editing and fixing counts are disabled.
 
 ## Development
 
@@ -51,21 +51,25 @@ You need an AWS account (us-east-1), a Ring account with a camera and a Ring pla
 The first deploy in an account needs a one-time CDK bootstrap:
 
 ```bash
-set -a; source .env; set +a; cd infra && npm ci && npx cdk bootstrap
+set -a; source .env; set +a; cd infra && npm ci && npx cdk bootstrap -c alertEmail=you@example.com
 ```
 
 Then deploy. Lambda packages are built locally with uv (no Docker):
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk deploy
+set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com
 ```
+
+Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $20/month budget alert (at 80%) and the alarm for failed door-event runs. To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
+
+The API is throttled at 10 requests/s (burst 20) per route, and the two passcode checks (`POST /api/session`, `POST /ring/link`) at 1 request/s (burst 3).
 
 The outputs list three URLs: `TokenExchangeUrl`, `AccountLinkUrl` and `WebhookUrl`.
 
 ### 2. Create the Ring private app
 
 1. Register at the [Ring developer console](https://developer.amazon.com/ring/console) and create a **Private** app with the Cameras and Doorbells scope.
-2. Paste the three URLs from the deploy outputs into the app.
+2. On the app's **Account linking** page, paste `AccountLinkUrl`, `TokenExchangeUrl` and `WebhookUrl` from the deploy outputs into the matching fields, and `SiteUrl` (the app) into **App Homepage URL**.
 3. Copy the **Client ID**, **Client Secret** and **webhook signing (HMAC) key**. Ring shows them only once.
 
 ### 3. Store the Ring credentials
@@ -117,7 +121,7 @@ set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 1h --fi
 Each line shows `brightest` and `threshold`. Pick a threshold between the closed-door values and the open-door ones, adjust the box if needed, and deploy:
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk deploy -c doorBox=0.25,0.1,0.5,0.8 -c doorThreshold=0.5
+set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c doorBox=0.25,0.1,0.5,0.8 -c doorThreshold=0.5
 ```
 
 ### Nova cost per opening
@@ -150,7 +154,16 @@ set -a; source .env; set +a; aws cloudformation describe-stacks --stack-name Fri
 
 Sign in with the link passcode from step 3. To install it, open the URL on the phone, then use **Share → Add to Home Screen** (iPhone, Safari) or **⋮ → Install app** (Android, Chrome).
 
-The app keeps its session token in the browser's local storage for 30 days. That's fine for a single-user app on your own phone; changing the passcode signs every device out.
+The app asks for the passcode again every 24 hours, owner and demo alike. It notices the expiry on its own, even offline. Changing a passcode signs out every device that used it.
+
+### Teach the camera your fridge
+
+The gear at the top right opens **Config**:
+
+- **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). The app shrinks each photo to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
+- **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
+
+Changes apply from the next door opening. Each reference adds roughly 1–2K input tokens per analysis, which shows up in the `nova_cost` log. The demo passcode sees Config read-only.
 
 ### Demo access
 
@@ -182,18 +195,25 @@ Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in
 cd pwa && FRIDGESENSE_MOCK=1 npm run dev
 ```
 
+`FRIDGESENSE_MOCK=nocamera` answers every request with 409 "no camera linked", to see the "No Data" screens.
+
 ### Voice and MCP (Alexa+)
 
-FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec 2025-11-25, Streamable HTTP) with four tools: `find_item`, `get_inventory`, `fridge_activity` and `last_opened`. Ask things like:
+FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec 2025-11-25, Streamable HTTP) with six tools: `find_item`, `get_inventory`, `fridge_activity`, `last_opened`, `oldest_items` and `low_stock`. Ask things like:
 
 - "Do I have milk?"
 - "What's in my fridge?" / "What dairy do I have?"
+- "What should I eat first?" (`oldest_items`: what has been in the fridge longest, so less food goes to waste; condiments, frozen food and drinks are left out unless you ask for them)
+- "What do I need to buy?" (`low_stock`: what ran out in the last 30 days, and what is down to a quarter of its usual count)
 - "How many times did we open the fridge today?"
 - "When was the fridge last opened, and what changed?"
 
 **Ask screen.** The app's **Ask** tab answers the same questions without a voice assistant:
 - **Ways to ask:** tap the mic and speak, type a question, or tap one of the examples.
-- **Answers:** it shows the answer and reads it aloud. Answers come from the same data as the MCP tools, matched by keywords, so there's no AI-model call and no per-question cost.
+- **Answers:** a stand-in for a voice assistant's model answers each question. Nova 2 Lite connects to the MCP server above as an MCP client (Streamable HTTP), lists its tools, chooses which to call through Bedrock Converse tool use, and replies in one or two spoken sentences. Under each answer, "Checked: find_item, …" shows the tools it called. It can also handle open questions such as "What can I cook tonight?".
+- **Voice:** answers are read aloud in an Amazon Polly neural voice (Joanna). If Polly fails or the browser blocks playback, the browser's own voice reads the answer.
+- **Fallback:** if the assistant is off, has no `mcp_key`, is over its daily limit, takes longer than 12 s or fails, the answer comes from keyword rules over the same data, with no model call. Nothing breaks during a demo.
+- **Cost:** each question takes about 2–3 Nova calls (well under $0.01) plus Polly. CloudWatch logs one `ask_agent` event per question with `outcome`, `tools`, tokens and `usd`. The question text isn't logged. At most `askAgentDailyLimit` questions a day (default 100) go to Nova. Switch the assistant off with `cdk deploy -c askAgent=off`, or change the limit with `-c askAgentDailyLimit=20`.
 - **Browsers:** speech input works in Chrome and Safari, including on iPhone. Other browsers get the text box.
 - **Demo passcode:** it works with the read-only demo passcode, so judges can try it.
 - **Time zone:** "today" uses the same `timeZone` as the MCP server.

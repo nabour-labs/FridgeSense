@@ -37,14 +37,19 @@ const CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad";
 const ALL_VIEWER_EXCEPT_HOST = "b689b0a8-53d0-40ab-baf2-68738e2966ac";
 
 describe("app API", () => {
-  it("is a Python 3.13 arm64 Lambda with 256 MB, 10 s and the household time zone", () => {
+  it("is a Python 3.13 arm64 Lambda with 256 MB, 20 s and the household time zone", () => {
     const [, fn] = apiFunction();
     expect(fn.Properties.Runtime).toBe("python3.13");
     expect(fn.Properties.Architectures).toEqual(["arm64"]);
     expect(fn.Properties.MemorySize).toBe(256);
-    expect(fn.Properties.Timeout).toBe(10);
+    expect(fn.Properties.Timeout).toBe(20);
     const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
     expect(Object.keys(vars).sort()).toEqual([
+      "ASK_AGENT",
+      "ASK_AGENT_DAILY_LIMIT",
+      "NOVA_MODEL_ID",
+      "NOVA_PRICE_IN",
+      "NOVA_PRICE_OUT",
       "RING_APP_SECRET_ID",
       "RING_TOKENS_SECRET_ID",
       "STILLS_BUCKET",
@@ -60,6 +65,15 @@ describe("app API", () => {
     const fn = fns.find((r) => r.Properties.Handler === "fridgesense.handlers.api.handler")!;
     const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
     expect(vars.TIME_ZONE).toBe("America/Vancouver");
+  });
+
+  it("can switch the assistant off with the askAgent context", () => {
+    const other = synthTemplate({ askAgent: "off", askAgentDailyLimit: "20" });
+    const fns = Object.values(other.findResources("AWS::Lambda::Function") as Record<string, Resource>);
+    const fn = fns.find((r) => r.Properties.Handler === "fridgesense.handlers.api.handler")!;
+    const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    expect(vars.ASK_AGENT).toBe("off");
+    expect(vars.ASK_AGENT_DAILY_LIMIT).toBe("20");
   });
 
   it("serves every /api path through one catch-all route", () => {
@@ -80,7 +94,9 @@ describe("app API", () => {
     const s3 = actions.filter((a) => a.startsWith("s3:"));
     expect(s3).toEqual(expect.arrayContaining(["s3:GetObject*"]));
     expect(s3.filter((a) => /Put|Delete/.test(a))).toEqual([]);
-    expect(actions.filter((a) => /^(bedrock|states):/.test(a))).toEqual([]);
+    // Bedrock only to invoke Nova for the Ask assistant; never the state machine.
+    expect(actions.filter((a) => a.startsWith("bedrock:"))).toEqual(["bedrock:InvokeModel"]);
+    expect(actions.filter((a) => a.startsWith("states:"))).toEqual([]);
   });
 });
 
@@ -101,13 +117,15 @@ describe("site", () => {
     expect(Object.keys(resourcesOf("AWS::CloudFront::OriginAccessControl"))).toHaveLength(1);
     const [dist] = Object.values(resourcesOf("AWS::CloudFront::Distribution"));
     const config = dist.Properties.DistributionConfig as Record<string, unknown>;
+    // App shell at the root
     expect(config.DefaultRootObject).toBe("index.html");
-    expect(config.CustomErrorResponses).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ ErrorCode: 403, ResponseCode: 200, ResponsePagePath: "/index.html" }),
-        expect.objectContaining({ ErrorCode: 404, ResponseCode: 200, ResponsePagePath: "/index.html" }),
-      ]),
-    );
+  });
+
+  it("passes API errors through: viewer write refused / not found through the CDN", () => {
+    // Custom error responses apply to every origin, /api/* included; the app uses hash routes.
+    const [dist] = Object.values(resourcesOf("AWS::CloudFront::Distribution"));
+    const config = dist.Properties.DistributionConfig as Record<string, unknown>;
+    expect(config.CustomErrorResponses).toBeUndefined();
   });
 
   it("routes /api/* to the HTTP API without caching", () => {

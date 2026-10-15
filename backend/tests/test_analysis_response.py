@@ -6,6 +6,7 @@ import logging
 
 import boto3
 import pytest
+from botocore.exceptions import ConnectTimeoutError, ReadTimeoutError
 from botocore.stub import Stubber
 
 from fridgesense.analysis import (
@@ -127,6 +128,27 @@ def test_transient_errors_are_retryable(bedrock, code):
     stub.add_client_error("converse", code, http_status_code=503)
     with pytest.raises(BedrockRetryable):
         NovaAnalyzer(client).analyze(STILLS, [])
+
+
+# Read timeout is retryable
+@pytest.mark.parametrize(
+    "error, code",
+    [
+        (ReadTimeoutError(endpoint_url="https://bedrock"), "ReadTimeout"),
+        (ConnectTimeoutError(endpoint_url="https://bedrock"), "ConnectTimeout"),
+    ],
+)
+def test_client_timeout_is_retryable(error, code, caplog):
+    class TimingOut:
+        def converse(self, **_):
+            raise error
+
+    caplog.set_level(logging.INFO)
+    with pytest.raises(BedrockRetryable) as raised:
+        NovaAnalyzer(TimingOut()).analyze(STILLS, [])
+    assert str(raised.value) == code
+    [line] = [json.loads(r.getMessage()) for r in caplog.records if "nova_error" in r.getMessage()]
+    assert line["error_code"] == code  # "code" is redacted (OAuth codes)
 
 
 # Request rejected

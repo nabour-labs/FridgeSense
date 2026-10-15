@@ -1,4 +1,4 @@
-import type { AskResult, DoorEvent, Inventory, Pending, Session } from "./types";
+import type { AskResult, Config, DoorEvent, EventPage, Inventory, Pending, Session } from "./types";
 
 /** The session is missing, expired or no longer valid: sign in again. */
 export class Unauthorized extends Error {}
@@ -7,8 +7,12 @@ export class ReadOnly extends Error {}
 /** FridgeSense could not be reached. */
 export class Offline extends Error {}
 export class ApiError extends Error {
-  constructor(readonly status: number) {
-    super(`HTTP ${status}`);
+  /** `message` is the server's `error` text when it sent one. */
+  constructor(
+    readonly status: number,
+    message?: string,
+  ) {
+    super(message || `HTTP ${status}`);
   }
 }
 
@@ -32,6 +36,17 @@ export class ApiClient {
     return this.request("GET", `/api/events?days=${days}`);
   }
 
+  /** Door openings in [from, to), newest first, `limit` at a time; pass `next` back as `cursor`. */
+  eventsOn(from: Date, to: Date, limit: number, cursor?: string): Promise<EventPage> {
+    const query = new URLSearchParams({ from: from.toISOString(), to: to.toISOString(), limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.request("GET", `/api/events?${query}`);
+  }
+
+  deleteEvent(id: string): Promise<{ id: string }> {
+    return this.request("DELETE", `/api/events/${encodeURIComponent(id)}`);
+  }
+
   pending(): Promise<{ pending: Pending[] }> {
     return this.request("GET", "/api/pending");
   }
@@ -44,12 +59,42 @@ export class ApiClient {
     return this.request("POST", `/api/pending/${encodeURIComponent(id)}/reject`);
   }
 
+  addItem(item: { name: string; category: string; quantity: number }): Promise<Inventory> {
+    return this.request("POST", "/api/items", item);
+  }
+
+  /** Sends `name` and `category` only when given; a new name renames the item. */
+  editItem(key: string, changes: { quantity: number; name?: string; category?: string }): Promise<Inventory> {
+    return this.request("PUT", `/api/items/${encodeURIComponent(key)}`, changes);
+  }
+
+  deleteItem(key: string): Promise<Inventory> {
+    return this.request("DELETE", `/api/items/${encodeURIComponent(key)}`);
+  }
+
   setQuantity(key: string, quantity: number): Promise<Inventory> {
-    return this.request("PUT", `/api/items/${encodeURIComponent(key)}`, { quantity });
+    return this.editItem(key, { quantity });
   }
 
   ask(question: string): Promise<AskResult> {
     return this.request("POST", "/api/ask", { question });
+  }
+
+  config(): Promise<Config> {
+    return this.request("GET", "/api/config");
+  }
+
+  saveInstructions(instructions: string): Promise<Config> {
+    return this.request("PUT", "/api/config/instructions", { instructions });
+  }
+
+  /** `image` is a base64 JPEG. */
+  addReference(annotation: string, image: string): Promise<Config> {
+    return this.request("POST", "/api/config/references", { annotation, image });
+  }
+
+  deleteReference(id: string): Promise<Config> {
+    return this.request("DELETE", `/api/config/references/${encodeURIComponent(id)}`);
   }
 
   private async request<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
@@ -69,7 +114,10 @@ export class ApiClient {
     }
     if (resp.status === 401) throw new Unauthorized();
     if (resp.status === 403) throw new ReadOnly();
-    if (!resp.ok) throw new ApiError(resp.status);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      throw new ApiError(resp.status, typeof body?.error === "string" ? body.error : undefined);
+    }
     return (await resp.json()) as T;
   }
 }

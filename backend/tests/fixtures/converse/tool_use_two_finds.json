@@ -1,0 +1,36 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "toolUseId": "tu-a",
+            "name": "find_item",
+            "input": {
+              "name": "milk"
+            }
+          }
+        },
+        {
+          "toolUse": {
+            "toolUseId": "tu-b",
+            "name": "find_item",
+            "input": {
+              "name": "eggs"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "stopReason": "tool_use",
+  "usage": {
+    "inputTokens": 1200,
+    "outputTokens": 50,
+    "totalTokens": 1250
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}

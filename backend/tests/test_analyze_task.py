@@ -4,6 +4,7 @@ import boto3
 import pytest
 from botocore.stub import ANY, Stubber
 
+from fridgesense import analysis_config
 from fridgesense.analysis import BedrockRetryable, NovaAnalyzer
 from fridgesense.inventory import analyze_task, mark_failed_task
 from fridgesense.table import FridgeTable, account_pk
@@ -118,3 +119,53 @@ def test_mark_failed_task(setup):
     out = mark_failed_task(table, {**STATE, "error": {"Error": "BedrockRetryable"}})
     assert out["outcome"] == "analysis_failed"
     assert door(table)["status"] == "analysis_failed"
+
+
+def captured_request(setup) -> dict:
+    _, client, stub = setup
+    seen = {}
+
+    def capture(params, **kwargs):
+        seen.update(params)
+
+    client.meta.events.register("provide-client-params.bedrock-runtime.Converse", capture)
+    stub.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    run(setup)
+    client.meta.events.unregister("provide-client-params.bedrock-runtime.Converse", capture)
+    return seen
+
+
+def texts(request: dict) -> list[str]:
+    return [c["text"] for c in request["messages"][0]["content"] if "text" in c]
+
+
+# Saved config reaches the request
+def test_saved_config_reaches_the_request(setup):
+    table = setup[0]
+    milk_bag = jpeg(0.3)
+    analysis_config.add_reference(table, ACCOUNT, "milk bag", milk_bag, now_ms=1)
+    analysis_config.save_instructions(table, ACCOUNT, "Count yogurt cups individually.", now_ms=1)
+    request = captured_request(setup)
+    content = request["messages"][0]["content"]
+    assert texts(request)[1] == "Reference 1: milk bag"
+    assert content[2]["image"]["source"]["bytes"] == milk_bag
+    assert "Owner's instructions: Count yogurt cups individually." in texts(request)[-1]
+
+
+# Config changed between openings
+def test_deleted_reference_absent_next_time(setup):
+    table = setup[0]
+    milk = analysis_config.add_reference(table, ACCOUNT, "milk bag", jpeg(0.3), now_ms=1)
+    analysis_config.add_reference(table, ACCOUNT, "soda can", jpeg(0.4), now_ms=2)
+    assert "Reference 1: milk bag" in texts(captured_request(setup))
+    analysis_config.delete_reference(table, ACCOUNT, milk.sk)
+    after = texts(captured_request(setup))
+    assert "Reference 1: soda can" in after
+    assert not any("milk bag" in t for t in after)
+
+
+# No config
+def test_no_config_sends_no_references(setup):
+    request = captured_request(setup)
+    assert texts(request)[0] == "Image 1 of 4"
+    assert "Owner's instructions" not in texts(request)[-1]

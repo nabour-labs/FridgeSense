@@ -200,3 +200,116 @@ def last_opened(table: FridgeTable, account_id: str, now: datetime) -> LastOpene
         removed=applied("removed"),
         unsure_count=unsure,
     )
+
+
+LONG_LIFE = ["condiment", "frozen", "beverage"]  # keep for weeks: left out of "eat first"
+RAN_OUT_DAYS = 30
+RAN_OUT_LISTED = 10
+
+
+def _days_since(iso: str, now: datetime) -> int:
+    return (minutes_since(iso, now) or 0) // (24 * 60)
+
+
+def _stocked_at(item: dict) -> str:
+    """When the current stock went in; items saved before tracking use first_seen_at."""
+    return item.get("stocked_at") or item.get("first_seen_at") or item.get("last_changed_at", "")
+
+
+def _peak(item: dict) -> int:
+    return item.get("peak_quantity", item.get("quantity", 0))
+
+
+def _name(item: dict) -> str:
+    return item.get("name", item["sk"].removeprefix("ITEM#"))
+
+
+class AgedItem(BaseModel):
+    name: str
+    category: str
+    count: int
+    in_fridge_since: str
+    days_in_fridge: int
+
+
+class OldestItemsResult(BaseModel):
+    items: list[AgedItem]
+    skipped_categories: list[str]
+
+
+def oldest_items(
+    table: FridgeTable, account_id: str, now: datetime, category: str | None = None, limit: int = 5
+) -> OldestItemsResult:
+    """Items in stock, oldest stock first; long-life categories only when asked for."""
+    wanted = category.strip().lower() if category else None
+    rows = [i for i in table.query(account_id, "ITEM#") if i.get("quantity", 0) > 0]
+    if wanted:
+        rows = [i for i in rows if i.get("category", "other").lower() == wanted]
+    else:
+        rows = [i for i in rows if i.get("category", "other").lower() not in LONG_LIFE]
+    rows.sort(key=lambda i: (_stocked_at(i), _name(i).lower()))
+    items = [
+        AgedItem(
+            name=_name(i),
+            category=i.get("category", "other"),
+            count=i["quantity"],
+            in_fridge_since=_stocked_at(i),
+            days_in_fridge=_days_since(_stocked_at(i), now),
+        )
+        for i in rows[:limit]
+    ]
+    return OldestItemsResult(items=items, skipped_categories=[] if wanted else list(LONG_LIFE))
+
+
+class RanOut(BaseModel):
+    name: str
+    category: str
+    ran_out_at: str
+    days_ago: int
+
+
+class RunningLow(BaseModel):
+    name: str
+    category: str
+    count: int
+    usual_count: int
+
+
+class LowStockResult(BaseModel):
+    ran_out: list[RanOut]
+    running_low: list[RunningLow]
+
+
+def low_stock(table: FridgeTable, account_id: str, now: datetime) -> LowStockResult:
+    """Items that ran out in the last 30 days, and items down to a quarter of their peak."""
+    rows = table.query(account_id, "ITEM#")
+    out = [
+        i
+        for i in rows
+        if i.get("quantity", 0) == 0
+        and i.get("last_changed_at")
+        and _days_since(i["last_changed_at"], now) < RAN_OUT_DAYS
+    ]
+    out.sort(key=lambda i: i["last_changed_at"], reverse=True)
+    low = [i for i in rows if i.get("quantity", 0) > 0 and i["quantity"] * 4 <= _peak(i)]
+    low.sort(key=lambda i: _name(i).lower())
+    return LowStockResult(
+        ran_out=[
+            RanOut(
+                name=_name(i),
+                category=i.get("category", "other"),
+                ran_out_at=i["last_changed_at"],
+                days_ago=_days_since(i["last_changed_at"], now),
+            )
+            for i in out[:RAN_OUT_LISTED]
+        ],
+        running_low=[
+            RunningLow(
+                name=_name(i),
+                category=i.get("category", "other"),
+                count=i["quantity"],
+                usual_count=_peak(i),
+            )
+            for i in low
+        ],
+    )

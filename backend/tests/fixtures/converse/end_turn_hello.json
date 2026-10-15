@@ -1,0 +1,21 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Hello! Ask me what's in your fridge."
+        }
+      ]
+    }
+  },
+  "stopReason": "end_turn",
+  "usage": {
+    "inputTokens": 1100,
+    "outputTokens": 15,
+    "totalTokens": 1115
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}

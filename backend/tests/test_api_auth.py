@@ -23,7 +23,7 @@ def test_correct_passcode(app):
     assert status == 200
     assert body["token"]
     assert body["role"] == "owner"
-    assert body["expires_at"] == "2026-09-05T07:06:40.000Z"  # NOW + 30 days
+    assert body["expires_at"] == "2026-08-07T07:06:40.000Z"  # NOW + 24 hours
 
 
 # Demo passcode
@@ -32,6 +32,7 @@ def test_demo_passcode(app):
     fresh_config()
     status, body = call("POST", "/api/session", {"passcode": "look-only"})
     assert status == 200 and body["role"] == "viewer" and body["token"]
+    assert body["expires_at"] == "2026-08-07T07:06:40.000Z"  # NOW + 24 hours
 
 
 # No demo passcode configured
@@ -94,3 +95,12 @@ def test_no_linked_ring_account(aws, monkeypatch):
     monkeypatch.setattr(api, "now", lambda: NOW)
     token = sign_in()
     assert call("GET", "/api/inventory", token=token) == (409, {"error": "no camera linked"})
+
+
+# Token one day old
+def test_token_one_day_old(app, monkeypatch):
+    token = sign_in()
+    monkeypatch.setattr(api, "now", lambda: NOW + 24 * 3600)
+    assert call("GET", "/api/inventory", token=token)[0] == 200
+    monkeypatch.setattr(api, "now", lambda: NOW + 24 * 3600 + 1)
+    assert call("GET", "/api/inventory", token=token) == (401, {"error": "sign in"})

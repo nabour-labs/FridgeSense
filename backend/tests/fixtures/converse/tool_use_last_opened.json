@@ -1,0 +1,25 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "toolUseId": "tu-last",
+            "name": "last_opened",
+            "input": {}
+          }
+        }
+      ]
+    }
+  },
+  "stopReason": "tool_use",
+  "usage": {
+    "inputTokens": 1200,
+    "outputTokens": 25,
+    "totalTokens": 1225
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}

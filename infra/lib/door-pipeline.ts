@@ -127,6 +127,8 @@ export class DoorPipeline extends Construct {
       backoffRate: 2,
     });
     analyze.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
+    // The event is already "analyzing" here; a failed save must not leave it there.
+    save.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
     markFailed.next(new Succeed(this, "AnalysisFailed"));
 
     const waitAgain = new Wait(this, "WaitForRecordingEnd", {

@@ -2,17 +2,27 @@ import type { Role } from "./api/types";
 
 const TOKEN = "fridgesense.token";
 const ROLE = "fridgesense.role";
+const EXPIRES = "fridgesense.expires";
 
 export interface StoredSession {
   token: string;
   role: Role;
+  /** Epoch ms after which the passcode is asked for again. */
+  expiresAt: number;
 }
 
-export function loadSession(): StoredSession | null {
+/** The stored session, or null (and storage cleared) if it is missing, expired or has no expiry. */
+export function loadSession(now = Date.now()): StoredSession | null {
   try {
     const token = localStorage.getItem(TOKEN);
+    if (!token) return null;
     const role = localStorage.getItem(ROLE) === "viewer" ? "viewer" : "owner";
-    return token ? { token, role } : null;
+    const expiresAt = Number(localStorage.getItem(EXPIRES));
+    if (!expiresAt || now > expiresAt) {
+      clearSession();
+      return null;
+    }
+    return { token, role, expiresAt };
   } catch {
     return null;
   }
@@ -22,6 +32,7 @@ export function saveSession(session: StoredSession) {
   try {
     localStorage.setItem(TOKEN, session.token);
     localStorage.setItem(ROLE, session.role);
+    localStorage.setItem(EXPIRES, String(session.expiresAt));
   } catch {
     // Private mode: the session lasts until the page closes.
   }
@@ -31,6 +42,7 @@ export function clearSession() {
   try {
     localStorage.removeItem(TOKEN);
     localStorage.removeItem(ROLE);
+    localStorage.removeItem(EXPIRES);
   } catch {
     // Nothing stored.
   }

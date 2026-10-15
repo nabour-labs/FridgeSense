@@ -5,7 +5,7 @@ import { fakeApi, signedIn } from "./test-utils";
 // Empty lists keep their messages: the default fake API answers 200 with empty lists.
 test.each([
   ["fridge", "Your fridge looks empty."],
-  ["activity", "No door openings in the last 7 days."],
+  ["activity", "No door openings on this day."],
   ["review", "Everything is confirmed."],
 ])("an empty %s keeps its message, not No Data", async (tab, message) => {
   signedIn();

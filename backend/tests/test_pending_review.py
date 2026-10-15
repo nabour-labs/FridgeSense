@@ -155,6 +155,13 @@ def test_add_an_item_by_hand(table):
     assert (item["quantity"], item["category"], item["name"]) == (1, "other", "Butter")
 
 
+# Set a count with a category for a new item
+def test_set_a_count_with_a_category_for_a_new_item(table):
+    set_quantity(table, ACCOUNT, "butter", 1, category="dairy", now=NOW)
+    item = table.get(PK, "ITEM#butter")
+    assert (item["quantity"], item["category"]) == (1, "dairy")
+
+
 def test_set_quantity_rejects_negative(table):
     with pytest.raises(ValueError):
         set_quantity(table, ACCOUNT, "eggs", -1, now=NOW)

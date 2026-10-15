@@ -1,6 +1,7 @@
 """fridge-mcp: the Lambda endpoint (URL key, Streamable HTTP through API Gateway)."""
 
 import json
+import logging
 
 import pytest
 
@@ -85,6 +86,14 @@ def test_initialize_2025_11_25(keyed):
     assert body["result"]["protocolVersion"] == "2025-11-25"
     assert body["result"]["serverInfo"]["name"] == "fridgesense"
     assert "tools" in body["result"]["capabilities"]
+
+
+def test_key_never_logged(keyed, caplog):
+    """The path holds the key, so the request log lines must not include it."""
+    caplog.set_level(logging.INFO)
+    assert call(event(KEY, initialize("2025-11-25")))[0] == 200
+    assert caplog.records, "nothing was logged at all"
+    assert KEY not in caplog.text
 
 
 # Older client version

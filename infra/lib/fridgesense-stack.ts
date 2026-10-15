@@ -10,14 +10,24 @@ import {
   Stack,
   type StackProps,
 } from "aws-cdk-lib";
-import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { CfnStage, HttpApi, HttpMethod, type HttpRoute } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { CfnBudget } from "aws-cdk-lib/aws-budgets";
+import {
+  Alarm,
+  ComparisonOperator,
+  Stats,
+  TreatMissingData,
+} from "aws-cdk-lib/aws-cloudwatch";
+import { SnsAction } from "aws-cdk-lib/aws-cloudwatch-actions";
 import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
 import { Rule, Schedule } from "aws-cdk-lib/aws-events";
 import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
 import { Architecture, Code, Function as LambdaFn, Runtime } from "aws-cdk-lib/aws-lambda";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
+import { Topic } from "aws-cdk-lib/aws-sns";
+import { EmailSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 import type { Construct } from "constructs";
 import { AppSite } from "./app-site.js";
 import { DoorPipeline } from "./door-pipeline.js";
@@ -80,6 +90,12 @@ export class FridgeSenseStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
+    // Budget and alarm emails go here; never commit an address: cdk deploy -c alertEmail=...
+    const alertEmail = String(this.node.tryGetContext("alertEmail") ?? "");
+    if (!alertEmail) {
+      throw new Error("Set the alert email: cdk deploy -c alertEmail=you@example.com");
+    }
+
     const table = new Table(this, "Table", {
       tableName: "fridgesense",
       partitionKey: { name: "pk", type: AttributeType.STRING },
@@ -139,6 +155,11 @@ export class FridgeSenseStack extends Stack {
 
     const context = (key: string, fallback: string) =>
       String(this.node.tryGetContext(key) ?? fallback);
+    const nova = {
+      novaModelId: context("novaModelId", "us.amazon.nova-2-lite-v1:0"),
+      novaPriceIn: context("novaPriceIn", "0.00033"),
+      novaPriceOut: context("novaPriceOut", "0.00275"),
+    };
     const doors = new DoorPipeline(this, "Doors", {
       code,
       baseEnvironment: common.environment,
@@ -149,9 +170,7 @@ export class FridgeSenseStack extends Stack {
       // Tune on real footage: cdk deploy -c doorBox=x,y,w,h -c doorThreshold=0.5
       doorBox: context("doorBox", "0.25,0.1,0.5,0.8"),
       doorThreshold: context("doorThreshold", "0.5"),
-      novaModelId: context("novaModelId", "us.amazon.nova-2-lite-v1:0"),
-      novaPriceIn: context("novaPriceIn", "0.00033"),
-      novaPriceOut: context("novaPriceOut", "0.00275"),
+      ...nova,
       faceDetectPrice: context("faceDetectPrice", "0.001"),
     });
 
@@ -191,17 +210,22 @@ export class FridgeSenseStack extends Stack {
     const routes: [string, HttpMethod][] = [
       ["/ring/token", HttpMethod.POST],
       ["/ring/link", HttpMethod.GET],
-      ["/ring/link", HttpMethod.POST],
       ["/ring/webhook", HttpMethod.POST],
     ];
     for (const [routePath, method] of routes) {
       api.addRoutes({ path: routePath, methods: [method], integration });
     }
+    // The link page's passcode check: throttled on its own below.
+    const [ringLinkPost] = api.addRoutes({
+      path: "/ring/link",
+      methods: [HttpMethod.POST],
+      integration,
+    });
 
     // "today" in fridge answers means the household's day: cdk deploy -c timeZone=America/Vancouver
     const timeZone = context("timeZone", "America/Toronto");
 
-    new AppSite(this, "App", {
+    const app = new AppSite(this, "App", {
       api,
       code,
       baseEnvironment: common.environment,
@@ -211,7 +235,28 @@ export class FridgeSenseStack extends Stack {
       stillsBucket: doors.bucket,
       logGroup,
       timeZone,
+      // The Ask screen's assistant; switch off with: cdk deploy -c askAgent=off
+      askAgent: context("askAgent", "on"),
+      askAgentDailyLimit: context("askAgentDailyLimit", "100"),
+      ...nova,
     });
+    // Throttle the API; the two passcode checks much harder to slow brute force.
+    // Limits are per route across all callers. API Gateway rejects route settings
+    // for routes that don't exist yet, so the stage waits for them.
+    const stage = api.defaultStage?.node.defaultChild as CfnStage;
+    stage.defaultRouteSettings = { throttlingRateLimit: 10, throttlingBurstLimit: 20 };
+    const passcodeRoutes: [string, HttpRoute][] = [
+      ["POST /api/session", app.sessionRoute],
+      ["POST /ring/link", ringLinkPost],
+    ];
+    // RouteSettings is an untyped map: CDK passes its keys through as written.
+    stage.routeSettings = Object.fromEntries(
+      passcodeRoutes.map(([key]) => [key, { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 }]),
+    );
+    for (const [, route] of passcodeRoutes) stage.node.addDependency(route);
+
+    // The "Camera linked" page links to the app.
+    httpFn.addEnvironment("APP_URL", app.url);
 
     new McpEndpoint(this, "Mcp", {
       api,
@@ -223,6 +268,38 @@ export class FridgeSenseStack extends Stack {
       logGroup,
       timeZone,
     });
+
+    // Cost and failure alerts, by email.
+    new CfnBudget(this, "MonthlyBudget", {
+      budget: {
+        budgetName: "fridgesense-monthly",
+        budgetType: "COST",
+        timeUnit: "MONTHLY",
+        budgetLimit: { amount: 20, unit: "USD" },
+      },
+      notificationsWithSubscribers: [
+        {
+          notification: {
+            notificationType: "ACTUAL",
+            comparisonOperator: "GREATER_THAN",
+            threshold: 80,
+            thresholdType: "PERCENTAGE",
+          },
+          subscribers: [{ subscriptionType: "EMAIL", address: alertEmail }],
+        },
+      ],
+    });
+    const alerts = new Topic(this, "Alerts", { topicName: "fridgesense-alerts" });
+    alerts.addSubscription(new EmailSubscription(alertEmail));
+    new Alarm(this, "DoorEventsFailed", {
+      alarmName: "fridgesense-door-events-failed",
+      alarmDescription: "A door-event workflow run failed",
+      metric: doors.stateMachine.metricFailed({ period: Duration.minutes(5), statistic: Stats.SUM }),
+      threshold: 1,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(new SnsAction(alerts));
 
     const base = api.apiEndpoint;
     new CfnOutput(this, "TokenExchangeUrl", { value: `${base}/ring/token` });

@@ -13,6 +13,8 @@ input[type=password]{width:100%;box-sizing:border-box;padding:10px;font-size:1re
 border:1px solid #c7ccd6;border-radius:8px}
 button{margin-top:16px;width:100%;padding:11px;font-size:1rem;border:0;border-radius:8px;
 background:#1f6feb;color:#fff;cursor:pointer}
+a.button{display:block;margin-top:20px;padding:11px;border-radius:8px;background:#1f6feb;
+color:#fff;text-align:center;text-decoration:none;font-weight:600}
 .error{color:#b42318;font-weight:600}ul{padding-left:20px}
 """
 
@@ -46,7 +48,7 @@ def message(title: str, text: str) -> str:
     return page(title, f"<p>{escape(text)}</p>")
 
 
-def linked(device_names: list[str] | None) -> str:
+def linked(device_names: list[str] | None, app_url: str | None = None) -> str:
     if device_names is None:
         devices = "<p>Your devices could not be loaded yet. They will show up in the app.</p>"
     elif not device_names:
@@ -54,4 +56,7 @@ def linked(device_names: list[str] | None) -> str:
     else:
         items = "".join(f"<li>{escape(n)}</li>" for n in device_names)
         devices = f"<p>Cameras found:</p><ul>{items}</ul>"
-    return page("Camera linked", "<p>Your Ring account is linked to FridgeSense.</p>" + devices)
+    open_app = f'<a class="button" href="{escape(app_url)}">Open FridgeSense</a>' if app_url else ""
+    return page(
+        "Camera linked", "<p>Your Ring account is linked to FridgeSense.</p>" + devices + open_app
+    )

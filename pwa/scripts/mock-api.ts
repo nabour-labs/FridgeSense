@@ -18,6 +18,16 @@ export function mockApi(): Plugin {
   ].map(([key, name, category, quantity, ago]) => ({
     key, name, category, quantity, last_changed_at: iso(ago as number),
   }));
+  // A 2×2 grey JPEG so the reference grid has something to show.
+  const tiny =
+    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAACAAIBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
+  let config: {
+    instructions: string;
+    references: { id: string; annotation: string; image: string; created_at: string }[];
+  } = {
+    instructions: "Count yogurt cups individually.",
+    references: [{ id: "ref1", annotation: "milk bag (2 L, white with blue print)", image: tiny, created_at: new Date().toISOString() }],
+  };
   let pending = [
     { id: "p1", door_event_id: "e1", item: "chocolate bar", category: "snack", direction: "removed",
       quantity: 1, confidence: 0.62, opened_at: iso(50 * MIN) },
@@ -25,7 +35,7 @@ export function mockApi(): Plugin {
       quantity: 1, confidence: 0.48, opened_at: iso(5 * HOUR) },
   ];
   const stills = [1, 2, 3, 4].map((n) => `/mock/still-${n}.svg`);
-  const events = [
+  let events = [
     { id: "e0", opened_at: iso(2 * MIN), duration_s: 18, status: "done", pending_count: 0, stills,
       changes: [{ item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.94, applied: true }] },
     { id: "e1", opened_at: iso(50 * MIN), duration_s: 31, status: "done", pending_count: 1, stills,
@@ -39,11 +49,33 @@ export function mockApi(): Plugin {
         { item: "eggs", category: "dairy", direction: "removed", quantity: 2, confidence: 0.79, applied: true },
       ] },
     { id: "e3", opened_at: iso(9 * HOUR), duration_s: 12, status: "analysis_failed", pending_count: 0, stills: [], changes: [] },
-    ...Array.from({ length: 18 }, (_, i) => ({
-      id: `old${i}`, opened_at: iso((14 + i * 7) * HOUR), duration_s: 15 + ((i * 7) % 30),
-      status: "done", pending_count: 0, stills: [], changes: [],
+    // Quick grabs, so today runs past one page of 10.
+    ...Array.from({ length: 8 }, (_, i) => ({
+      id: `grab${i}`, opened_at: iso((8 + i * 4) * MIN), duration_s: 6 + i, status: "done", pending_count: 0,
+      stills: [], changes: [],
     })),
+    ...habit(),
   ];
+  // Four weeks of meal-time openings (busier at weekends) so the Stats heatmap has a pattern.
+  function habit() {
+    const out: { id: string; opened_at: string; duration_s: number; status: string; pending_count: number; stills: string[]; changes: never[] }[] = [];
+    const day0 = new Date(now);
+    day0.setHours(0, 0, 0, 0);
+    for (let d = 1; d < 28; d++) {
+      const day = new Date(day0.getTime() - d * 24 * HOUR);
+      const weekend = day.getDay() === 0 || day.getDay() === 6;
+      const hours = weekend ? [9, 10, 12, 13, 15, 18, 19, 19, 21] : [7, 7, 12, 17, 18, 18, 19, 22];
+      hours.forEach((h, i) => {
+        if ((d * 7 + i * 3) % 5 === 0) return; // skip some for texture
+        out.push({
+          id: `old${d}-${i}`, opened_at: new Date(day.getTime() + h * HOUR + ((d * 13 + i * 7) % 50) * MIN).toISOString(),
+          duration_s: 15 + ((d * 7 + i) % 30), status: "done", pending_count: 0, stills: [], changes: [],
+        });
+      });
+    }
+    return out;
+  }
+  const eventsSince = (days: number) => events.filter((e) => Date.parse(e.opened_at) >= now - days * 24 * HOUR);
   const inventory = () => ({ items, pending_count: pending.length });
   return {
     name: "fridgesense-mock-api",
@@ -65,11 +97,30 @@ export function mockApi(): Plugin {
           res.end(JSON.stringify(body));
         };
         const url = req.url ?? "";
-        if (req.method === "POST" && url === "/session") return send(200, { token: "mock", expires_at: iso(-30 * 24 * HOUR), role: process.env.FRIDGESENSE_MOCK === "viewer" ? "viewer" : "owner" });
+        if (req.method === "POST" && url === "/session") return send(200, { token: "mock", expires_at: iso(-24 * HOUR), role: process.env.FRIDGESENSE_MOCK === "viewer" ? "viewer" : "owner" });
         // FRIDGESENSE_MOCK=nocamera: signed in, but no Ring account linked yet.
         if (process.env.FRIDGESENSE_MOCK === "nocamera") return send(409, { error: "no camera linked" });
         if (url === "/inventory") return send(200, inventory());
-        if (url.startsWith("/events")) return send(200, { events });
+        const doomed = url.match(/^\/events\/(.+)$/);
+        if (req.method === "DELETE" && doomed) {
+          const id = decodeURIComponent(doomed[1]);
+          if (!events.some((e) => e.id === id)) return send(404, { error: "not found" });
+          events = events.filter((e) => e.id !== id);
+          pending = pending.filter((p) => p.door_event_id !== id);
+          return send(200, { id });
+        }
+        if (url.startsWith("/events")) {
+          const q = new URLSearchParams(url.split("?")[1]);
+          if (!q.has("from")) return send(200, { events: eventsSince(Number(q.get("days") ?? 7)), next: null });
+          const from = Date.parse(q.get("from")!), to = Date.parse(q.get("to")!);
+          let found = events
+            .filter((e) => Date.parse(e.opened_at) >= from && Date.parse(e.opened_at) < to)
+            .sort((a, b) => b.opened_at.localeCompare(a.opened_at));
+          const cursor = found.findIndex((e) => e.id === q.get("cursor"));
+          if (cursor >= 0) found = found.slice(cursor + 1);
+          const limit = Number(q.get("limit") ?? found.length);
+          return send(200, { events: found.slice(0, limit), next: found.length > limit ? found[limit - 1].id : null });
+        }
         if (url === "/pending") return send(200, { pending });
         const m = url.match(/^\/pending\/(\w+)\/(confirm|reject)$/);
         if (m) {
@@ -77,25 +128,103 @@ export function mockApi(): Plugin {
           return send(200, inventory());
         }
         if (req.method === "POST" && url === "/ask") {
-          // Canned reply: the real wording comes from the backend's fridge-ask rules.
+          // Canned assistant reply (no audio, so the browser's own voice reads it): the real
+          // wording comes from Nova over MCP, or the backend's fridge-ask rules.
           let body = "";
           req.on("data", (c) => (body += c));
           req.on("end", () => {
             const question = String(JSON.parse(body || "{}").question ?? "");
-            send(200, { intent: "unknown", answer: `Mock answer to "${question}".`, data: null });
+            send(200, {
+              intent: "agent",
+              answer: `Mock answer to "${question}".`,
+              data: { tools: ["get_inventory", "find_item", "fridge_activity"] },
+              source: "agent",
+              audio: null,
+            });
           });
           return;
         }
-        const put = url.match(/^\/items\/(.+)$/);
-        if (req.method === "PUT" && put) {
+        if (url === "/config" && req.method === "GET") return send(200, config);
+        if (url.startsWith("/config/") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+        if (req.method === "PUT" && url === "/config/instructions") {
           let body = "";
           req.on("data", (c) => (body += c));
           req.on("end", () => {
-            const key = decodeURIComponent(put[1]);
-            items = items.map((i) => (i.key === key ? { ...i, quantity: JSON.parse(body).quantity } : i));
+            config = { ...config, instructions: String(JSON.parse(body).instructions ?? "").trim() };
+            send(200, config);
+          });
+          return;
+        }
+        if (req.method === "POST" && url === "/config/references") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { annotation, image } = JSON.parse(body);
+            if (config.references.length >= 6) return send(409, { error: "at most 6 reference images" });
+            const id = `ref${Date.now()}`;
+            config = {
+              ...config,
+              references: [...config.references, { id, annotation: String(annotation).trim(), image, created_at: new Date().toISOString() }],
+            };
+            send(200, config);
+          });
+          return;
+        }
+        const ref = url.match(/^\/config\/references\/(.+)$/);
+        if (req.method === "DELETE" && ref) {
+          const before = config.references.length;
+          config = { ...config, references: config.references.filter((r) => r.id !== decodeURIComponent(ref[1])) };
+          return config.references.length < before ? send(200, config) : send(404, { error: "not found" });
+        }
+        const itemKey = (name: string) => name.trim().split(/\s+/).join(" ").toLowerCase();
+        const display = (name: string) => name.trim().split(/\s+/).join(" ");
+        if (url.startsWith("/items") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+        if (req.method === "POST" && url === "/items") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { name, category, quantity } = JSON.parse(body);
+            const key = itemKey(name);
+            const at = new Date().toISOString();
+            const old = items.find((i) => i.key === key);
+            items = old
+              ? items.map((i) => (i.key === key ? { ...i, category, quantity: i.quantity + quantity, last_changed_at: at } : i))
+              : [...items, { key, name: display(name), category, quantity, last_changed_at: at }];
             send(200, inventory());
           });
           return;
+        }
+        const one = url.match(/^\/items\/(.+)$/);
+        if (req.method === "PUT" && one) {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const key = decodeURIComponent(one[1]);
+            const { quantity, name, category } = JSON.parse(body);
+            const newKey = name === undefined ? key : itemKey(name);
+            if (newKey !== key && items.some((i) => i.key === newKey)) return send(409, { error: "item exists" });
+            const at = new Date().toISOString();
+            items = items.map((i) =>
+              i.key === key
+                ? {
+                    ...i,
+                    key: newKey,
+                    name: name === undefined ? i.name : display(name),
+                    category: category ?? i.category,
+                    quantity,
+                    last_changed_at: at,
+                  }
+                : i,
+            );
+            send(200, inventory());
+          });
+          return;
+        }
+        if (req.method === "DELETE" && one) {
+          const key = decodeURIComponent(one[1]);
+          if (!items.some((i) => i.key === key)) return send(404, { error: "not found" });
+          items = items.filter((i) => i.key !== key);
+          return send(200, inventory());
         }
         send(404, { error: "not found" });
       });

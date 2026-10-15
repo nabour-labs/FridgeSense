@@ -1,6 +1,8 @@
 import { ChevronDown, ChevronRight, Minus, Plus, Refrigerator, Snowflake } from "lucide-react";
 import { useCallback, useState, type FormEvent } from "react";
+import { ApiError } from "../api/client";
 import type { Item } from "../api/types";
+import { CATEGORIES } from "../categories";
 import { useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
 import { NoData } from "../components/NoData";
@@ -17,6 +19,7 @@ export function Fridge() {
     10_000,
   );
   const [editing, setEditing] = useState<Item | null>(null);
+  const [adding, setAdding] = useState(false);
 
   if (!inventory) return failed ? <NoData /> : <Skeleton />;
 
@@ -34,12 +37,16 @@ export function Fridge() {
         onReview={() => go("review")}
       />
 
+      {canEdit && <AddButton onClick={() => setAdding(true)} />}
+
       {inStock.length === 0 && outOf.length === 0 && (
         <EmptyState
           Icon={Refrigerator}
           title="Your fridge looks empty."
-          hint="Items appear here after the next door opening."
-        />
+          hint="Items appear here after the next door opening or can be added by hand."
+        >
+          {canEdit && <AddButton onClick={() => setAdding(true)} />}
+        </EmptyState>
       )}
 
       {[...groups].map(([category, items]) => (
@@ -80,18 +87,30 @@ export function Fridge() {
         </details>
       )}
 
+      {adding && (
+        <AddItemSheet
+          onClose={() => setAdding(false)}
+          onSave={async (fields) => {
+            setInventory(await api.addItem(fields));
+            setAdding(false);
+          }}
+          report={report}
+        />
+      )}
+
       {editing && (
-        <QuantityEditor
+        <ItemEditor
           item={editing}
           onClose={() => setEditing(null)}
-          onSave={async (quantity) => {
-            try {
-              setInventory(await api.setQuantity(editing.key, quantity));
-              setEditing(null);
-            } catch (err) {
-              report(err);
-            }
+          onSave={async (changes) => {
+            setInventory(await api.editItem(editing.key, changes));
+            setEditing(null);
           }}
+          onRemove={async () => {
+            setInventory(await api.deleteItem(editing.key));
+            setEditing(null);
+          }}
+          report={report}
         />
       )}
     </div>
@@ -188,35 +207,158 @@ function ItemRow({ item, onEdit }: { item: Item; onEdit?: () => void }) {
   );
 }
 
-function QuantityEditor({
+function ItemEditor({
   item,
   onClose,
   onSave,
+  onRemove,
+  report,
 }: {
   item: Item;
   onClose: () => void;
-  onSave: (quantity: number) => Promise<void>;
+  onSave: (changes: { quantity: number; name?: string; category?: string }) => Promise<void>;
+  onRemove: () => Promise<void>;
+  report: (e: unknown) => void;
 }) {
-  const [value, setValue] = useState(String(item.quantity));
+  const [name, setName] = useState(item.name);
+  const [category, setCategory] = useState(item.category);
+  const [quantity, setQuantity] = useState(String(item.quantity));
   const [busy, setBusy] = useState(false);
-  const quantity = Number(value);
-  const valid = value !== "" && Number.isInteger(quantity) && quantity >= 0;
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const valid = name.trim() !== "" && quantity !== "";
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
+    const changes: { quantity: number; name?: string; category?: string } = { quantity: Number(quantity) };
+    if (name.trim() !== item.name) changes.name = name.trim();
+    if (category !== item.category) changes.category = category;
     setBusy(true);
-    await onSave(quantity);
+    await attempt(() => onSave(changes), setError, report, (err) =>
+      err.status === 409 ? `You already have ${name.trim()}.` : err.message,
+    );
     setBusy(false);
   }
 
-  const step = (delta: number) => setValue(String(Math.max(0, (valid ? quantity : 0) + delta)));
-  const stepper =
-    "grid size-12 place-items-center rounded-xl bg-slate-100 text-slate-700 transition hover:bg-slate-200 active:scale-95 dark:bg-slate-800 dark:text-slate-200";
+  async function remove() {
+    setBusy(true);
+    await attempt(onRemove, setError, report);
+    setBusy(false);
+  }
+
+  const secondary =
+    "h-12 flex-1 rounded-xl bg-slate-100 font-semibold text-slate-700 transition hover:bg-slate-200 active:scale-[0.98] dark:bg-slate-800 dark:text-slate-200";
+  const danger =
+    "h-12 flex-1 rounded-xl bg-red-600 font-semibold text-white transition hover:bg-red-700 active:scale-[0.98] disabled:opacity-50";
 
   return (
     <Sheet title={item.name} onClose={onClose}>
-      <form onSubmit={submit}>
+      {confirming ? (
+        <div>
+          <p className="font-medium">Remove {item.name}?</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">It won't be listed anywhere, not even under Out of.</p>
+          {error && <ErrorText>{error}</ErrorText>}
+          <div className="mt-5 flex gap-3">
+            <button type="button" onClick={() => setConfirming(false)} className={secondary}>
+              Cancel
+            </button>
+            <button type="button" disabled={busy} onClick={remove} className={danger}>
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <ItemFields {...{ name, setName, category, setCategory, quantity, setQuantity }} minimum={0} />
+          {error && <ErrorText>{error}</ErrorText>}
+          <SaveButton disabled={!valid || busy} />
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setConfirming(true);
+            }}
+            className="mt-3 h-12 w-full rounded-xl font-semibold text-red-600 transition hover:bg-red-50 active:scale-[0.98] dark:text-red-400 dark:hover:bg-red-950/40"
+          >
+            Remove item
+          </button>
+        </form>
+      )}
+    </Sheet>
+  );
+}
+function AddButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-semibold text-brand-700 ring-1 ring-slate-200 transition hover:bg-brand-50 active:scale-[0.98] dark:bg-slate-900 dark:text-brand-300 dark:ring-slate-800 dark:hover:bg-slate-800"
+    >
+      <Plus aria-hidden className="size-5" />
+      Add item
+    </button>
+  );
+}
+
+interface Fields {
+  name: string;
+  category: string;
+  quantity: number;
+}
+
+/** Name, category and a quantity stepper, shared by the add and edit sheets. */
+function ItemFields({
+  name,
+  setName,
+  category,
+  setCategory,
+  quantity,
+  setQuantity,
+  minimum,
+}: {
+  name: string;
+  setName: (v: string) => void;
+  category: string;
+  setCategory: (v: string) => void;
+  quantity: string;
+  setQuantity: (v: string) => void;
+  minimum: number;
+}) {
+  const field =
+    "h-12 w-full rounded-xl border border-slate-300 bg-white px-3 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950";
+  const stepper =
+    "grid size-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700 transition hover:bg-slate-200 active:scale-95 dark:bg-slate-800 dark:text-slate-200";
+  const step = (delta: number) =>
+    setQuantity(String(Math.max(minimum, (quantity === "" ? minimum : Number(quantity)) + delta)));
+  return (
+    <div className="space-y-4">
+      <div>
+        <label htmlFor="item-name" className="mb-2 block text-sm font-medium">
+          Name
+        </label>
+        <input
+          id="item-name"
+          value={name}
+          maxLength={60}
+          autoComplete="off"
+          onChange={(e) => setName(e.target.value)}
+          className={field}
+        />
+      </div>
+      <div>
+        <label htmlFor="item-category" className="mb-2 block text-sm font-medium">
+          Category
+        </label>
+        <select id="item-category" value={category} onChange={(e) => setCategory(e.target.value)} className={field}>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {titleCase(c)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
         <label htmlFor="quantity" className="mb-2 block text-sm font-medium">
           Quantity
         </label>
@@ -227,23 +369,87 @@ function QuantityEditor({
           <input
             id="quantity"
             inputMode="numeric"
-            value={value}
-            onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ""))}
-            className="h-12 w-full rounded-xl border border-slate-300 bg-white text-center text-xl font-semibold tabular-nums outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value.replace(/[^0-9]/g, ""))}
+            className={`${field} text-center text-xl font-semibold tabular-nums`}
           />
           <button type="button" aria-label="One more" onClick={() => step(1)} className={stepper}>
             <Plus aria-hidden className="size-5" />
           </button>
         </div>
-        <button
-          type="submit"
-          disabled={!valid || busy}
-          className="mt-5 h-12 w-full rounded-xl bg-brand-600 font-semibold text-white transition hover:bg-brand-700 active:scale-[0.98] disabled:opacity-50"
-        >
-          Save
-        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Runs a save; an API error is shown in the sheet, anything else goes to `report`. */
+async function attempt(
+  save: () => Promise<void>,
+  setError: (e: string | null) => void,
+  report: (e: unknown) => void,
+  messageFor: (e: ApiError) => string = (e) => e.message,
+) {
+  setError(null);
+  try {
+    await save();
+  } catch (err) {
+    if (err instanceof ApiError) setError(messageFor(err));
+    else report(err);
+  }
+}
+
+function AddItemSheet({
+  onClose,
+  onSave,
+  report,
+}: {
+  onClose: () => void;
+  onSave: (fields: Fields) => Promise<void>;
+  report: (e: unknown) => void;
+}) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("other");
+  const [quantity, setQuantity] = useState("1");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const valid = name.trim() !== "" && Number(quantity) >= 1;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    await attempt(() => onSave({ name: name.trim(), category, quantity: Number(quantity) }), setError, report);
+    setBusy(false);
+  }
+
+  return (
+    <Sheet title="Add item" onClose={onClose}>
+      <form onSubmit={submit}>
+        <ItemFields {...{ name, setName, category, setCategory, quantity, setQuantity }} minimum={1} />
+        {error && <ErrorText>{error}</ErrorText>}
+        <SaveButton disabled={!valid || busy} />
       </form>
     </Sheet>
+  );
+}
+
+function ErrorText({ children }: { children: string }) {
+  return (
+    <p role="alert" className="mt-4 text-sm font-medium text-red-600 dark:text-red-400">
+      {children}
+    </p>
+  );
+}
+
+function SaveButton({ disabled }: { disabled: boolean }) {
+  return (
+    <button
+      type="submit"
+      disabled={disabled}
+      className="mt-5 h-12 w-full rounded-xl bg-brand-600 font-semibold text-white transition hover:bg-brand-700 active:scale-[0.98] disabled:opacity-50"
+    >
+      Save
+    </button>
   );
 }
 

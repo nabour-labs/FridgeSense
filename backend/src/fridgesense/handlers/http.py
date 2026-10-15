@@ -1,6 +1,7 @@
 """HTTP API Lambda: Ring token exchange, account link page and webhook."""
 
 import logging
+import os
 import time
 
 from fridgesense import deps, devices, linking, webhook, workflow
@@ -32,5 +33,13 @@ def handler(event, context):
             found = devices.discover(ring, devices.DeviceRepository(), account_id)
             return None if found is None else [d.name for d in found]
 
-        return linking.link_submit(req, load_app_config(), TokenStore(), ring, now(), after_link)
+        return linking.link_submit(
+            req,
+            load_app_config(),
+            TokenStore(),
+            ring,
+            now(),
+            after_link,
+            app_url=os.environ.get("APP_URL"),
+        )
     return json_response(404, {"error": "not found"})

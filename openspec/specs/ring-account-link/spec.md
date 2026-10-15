@@ -6,7 +6,7 @@ Links the single user's Ring account to FridgeSense through Ring's one-way accou
 ## Requirements
 
 ### Requirement: Token exchange stores tokens as unclaimed
-When Ring POSTs an authorization `code` to `POST /ring/token`, the system SHALL exchange it at `https://oauth.ring.com/oauth/token` (`grant_type=authorization_code`, client ID and secret from config), read the account ID from `GET /v1/users/me` (`data.id`), store the tokens for that account with link status `unclaimed`, and reply 200.
+When Ring POSTs an authorization `code` to `POST /ring/token`, the system SHALL exchange it at `https://oauth.ring.com/oauth/token` (`grant_type=authorization_code`, client ID and secret from config), read the account ID from `GET /v1/users/me` (`data.id`), store the tokens for that account with link status `unclaimed`, and reply 200. If the store already holds a `linked` or `needs_relink` account with a different account ID, the system SHALL NOT store the new tokens and SHALL reply 409 instead.
 
 #### Scenario: Valid authorization code
 - **WHEN** Ring POSTs `{"code": "abc123"}` to `/ring/token` and the OAuth endpoint returns `{"access_token": "at1", "refresh_token": "rt1", "expires_in": 14400, "token_type": "Bearer"}` and `/v1/users/me` returns `data.id = "ava1.ring.account.A1"`
@@ -27,6 +27,22 @@ When Ring POSTs an authorization `code` to `POST /ring/token`, the system SHALL 
 #### Scenario: Secrets never logged
 - **WHEN** any token exchange runs, successful or not
 - **THEN** no log line contains the authorization code, client secret, access token or refresh token
+
+#### Scenario: Different account while one is linked
+- **WHEN** the store holds `account_id = "ava1.ring.account.A1"` with `link_status = "linked"` and a code exchange returns `data.id = "ava1.ring.account.B2"`
+- **THEN** the response is 409 with `{"error": "another account is linked"}`, the store still holds A1's tokens with `link_status = "linked"`, and a `token_exchange_refused` warning logs both account IDs
+
+#### Scenario: Different account while relink is needed
+- **WHEN** the store holds account A1 with `link_status = "needs_relink"` and a code exchange returns account B2
+- **THEN** the response is 409 and the store is unchanged
+
+#### Scenario: Same account links again
+- **WHEN** the store holds account A1 with `link_status = "linked"` and a code exchange returns account A1 with `access_token = "at2"`
+- **THEN** the response is 200 and the store holds A1 with `access_token = "at2"` and `link_status = "unclaimed"`, ready for the link page
+
+#### Scenario: Different account before anything is linked
+- **WHEN** the store holds account A1 with `link_status = "unclaimed"` and a code exchange returns account B2
+- **THEN** the response is 200 and the store holds B2's tokens with `link_status = "unclaimed"`
 
 ### Requirement: Link page requires the passcode before matching the nonce
 `GET /ring/link?nonce=<n>&time=<ms>` SHALL render a sign-in form that carries `nonce` and `time` forward and asks for the passcode. The nonce SHALL NOT be checked and Ring SHALL NOT be called until a correct passcode is submitted to `POST /ring/link`.
@@ -72,3 +88,18 @@ When the nonce matches, the system SHALL `POST /v1/accounts/me/app-integrations`
 #### Scenario: Ring rejects the integration
 - **WHEN** the nonce matches but Ring answers 400 or 404 to the POST or the PATCH
 - **THEN** the response is 502 HTML explaining that linking failed, and the account stays `unclaimed`
+
+### Requirement: Confirmation page links to the app
+After a successful link, the confirmation page SHALL include a link labeled "Open FridgeSense" whose `href` is the app's site URL from `APP_URL`. When `APP_URL` is unset or empty, the page SHALL render without the link.
+
+#### Scenario: App URL configured
+- **WHEN** `APP_URL = "https://d111.cloudfront.net"` and a link completes successfully
+- **THEN** the 200 HTML contains `<a` with `href="https://d111.cloudfront.net"` and the text "Open FridgeSense"
+
+#### Scenario: App URL not configured
+- **WHEN** `APP_URL` is unset and a link completes successfully
+- **THEN** the 200 HTML confirms the link and contains no "Open FridgeSense" link
+
+#### Scenario: Stack passes the site URL
+- **WHEN** the CDK stack is synthesized
+- **THEN** the HTTP function's environment has `APP_URL` set to the app's CloudFront site URL

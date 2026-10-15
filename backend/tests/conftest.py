@@ -1,3 +1,4 @@
+import copy
 import json
 from pathlib import Path
 
@@ -65,6 +66,45 @@ def aws(monkeypatch):
         yield
 
 
+class ConverseStub:
+    """A bedrock-runtime client whose `converse` answers come from `tests/fixtures/converse/`.
+
+    `requests` records every Converse call's parameters, in order."""
+
+    def __init__(self):
+        import boto3
+        from botocore.stub import Stubber
+
+        self.client = boto3.client(
+            "bedrock-runtime",
+            region_name="us-east-1",
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+        )
+        self.stubber = Stubber(self.client)
+        self.requests: list[dict] = []
+        self.client.meta.events.register(
+            "provide-client-params.bedrock-runtime.Converse",
+            lambda params, **_: self.requests.append(copy.deepcopy(params)),
+        )
+
+    def answer(self, *names: str) -> "ConverseStub":
+        for name in names:
+            self.stubber.add_response("converse", load_fixture(f"converse/{name}"))
+        return self
+
+    def fail(self, code: str) -> "ConverseStub":
+        self.stubber.add_client_error("converse", service_error_code=code, http_status_code=429)
+        return self
+
+
+@pytest.fixture
+def converse_stub():
+    stub = ConverseStub()
+    with stub.stubber:
+        yield stub
+
+
 class MemoryTokenStore:
     """In-memory stand-in for TokenStore."""
 
@@ -87,6 +127,9 @@ def _reset_config_cache(monkeypatch):
     monkeypatch.setattr(fridgesense.store, "_config_cache", None)
 
 
+API_HOST = "abc123.execute-api.us-east-1.amazonaws.com"
+
+
 def api_event(
     method: str,
     path: str,
@@ -106,7 +149,7 @@ def api_event(
         "rawQueryString": "&".join(f"{k}={v}" for k, v in (query or {}).items()),
         "queryStringParameters": query,
         "headers": {k.lower(): v for k, v in (headers or {}).items()},
-        "requestContext": {"http": {"method": method, "path": path}},
+        "requestContext": {"domainName": API_HOST, "http": {"method": method, "path": path}},
         "body": None if raw is None else (b64.b64encode(raw).decode() if base64 else raw.decode()),
         "isBase64Encoded": base64,
     }

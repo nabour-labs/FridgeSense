@@ -9,7 +9,7 @@ import respx
 from fridgesense.handlers import http
 from fridgesense.oauth import OAUTH_URL
 from fridgesense.ring import API_BASE
-from fridgesense.store import TokenStore
+from fridgesense.store import Tokens, TokenStore
 from tests.conftest import api_event, load_fixture
 
 NOW = 1_771_131_000.0
@@ -111,3 +111,71 @@ def test_secrets_never_logged(aws, ring_ok, caplog):
 
 def test_unknown_route_is_404(aws):
     assert call(api_event("GET", "/nope"))["statusCode"] == 404
+
+
+def stored(account_id: str, link_status: str, access_token: str = "old") -> Tokens:
+    tokens = Tokens(
+        account_id=account_id,
+        access_token=access_token,
+        refresh_token="rt-old",
+        expires_at=int(NOW) + 3600,
+        link_status=link_status,
+    )
+    TokenStore().save(tokens)
+    return tokens
+
+
+def users_me_returns(mock, account_id: str):
+    me = load_fixture("ring/users_me.json")
+    me["data"]["id"] = account_id
+    mock.get(f"{API_BASE}/v1/users/me").respond(200, json=me)
+
+
+def exchange():
+    return call(api_event("POST", "/ring/token", json.dumps({"code": "abc123"}), JSON))
+
+
+# Different account while one is linked
+def test_different_account_while_one_is_linked(aws, ring_ok, caplog):
+    caplog.set_level(logging.INFO)
+    before = stored("ava1.ring.account.A1", "linked")
+    users_me_returns(ring_ok, "ava1.ring.account.B2")
+    resp = exchange()
+    assert resp["statusCode"] == 409
+    assert json.loads(resp["body"]) == {"error": "another account is linked"}
+    assert TokenStore().load() == before
+    [line] = [r.getMessage() for r in caplog.records if "token_exchange_refused" in r.getMessage()]
+    assert "ava1.ring.account.A1" in line and "ava1.ring.account.B2" in line
+    assert "at1" not in line and "rt1" not in line
+
+
+# Different account while relink is needed
+def test_different_account_while_relink_is_needed(aws, ring_ok):
+    before = stored("ava1.ring.account.A1", "needs_relink")
+    users_me_returns(ring_ok, "ava1.ring.account.B2")
+    assert exchange()["statusCode"] == 409
+    assert TokenStore().load() == before
+
+
+# Same account links again
+def test_same_account_links_again(aws, ring_ok):
+    stored("ava1.ring.account.A1", "linked")
+    ring_ok.post(OAUTH_URL).respond(
+        200, json={**load_fixture("ring/oauth_token.json"), "access_token": "at2"}
+    )
+    assert exchange()["statusCode"] == 200
+    tokens = TokenStore().load()
+    assert tokens.account_id == "ava1.ring.account.A1"
+    assert tokens.access_token == "at2"
+    assert tokens.link_status == "unclaimed"
+
+
+# Different account before anything is linked
+def test_different_account_before_anything_is_linked(aws, ring_ok):
+    stored("ava1.ring.account.A1", "unclaimed")
+    users_me_returns(ring_ok, "ava1.ring.account.B2")
+    assert exchange()["statusCode"] == 200
+    tokens = TokenStore().load()
+    assert tokens.account_id == "ava1.ring.account.B2"
+    assert tokens.access_token == "at1"
+    assert tokens.link_status == "unclaimed"

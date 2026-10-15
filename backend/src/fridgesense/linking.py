@@ -54,6 +54,20 @@ def token_exchange(
     except (OAuthRejected, OAuthUnavailable, RingLookupFailed) as e:
         log_event("token_exchange_failed", logging.ERROR, error=str(e), **shape)
         return json_response(502, {"error": "token exchange failed"})
+    # /ring/token has no auth: never let a new grant replace a different linked account.
+    current = store.load()
+    if (
+        current is not None
+        and current.link_status in ("linked", "needs_relink")
+        and current.account_id != account_id
+    ):
+        log_event(
+            "token_exchange_refused",
+            logging.WARNING,
+            account_id=current.account_id,
+            new_account_id=account_id,
+        )
+        return json_response(409, {"error": "another account is linked"})
     store.save(
         Tokens(
             account_id=account_id,
@@ -91,6 +105,7 @@ def link_submit(
     ring: RingClient,
     now: float,
     after_link: Callable[[str], list[str] | None] = lambda account_id: None,
+    app_url: str | None = None,
 ) -> dict:
     form = req.fields()
     nonce, time_ms = form.get("nonce", ""), form.get("time", "")
@@ -123,7 +138,7 @@ def link_submit(
     current = store.load() or tokens  # the Ring client may have refreshed the tokens
     store.save(current.model_copy(update={"link_status": "linked"}))
     log_event("link_ok", account_id=tokens.account_id)
-    return html_response(200, link_page.linked(after_link(tokens.account_id)))
+    return html_response(200, link_page.linked(after_link(tokens.account_id), app_url))
 
 
 def _complete_integration(ring: RingClient, nonce: str) -> None:

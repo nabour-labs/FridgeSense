@@ -1,13 +1,22 @@
 import { Mic, Send, Square } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useApp } from "../AppContext";
+import type { AskResult } from "../api/types";
 
-const EXAMPLES = ["Do I have milk?", "What's in my fridge?", "When was the fridge last opened?"];
+const EXAMPLES = [
+  "Do I have milk?",
+  "What's in my fridge?",
+  "What should I eat first?",
+  "What do I need to buy?",
+  "When was the fridge last opened?",
+];
 
 interface Exchange {
   id: number;
   question: string;
   answer: string;
+  /** The MCP tools the assistant checked, for assistant answers. */
+  tools?: string[];
 }
 
 function speak(text: string) {
@@ -28,6 +37,7 @@ interface Recognizer {
   onend: (() => void) | null;
   start(): void;
   stop(): void;
+  abort?(): void;
 }
 
 type RecognizerClass = new () => Recognizer;
@@ -39,6 +49,11 @@ function recognizerClass(): RecognizerClass | undefined {
 
 const NOT_HEARD = "Didn't catch that. Try again or type your question.";
 
+function toolsOf(result: AskResult): string[] | undefined {
+  const tools = result.source === "agent" ? result.data?.tools : undefined;
+  return Array.isArray(tools) && tools.length ? tools.map(String) : undefined;
+}
+
 let nextId = 0;
 
 export function Ask() {
@@ -49,7 +64,38 @@ export function Ask() {
   const [listening, setListening] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const recognizer = useRef<Recognizer | null>(null);
+  // One <audio> element, created on the first tap so that the tap unlocks playback (iOS).
+  const voice = useRef<HTMLAudioElement | null>(null);
   const Recognition = recognizerClass();
+
+  // Leaving the screen (tab switch, sign-out) ends listening and speaking, and sends nothing:
+  // clearing the ref first makes onend drop whatever was heard.
+  useEffect(
+    () => () => {
+      const rec = recognizer.current;
+      recognizer.current = null;
+      if (rec) {
+        if (rec.abort) rec.abort();
+        else rec.stop();
+      }
+      if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+      voice.current?.pause();
+    },
+    [],
+  );
+
+  /** Play the answer's voice audio; speech synthesis reads it when there is none or it won't play. */
+  function say(answer: string, audio: string | null) {
+    const el = voice.current;
+    if (!audio || !el) return speak(answer);
+    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    el.src = `data:audio/mpeg;base64,${audio}`;
+    try {
+      Promise.resolve(el.play()).catch(() => speak(answer));
+    } catch {
+      speak(answer);
+    }
+  }
 
   function listen() {
     if (!Recognition) return;
@@ -93,12 +139,14 @@ export function Ask() {
     if (!q || busy) return;
     setHint(null);
     setBusy(true);
+    if (!voice.current && typeof Audio !== "undefined") voice.current = new Audio();
     try {
-      const { answer } = await api.ask(q);
+      const result = await api.ask(q);
       online();
-      setHistory((h) => [{ id: nextId++, question: q, answer }, ...h]);
+      const { answer } = result;
+      setHistory((h) => [{ id: nextId++, question: q, answer, tools: toolsOf(result) }, ...h]);
       setDraft("");
-      speak(answer);
+      say(answer, result.audio);
     } catch (err) {
       report(err);
     } finally {
@@ -146,6 +194,7 @@ export function Ask() {
       </form>
 
       {listening && <p className="text-sm font-medium text-warm-600 dark:text-warm-400">Listening…</p>}
+      {busy && <p className="text-sm font-medium text-brand-700 dark:text-brand-300">Thinking…</p>}
       {hint && <p className="text-sm text-slate-500 dark:text-slate-400">{hint}</p>}
 
       <div className="flex flex-wrap gap-2">
@@ -167,6 +216,11 @@ export function Ask() {
           <li key={x.id} className="rounded-3xl bg-white p-4 shadow-sm dark:bg-slate-900">
             <p className="text-sm text-slate-500 dark:text-slate-400">{x.question}</p>
             <p className="mt-1 text-lg font-medium">{x.answer}</p>
+            {x.tools && (
+              <p className="mt-2 break-words text-xs text-slate-500 dark:text-slate-400">
+                Checked: {x.tools.join(", ")}
+              </p>
+            )}
           </li>
         ))}
       </ul>

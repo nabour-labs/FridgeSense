@@ -7,7 +7,7 @@ import httpx
 import pytest
 import respx
 
-from fridgesense.door_events import download_stills
+from fridgesense.door_events import download_stills, store_blurred_stills
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import API_BASE, RingClient
 from fridgesense.store import Tokens
@@ -52,17 +52,20 @@ class Sleeps(list):
         self.append(seconds)
 
 
-def run(clients, sleep=None, blurrer=None):
+def run(clients, sleep=None):
     ring, http = clients
-    return download_stills(
-        ring,
-        http,
-        boto3.client("s3"),
-        BUCKET,
-        FakeBlurrer() if blurrer is None else blurrer,
-        STATE,
-        Sleeps() if sleep is None else sleep,
+    return download_stills(ring, http, STATE, Sleeps() if sleep is None else sleep)
+
+
+def store(raw, blurrer=None):
+    return store_blurred_stills(
+        boto3.client("s3"), BUCKET, FakeBlurrer() if blurrer is None else blurrer, STATE, raw
     )
+
+
+def s3_keys() -> list[str]:
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET)
+    return sorted(o["Key"] for o in listing.get("Contents", []))
 
 
 def stored(key: str) -> bytes:
@@ -81,7 +84,10 @@ def test_four_stills_saved(aws, clients):
     respx.get(url__startswith="https://download-us.example.com/").respond(
         200, content=jpeg(0.5), headers={"content-type": "image/jpeg"}
     )
-    stills = run(clients)
+    raw = run(clients)
+    assert [n for n, _ in raw] == [1, 2, 3, 4]
+    assert s3_keys() == []  # downloads stay in memory
+    stills = store(raw)
     bodies = [json.loads(c.request.content) for c in post.calls]
     assert [b["timestamp"] for b in bodies] == [
         1786715601000,
@@ -92,7 +98,7 @@ def test_four_stills_saved(aws, clients):
     assert all(
         b["type"] == "at_timestamp" and b["image_options"] == {"format": "jpeg"} for b in bodies
     )
-    keys = sorted(o["Key"] for o in boto3.client("s3").list_objects_v2(Bucket=BUCKET)["Contents"])
+    keys = s3_keys()
     assert keys == [f"{PREFIX}still-{n}.jpg" for n in range(1, 5)]
     assert [k for k, _ in stills] == keys
     head = boto3.client("s3").head_object(Bucket=BUCKET, Key=keys[0])
@@ -106,7 +112,9 @@ def test_s3_stores_only_the_blurred_still(aws, clients):
     downloaded = jpeg(0.5)
     respx.get(url__startswith="https://download-us.example.com/").respond(200, content=downloaded)
     blurrer = FakeBlurrer(blurred=lambda data: b"blurred:" + data)
-    stills = run(clients, blurrer=blurrer)
+    raw = run(clients)
+    assert [data for _, data in raw] == [downloaded] * 4
+    stills = store(raw, blurrer)
     assert [stored(k) for k, _ in stills] == [b"blurred:" + downloaded] * 4
     assert [data for _, data in stills] == [b"blurred:" + downloaded] * 4
     assert blurrer.contexts == [
@@ -156,4 +164,11 @@ def test_still_gives_up_after_three_attempts(aws, clients):
 def test_too_few_stills_forbidden_time_range(aws, clients):
     respx.post(DOWNLOAD).respond(403, json={"errors": [{"status": "403"}]})
     assert run(clients) == []
-    assert "Contents" not in boto3.client("s3").list_objects_v2(Bucket=BUCKET)
+    assert s3_keys() == []
+
+
+def test_store_skips_stills_that_fail_detection(aws):
+    raw = [(n, jpeg(0.5)) for n in range(1, 5)]
+    stills = store(raw, FakeBlurrer(drop={2}))
+    assert [k for k, _ in stills] == [f"{PREFIX}still-{n}.jpg" for n in (1, 3, 4)]
+    assert s3_keys() == [k for k, _ in stills]

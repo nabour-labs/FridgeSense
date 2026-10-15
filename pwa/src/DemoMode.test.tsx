@@ -56,6 +56,21 @@ test("a viewer can't edit quantities", async () => {
   await userEvent.click(screen.getByText("Eggs"));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(api.setQuantity).not.toHaveBeenCalled();
+  expect(api.editItem).not.toHaveBeenCalled();
+  expect(api.deleteItem).not.toHaveBeenCalled();
+});
+
+// No Add item for viewers
+test.each([
+  ["with items", INVENTORY],
+  ["with an empty fridge", { items: [], pending_count: 0 }],
+])("a viewer sees no Add item button %s", async (_, inventory) => {
+  signedIn("viewer");
+  location.hash = "";
+  render(<App api={fakeApi({ inventory: vi.fn().mockResolvedValue(inventory) })} />);
+  expect(await screen.findByText("Demo · read-only")).toBeInTheDocument();
+  await screen.findByRole("region", { name: "Fridge summary" });
+  expect(screen.queryByRole("button", { name: "Add item" })).not.toBeInTheDocument();
 });
 
 // No actions on Review
@@ -82,4 +97,20 @@ test("a 403 shows the read-only notice and keeps the list", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Confirm" }));
   expect(await screen.findByText("Read-only demo")).toBeInTheDocument();
   await waitFor(() => expect(screen.getByText("− chocolate bar")).toBeInTheDocument());
+});
+
+test("a 403 on Add item shows the read-only notice and keeps the list", async () => {
+  signedIn("owner");
+  location.hash = "";
+  const api = fakeApi({
+    inventory: vi.fn().mockResolvedValue(INVENTORY),
+    addItem: vi.fn().mockRejectedValue(new ReadOnly()),
+  });
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Add item" }));
+  await userEvent.type(screen.getByLabelText("Name"), "Butter");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(await screen.findByText("Read-only demo")).toBeInTheDocument();
+  expect(screen.getByText("Eggs")).toBeInTheDocument();
+  expect(screen.queryByText("Butter")).not.toBeInTheDocument();
 });

@@ -3,7 +3,8 @@
 import logging
 import time
 
-from fridgesense.analysis import BedrockRejected, NovaAnalyzer
+from fridgesense import analysis_config
+from fridgesense.analysis import CATEGORIES, BedrockRejected, NovaAnalyzer
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.table import FridgeTable, TransactionConflict, account_pk
@@ -18,9 +19,17 @@ def analyze_task(analyzer: NovaAnalyzer, s3, table: FridgeTable, bucket: str, st
     account_id, door_sk = state["account_id"], state["door_sk"]
     stills = [s3.get_object(Bucket=bucket, Key=k)["Body"].read() for k in state["still_keys"]]
     context = {"account_id": account_id, "door_sk": door_sk}
+    config = analysis_config.load(table, account_id)
+    references = [(r.annotation, r.image) for r in config.references]
     result = None
     try:
-        result = analyzer.analyze(stills, in_stock_names(table, account_id), context)
+        result = analyzer.analyze(
+            stills,
+            in_stock_names(table, account_id),
+            context,
+            references=references,
+            instructions=config.instructions,
+        )
     except BedrockRejected as e:
         log_event("analysis_failed", logging.ERROR, reason=str(e), **context)
     finally:
@@ -60,6 +69,59 @@ def normalize_name(item: str) -> tuple[str, str]:
     return display.lower(), display
 
 
+MAX_NAME_LENGTH = 60
+
+
+class InvalidItem(ValueError):
+    """A hand-entered field broke the rules; the message is the API error text."""
+
+
+class ItemExists(Exception):
+    """A rename's new name already belongs to another item."""
+
+
+class ItemNotFound(Exception):
+    """The item to edit or delete doesn't exist."""
+
+
+def clean_name(name) -> tuple[str, str]:
+    """`normalize_name` for a hand-entered name, which must be 1 to 60 characters."""
+    if not isinstance(name, str):
+        raise InvalidItem("name must be 1 to 60 characters")
+    key, display = normalize_name(name)
+    if not 1 <= len(display) <= MAX_NAME_LENGTH:
+        raise InvalidItem("name must be 1 to 60 characters")
+    return key, display
+
+
+def check_category(category) -> str:
+    if category not in CATEGORIES:
+        raise InvalidItem("unknown category")
+    return category
+
+
+def _whole_quantity(quantity, minimum: int) -> int:
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < minimum:
+        raise InvalidItem(f"quantity must be a whole number of {minimum} or more")
+    return quantity
+
+
+def _hand_row(
+    current: dict, pk: str, key: str, name: str, category: str, quantity: int, when: str
+) -> dict:
+    """The item after a hand edit: the given fields win, the history fields carry over."""
+    return {
+        "pk": pk,
+        "sk": f"ITEM#{key}",
+        "name": name,
+        "category": category,
+        "quantity": quantity,
+        "first_seen_at": current.get("first_seen_at", when),
+        "last_changed_at": when,
+        **stock_age(current, quantity, when),
+    }
+
+
 def quantity_put(
     current: dict | None,
     pk: str,
@@ -73,14 +135,28 @@ def quantity_put(
     if current is None and delta <= 0:
         return None
     current = current or {}
+    quantity = max(0, current.get("quantity", 0) + delta)
     return {
         "pk": pk,
         "sk": f"ITEM#{key}",
         "name": current.get("name", display),
         "category": current.get("category", category),
-        "quantity": max(0, current.get("quantity", 0) + delta),
+        "quantity": quantity,
         "first_seen_at": current.get("first_seen_at", when),
         "last_changed_at": when,
+        **stock_age(current, quantity, when),
+    }
+
+
+def stock_age(current: dict, quantity: int, when: str) -> dict:
+    """`stocked_at` and `peak_quantity` after a change: reset on restock, dropped at 0."""
+    if quantity <= 0:
+        return {}
+    if current.get("quantity", 0) <= 0:
+        return {"stocked_at": when, "peak_quantity": quantity}
+    return {
+        "stocked_at": current.get("stocked_at") or current.get("first_seen_at", when),
+        "peak_quantity": max(current.get("peak_quantity", current["quantity"]), quantity),
     }
 
 
@@ -261,28 +337,121 @@ def reject_pending(table: FridgeTable, account_id: str, pending_sk: str) -> None
 
 
 def set_quantity(
-    table: FridgeTable, account_id: str, item: str, quantity: int, now: str | None = None
+    table: FridgeTable,
+    account_id: str,
+    item: str,
+    quantity: int,
+    category: str | None = None,
+    now: str | None = None,
 ) -> None:
-    """Set an item's count by hand, creating it (category other) if needed."""
+    """Set an item's count (and category, if given) by hand, creating it if needed."""
     if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0:
         raise ValueError("quantity must be a whole number of 0 or more")
+    if category is not None:
+        check_category(category)
     pk = account_pk(account_id)
     key, display = normalize_name(item)
     when = now or _now_iso()
     current = table.get(pk, f"ITEM#{key}") or {}
-    table.put(
-        {
-            "pk": pk,
-            "sk": f"ITEM#{key}",
-            "name": current.get("name", display),
-            "category": current.get("category", "other"),
-            "quantity": quantity,
-            "first_seen_at": current.get("first_seen_at", when),
-            "last_changed_at": when,
-        }
-    )
+    name = current.get("name", display)
+    category = category or current.get("category", "other")
+    table.put(_hand_row(current, pk, key, name, category, quantity, when))
     log_event("quantity_set", account_id=account_id, item=key, quantity=quantity)
+
+
+def add_item(
+    table: FridgeTable,
+    account_id: str,
+    name: str,
+    category: str,
+    quantity: int,
+    now: str | None = None,
+) -> None:
+    """Add items by hand: create the item, or add to its count and take the new category."""
+    key, display = clean_name(name)
+    category = check_category(category)
+    quantity = _whole_quantity(quantity, 1)
+    pk = account_pk(account_id)
+    current = table.get(pk, f"ITEM#{key}")
+    put = quantity_put(current, pk, key, display, category, quantity, now or _now_iso())
+    table.put({**put, "category": category})
+    log_event("item_added", account_id=account_id, item=key, quantity=quantity)
+
+
+def edit_item(
+    table: FridgeTable,
+    account_id: str,
+    key: str,
+    quantity: int | None = None,
+    name: str | None = None,
+    category: str | None = None,
+    now: str | None = None,
+) -> None:
+    """Change an existing item's name, category and/or count by hand.
+
+    A name with a different key moves the item there, keeping its history fields."""
+    pk = account_pk(account_id)
+    key = normalize_name(key)[0]
+    new_key, display = clean_name(name) if name is not None else (key, None)
+    if category is not None:
+        check_category(category)
+    if quantity is not None:
+        _whole_quantity(quantity, 0)
+    current = table.get(pk, f"ITEM#{key}")
+    if current is None:
+        raise ItemNotFound(key)
+    qty = current["quantity"] if quantity is None else quantity
+    when = now or _now_iso()
+    name = display or current.get("name", key)
+    category = category or current.get("category", "other")
+    row = _hand_row(current, pk, new_key, name, category, qty, when)
+    if new_key == key:
+        table.put(row)
+    else:
+        try:
+            table.transact(
+                [
+                    {"Put": {"Item": row, "ConditionExpression": "attribute_not_exists(sk)"}},
+                    {
+                        "Delete": {
+                            "Key": {"pk": pk, "sk": f"ITEM#{key}"},
+                            "ConditionExpression": "attribute_exists(sk)",
+                        }
+                    },
+                ]
+            )
+        except TransactionConflict as e:
+            if e.reasons[:1] == ["ConditionalCheckFailed"]:
+                raise ItemExists(new_key) from None
+            if e.reasons[1:2] == ["ConditionalCheckFailed"]:
+                raise ItemNotFound(key) from None
+            raise
+    renamed = {"renamed_from": key} if new_key != key else {}
+    log_event("item_edited", account_id=account_id, item=new_key, quantity=qty, **renamed)
+
+
+def delete_item(table: FridgeTable, account_id: str, key: str) -> None:
+    """Remove an item completely; door events and pending changes keep their copies."""
+    key = normalize_name(key)[0]
+    if not table.delete(account_pk(account_id), f"ITEM#{key}"):
+        raise ItemNotFound(key)
+    log_event("item_deleted", account_id=account_id, item=key)
 
 
 def _now_iso() -> str:
     return iso_utc(int(time.time() * 1000))
+
+
+class DoorEventNotFound(Exception):
+    """No such door event (or it was deleted meanwhile)."""
+
+
+def delete_door_event(table: FridgeTable, account_id: str, door_sk: str) -> None:
+    """Delete a door event and its pending changes; the inventory stays as it is."""
+    pk = account_pk(account_id)
+    if not door_sk.startswith("DOOR#") or not table.delete(pk, door_sk):
+        raise DoorEventNotFound(door_sk)
+    for p in table.query(account_id, "PENDING#"):
+        if p.get("door_sk") == door_sk:
+            table.delete(pk, p["sk"])
+    log_event("door_event_deleted", account_id=account_id, door_sk=door_sk)

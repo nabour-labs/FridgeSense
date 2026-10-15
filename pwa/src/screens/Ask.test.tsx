@@ -17,6 +17,7 @@ beforeEach(() => {
   synth = { speak: vi.fn(), cancel: vi.fn() };
   vi.stubGlobal("speechSynthesis", synth);
   vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
+  useFakeAudio(); // jsdom can't play or pause media
 });
 
 afterEach(() => {
@@ -24,7 +25,7 @@ afterEach(() => {
 });
 
 function answer(text: string): AskResult {
-  return { intent: "find_item", answer: text, data: null };
+  return { intent: "find_item", answer: text, data: null, source: "keywords", audio: null };
 }
 
 function renderAsk(ask = vi.fn(async (q: string) => answer(`Answer to ${q}`)), role?: "viewer") {
@@ -73,11 +74,21 @@ test("tapping an example asks it", async () => {
   await userEvent.click(screen.getByRole("button", { name: "What's in my fridge?" }));
   expect(await screen.findByText("Answer to What's in my fridge?")).toBeInTheDocument();
   expect(ask).toHaveBeenCalledWith("What's in my fridge?");
+});
+
+// Five examples
+test("five example questions, in order", async () => {
+  const ask = renderAsk().ask;
   expect(screen.getAllByRole("button", { name: /\?$/ }).map((b) => b.textContent)).toEqual([
     "Do I have milk?",
     "What's in my fridge?",
+    "What should I eat first?",
+    "What do I need to buy?",
     "When was the fridge last opened?",
   ]);
+  await userEvent.click(screen.getByRole("button", { name: "What should I eat first?" }));
+  expect(await screen.findByText("Answer to What should I eat first?")).toBeInTheDocument();
+  expect(ask).toHaveBeenCalledWith("What should I eat first?");
 });
 
 // Newest first
@@ -106,6 +117,7 @@ test("a blank question sends nothing", async () => {
 test("answers still show without speech synthesis", async () => {
   vi.unstubAllGlobals();
   vi.stubGlobal("speechSynthesis", undefined);
+  useFakeAudio();
   renderAsk(vi.fn(async () => answer(MILK)));
   await userEvent.click(screen.getByRole("button", { name: "Do I have milk?" }));
   expect(await screen.findByText(MILK)).toBeInTheDocument();
@@ -232,4 +244,121 @@ test("tapping the mic while listening stops without sending", async () => {
   expect(FakeRecognition.last!.stop).toHaveBeenCalledTimes(1);
   expect(screen.queryByText("Listening…")).not.toBeInTheDocument();
   expect(ask).not.toHaveBeenCalled();
+});
+
+// Leave while listening
+test("leaving the Ask screen while listening stops recognition and sends nothing", async () => {
+  withRecognition();
+  const ask = renderAsk().ask;
+  await userEvent.click(mic());
+  const rec = FakeRecognition.last!;
+  await userEvent.click(screen.getByRole("link", { name: "Fridge" }));
+  expect(rec.abort.mock.calls.length + rec.stop.mock.calls.length).toBeGreaterThan(0);
+  rec.hear("do I have milk");
+  rec.end();
+  await act(async () => {});
+  expect(ask).not.toHaveBeenCalled();
+});
+
+// Leave while speaking
+test("leaving the Ask screen stops any answer being read aloud", async () => {
+  renderAsk();
+  synth.cancel.mockClear();
+  await userEvent.click(screen.getByRole("link", { name: "Fridge" }));
+  expect(synth.cancel).toHaveBeenCalled();
+});
+
+// The voice: Polly audio from the API, played through an <audio> element.
+const AUDIO = "SUQzZmFrZQ==";
+
+class FakeAudio {
+  static instances: FakeAudio[] = [];
+  static playResult: () => Promise<void> = () => Promise.resolve();
+  src = "";
+  play = vi.fn(() => FakeAudio.playResult());
+  pause = vi.fn();
+  constructor() {
+    FakeAudio.instances.push(this);
+  }
+}
+
+function useFakeAudio(play: () => Promise<void> = () => Promise.resolve()) {
+  FakeAudio.instances = [];
+  FakeAudio.playResult = play;
+  vi.stubGlobal("Audio", FakeAudio);
+}
+
+function agentAnswer(text: string, tools: string[], audio: string | null = AUDIO): AskResult {
+  return { intent: "agent", answer: text, data: { tools }, source: "agent", audio };
+}
+
+const played = () => FakeAudio.instances.flatMap((a) => (a.play.mock.calls.length ? [a.src] : []));
+
+// Thinking
+test("Thinking… shows while the answer is on its way", async () => {
+  useFakeAudio();
+  let reply!: (r: AskResult) => void;
+  renderAsk(vi.fn(() => new Promise<AskResult>((resolve) => (reply = resolve))));
+  await userEvent.click(screen.getByRole("button", { name: "Do I have milk?" }));
+  expect(screen.getByText("Thinking…")).toBeInTheDocument();
+  await act(async () => reply(answer(MILK)));
+  expect(screen.getByText(MILK)).toBeInTheDocument();
+  expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+});
+
+// Plays the voice audio
+test("the answer's audio is played instead of speech synthesis", async () => {
+  useFakeAudio();
+  renderAsk(vi.fn(async () => ({ ...answer(MILK), audio: AUDIO })));
+  await userEvent.click(screen.getByRole("button", { name: "Do I have milk?" }));
+  expect(await screen.findByText(MILK)).toBeInTheDocument();
+  expect(played()).toEqual([`data:audio/mpeg;base64,${AUDIO}`]);
+  expect(synth.speak).not.toHaveBeenCalled();
+});
+
+// Audio can't play
+test("speech synthesis reads the answer when the audio can't play", async () => {
+  useFakeAudio(() => Promise.reject(new Error("NotAllowedError")));
+  renderAsk(vi.fn(async () => ({ ...answer(MILK), audio: AUDIO })));
+  await userEvent.click(screen.getByRole("button", { name: "Do I have milk?" }));
+  expect(await screen.findByText(MILK)).toBeInTheDocument();
+  await act(async () => {});
+  expect(spoken()).toEqual([MILK]);
+});
+
+// Tools checked
+test("an assistant answer shows the tools it checked", async () => {
+  useFakeAudio();
+  const text = "You could make an omelette.";
+  renderAsk(vi.fn(async () => agentAnswer(text, ["get_inventory", "find_item"])));
+  await userEvent.click(screen.getByRole("button", { name: "What's in my fridge?" }));
+  expect(await screen.findByText(text)).toBeInTheDocument();
+  expect(screen.getByText("Checked: get_inventory, find_item")).toBeInTheDocument();
+});
+
+test("an assistant answer that checked nothing has no tools line", async () => {
+  useFakeAudio();
+  renderAsk(vi.fn(async () => agentAnswer("Hello!", [])));
+  await userEvent.click(screen.getByRole("button", { name: "Do I have milk?" }));
+  expect(await screen.findByText("Hello!")).toBeInTheDocument();
+  expect(screen.queryByText(/^Checked:/)).not.toBeInTheDocument();
+});
+
+// Keyword answer has no tools line
+test("a keyword answer has no tools line", async () => {
+  useFakeAudio();
+  renderAsk(vi.fn(async () => answer(MILK)));
+  await userEvent.click(screen.getByRole("button", { name: "Do I have milk?" }));
+  expect(await screen.findByText(MILK)).toBeInTheDocument();
+  expect(screen.queryByText(/^Checked:/)).not.toBeInTheDocument();
+});
+
+// Leaving stops the voice
+test("leaving the Ask screen pauses the answer's audio", async () => {
+  useFakeAudio();
+  renderAsk(vi.fn(async () => ({ ...answer(MILK), audio: AUDIO })));
+  await userEvent.click(screen.getByRole("button", { name: "Do I have milk?" }));
+  expect(await screen.findByText(MILK)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("link", { name: "Fridge" }));
+  expect(FakeAudio.instances.some((a) => a.pause.mock.calls.length > 0)).toBe(true);
 });

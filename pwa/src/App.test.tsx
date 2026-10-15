@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { ApiError, Unauthorized } from "./api/client";
+import { ApiError, Offline, Unauthorized } from "./api/client";
 import { fakeApi, signedIn } from "./test-utils";
 
 // First visit
@@ -69,4 +69,45 @@ test("other API errors still show Something went wrong", async () => {
   const api = fakeApi({ inventory: vi.fn().mockRejectedValue(new ApiError(500)) });
   render(<App api={api} />);
   expect(await screen.findByText("Something went wrong")).toBeInTheDocument();
+});
+
+// Opened after 24 hours
+test("a session past its expiry shows the passcode screen and loads nothing", () => {
+  signedIn("owner", Date.now() - 1);
+  const api = fakeApi();
+  render(<App api={api} />);
+  expect(screen.getByLabelText("Passcode")).toBeInTheDocument();
+  expect(api.inventory).not.toHaveBeenCalled();
+  expect(localStorage.getItem("fridgesense.token")).toBeNull();
+});
+
+// Expires while open
+test("the passcode screen returns within 60 s of expiry, even offline", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    signedIn("owner", Date.now() + 5_000);
+    location.hash = "";
+    const api = fakeApi({ inventory: vi.fn().mockRejectedValue(new Offline("x")) });
+    render(<App api={api} />);
+    expect(screen.queryByLabelText("Passcode")).not.toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(screen.getByLabelText("Passcode")).toBeInTheDocument();
+    expect(localStorage.getItem("fridgesense.token")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Open config
+test("the header gear opens Config and loads it", async () => {
+  signedIn();
+  location.hash = "";
+  const api = fakeApi();
+  render(<App api={api} />);
+  await userEvent.click(screen.getByRole("link", { name: "Config" }));
+  expect(await screen.findByRole("heading", { level: 1, name: "Config" })).toBeInTheDocument();
+  expect(location.hash).toBe("#config");
+  expect(api.config).toHaveBeenCalled();
+  expect(await screen.findByRole("region", { name: "Reference images" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Custom instructions" })).toBeInTheDocument();
 });

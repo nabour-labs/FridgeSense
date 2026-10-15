@@ -23,6 +23,66 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-15 · Bedrock Nova · Prompt caching docs don't say whether image blocks can be cached
+
+- **Task:** plan prompt caching for the door-opening analysis, whose stable prefix is mostly the owner's reference images (up to 6 JPEGs) and whose stills change every request.
+- **Steps:** read https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html and looked for Nova 2 Lite's limits and cache pricing.
+- **Expected:** a clear answer on whether a `cachePoint` after `image` blocks caches them for Nova, and Nova cache read/write prices.
+- **Actual:** the Nova rows say only "Prompt caching is primarily for text prompts" with a 20K-token cap, while the generic Converse example puts a `cachePoint` right after an `image` block. Nova accepts checkpoints in `system` and `messages` but not `tools` (Claude accepts all three), and passing `ttl` to a 5-minute-only model can raise `ValidationException`. The Nova cache prices didn't come through when the pricing page was fetched as text.
+- **Severity:** Low
+- **Workaround:** a short measured test (send the same request twice, read `cacheWriteInputTokens` and `cacheReadInputTokens`) before relying on image caching.
+- **Suggestion:** say plainly whether image and document blocks are cacheable for each Nova model, and put the cache read/write prices for each model in the caching guide.
+
+### 2026-10-15 · MCP Python SDK · The MCP client logs full server URLs, secrets in the path included
+
+- **Task:** live check of the Ask assistant: Nova calls our MCP server at `/mcp/<mcp_key>` through `mcp.Client(url)` from the API Lambda.
+- **Steps:** asked three questions on the deployed app, then searched the API Lambda's logs: `aws logs filter-log-events --log-group-name /fridgesense/api --filter-pattern '"/mcp/"'`.
+- **Expected:** no URLs in our logs; our own `ask_agent` events deliberately leave the URL out.
+- **Actual:** 12 lines like `HTTP Request: POST https://<api>/mcp/<mcp_key> "HTTP/1.1 200 OK"`, from the `httpx2` logger the SDK's Streamable HTTP client uses, at INFO, which Lambda's root level lets through. On the server side, Mangum's `mangum.http` logger also wrote `POST /mcp/<mcp_key> 200` to the MCP Lambda's logs. A unit test on our own log events didn't catch either.
+- **Severity:** Medium
+- **Workaround:** set the `httpx`, `httpx2` and `mangum.http` loggers to WARNING, with tests that fail if the key appears in any log record. Rotate the key once the fix is deployed.
+- **Suggestion:** have the SDK's HTTP transport log at DEBUG, or redact the path, and document that URL-embedded tokens end up in logs at INFO.
+
+### 2026-10-15 · Strands Agents / MCP Python SDK · Strands can't share a project with an MCP server on `mcp` 2.3
+
+- **Task:** build the Ask screen's assistant (Nova answering through our own MCP server) as a Strands agent in the backend, which already runs the MCP server on `mcp>=2.3,<3`.
+- **Steps:** read the `strands-agents` metadata on PyPI (`https://pypi.org/pypi/strands-agents/json`), then resolved both together with `uv pip compile` on `mcp>=2.3,<3` + `strands-agents>=1.61`, and again with `strands-agents` unpinned.
+- **Expected:** the latest Strands works with the latest MCP SDK.
+- **Actual:** `strands-agents` 1.61.0 requires `mcp<2.2,>=1.23.0`. Pinned: "Because strands-agents>=1.61.0 depends on mcp>=1.23.0,<2.2 and you require mcp>=2.3, we can conclude that your requirements and strands-agents>=1.61.0 are incompatible." Unpinned, the resolver succeeds silently with `strands-agents==0.0.1`, a placeholder release, which is easy to miss.
+- **Severity:** Medium
+- **Workaround:** no Strands. A short Bedrock Converse tool-use loop uses the MCP SDK's own `mcp.Client` (Streamable HTTP) to call the tools. The other option was Strands in its own Lambda and project pinned to `mcp<2.2`.
+- **Suggestion:** support `mcp` 2.x in Strands, or document the supported `mcp` range. Yank or mark the 0.0.1 placeholder so unpinned installs fail loudly.
+
+### 2026-10-15 · AWS CDK / API Gateway · HTTP API route throttling needs the L1 stage, and its keys are not converted
+
+- **Task:** throttle the HTTP API: a default limit for every route, and a lower limit on `POST /api/session` and `POST /ring/link`.
+- **Steps:** looked for throttle props on `HttpApi` and its default stage; then set `defaultRouteSettings` and `routeSettings` on `api.defaultStage.node.defaultChild as CfnStage`, writing both in camelCase (`{ throttlingRateLimit: 1, throttlingBurstLimit: 3 }`), and asserted the template in a Vitest CDK test.
+- **Expected:** a per-route throttle option on the L2 construct, and the same camelCase-to-PascalCase conversion for `routeSettings` that `defaultRouteSettings` gets.
+- **Actual:** the L2 `HttpApi` default stage takes only a stage-wide `throttle`; per-route limits need the L1 `CfnStage`. `defaultRouteSettings` came out as `ThrottlingRateLimit`, but `routeSettings` (typed `any`, a map keyed by route key) went into the template unchanged as `throttlingRateLimit`/`throttlingBurstLimit`, which API Gateway would not recognize. Separately, API Gateway rejects route settings for a route key that doesn't exist yet, and CloudFormation doesn't infer the stage → route dependency from the route key string.
+- **Severity:** Low
+- **Workaround:** write the `routeSettings` values in PascalCase, `stage.node.addDependency(route)` for each throttled route, and assert both in a template test.
+- **Suggestion:** add per-route throttling to the L2 HTTP API stage (for example `routeThrottle: { route, rateLimit, burstLimit }`), or type `CfnStage.routeSettings` as `Record<string, RouteSettingsProperty>` so the keys are converted.
+
+### 2026-10-15 · AWS SDK (botocore) · `retries={"max_attempts": 1}` still makes two HTTP attempts
+
+- **Task:** limit the Bedrock Converse client in the pipeline Lambda to a single HTTP attempt, so that Step Functions owns retries and two Nova calls fit inside the 90 s task timeout.
+- **Steps:** configured `boto3.client("bedrock-runtime", config=Config(retries={"max_attempts": 1}, read_timeout=60))`, then asserted the resolved config in a test: `pipeline.bedrock_client().meta.config.retries["total_max_attempts"]`.
+- **Expected:** 1 attempt in total.
+- **Actual:** `assert 2 == 1`. In the client config, `max_attempts` counts retries, not attempts, so `max_attempts: 1` is one retry and two attempts in total. With `read_timeout=60` and our own second Nova request, one analyze call could take about 240 s and be killed at the Lambda's 90 s timeout.
+- **Severity:** Medium
+- **Workaround:** `Config(retries={"total_max_attempts": 1, "mode": "standard"}, connect_timeout=5, read_timeout=30)`, plus mapping botocore `ReadTimeoutError` and `ConnectTimeoutError` to our retryable error so the workflow retries them.
+- **Suggestion:** give the two keys clearly different names in the retry docs and examples, or warn when `max_attempts` is set without a mode.
+
+### 2026-10-15 · Ring Partner API · Account linking page asks for a fourth URL the docs don't mention
+
+- **Task:** configure the Private app's account linking in the Ring developer console.
+- **Steps:** opened the app's **Account linking** page in the developer console, after planning from the docs that a private app needs three public HTTPS URLs (Account Link, Token Exchange, Webhook).
+- **Expected:** three URL fields.
+- **Actual:** four fields: Account Link URL, **App Homepage URL** ("The URL where users can manage their connection to your service."), Token Exchange URL and Webhook URL. The docs we had read didn't say what the homepage URL is used for or whether it's required.
+- **Severity:** Low
+- **Workaround:** set App Homepage URL to the PWA (`SiteUrl` from the stack outputs).
+- **Suggestion:** list all four fields in the account-linking docs, with where Ring shows the homepage URL to the user.
+
 ### 2026-10-14 · AWS CDK · Local bundling output picks up ANSI colors
 
 - **Task:** build the Python Lambda asset in CDK local bundling by capturing `uv export` stdout into a requirements file, then `uv pip install --requirements`.

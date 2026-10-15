@@ -156,6 +156,24 @@ def test_successful_link(unclaimed, ring):
     assert patch.headers["authorization"] == "Bearer at1"
 
 
+# App URL configured
+def test_app_url_configured(unclaimed, ring, monkeypatch):
+    monkeypatch.setenv("APP_URL", "https://d111.cloudfront.net")
+    resp = submit()
+    assert resp["statusCode"] == 200
+    link = '<a class="button" href="https://d111.cloudfront.net">Open FridgeSense</a>'
+    assert link in resp["body"]
+
+
+# App URL not configured
+def test_app_url_not_configured(unclaimed, ring, monkeypatch):
+    monkeypatch.delenv("APP_URL", raising=False)
+    resp = submit()
+    assert resp["statusCode"] == 200
+    assert "linked" in resp["body"].lower()
+    assert "Open FridgeSense" not in resp["body"]
+
+
 # Ring rejects the integration
 @pytest.mark.parametrize("step,status", [("post", 400), ("post", 404), ("patch", 400)])
 def test_ring_rejects_the_integration(unclaimed, step, status):

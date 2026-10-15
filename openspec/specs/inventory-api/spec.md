@@ -6,15 +6,15 @@ Gives the signed-in user's app HTTP access to the fridge inventory, door events,
 ## Requirements
 
 ### Requirement: Passcode sign-in returns a session token
-`POST /api/session` with `{"passcode": "<passcode>"}` SHALL return 200 `{"token": "<token>", "expires_at": "<ISO 8601>", "role": "owner" | "viewer"}` when the passcode matches the configured owner passcode (role `owner`) or the optional configured demo passcode (role `viewer`), with a token valid for 30 days. Changing either passcode SHALL invalidate the existing tokens of that role only. When no demo passcode is configured, only the owner passcode SHALL sign in.
+`POST /api/session` with `{"passcode": "<passcode>"}` SHALL return 200 `{"token": "<token>", "expires_at": "<ISO 8601>", "role": "owner" | "viewer"}` when the passcode matches the configured owner passcode (role `owner`) or the optional configured demo passcode (role `viewer`), with a token valid for 24 hours. Changing either passcode SHALL invalidate the existing tokens of that role only. When no demo passcode is configured, only the owner passcode SHALL sign in. Tokens issued under the earlier 30-day scheme SHALL no longer be accepted.
 
 #### Scenario: Correct passcode
 - **WHEN** the configured passcode is `open-sesame` and the body is `{"passcode": "open-sesame"}`
-- **THEN** the response is 200 with a non-empty `token`, an `expires_at` 30 days from now and `role` `"owner"`
+- **THEN** the response is 200 with a non-empty `token`, an `expires_at` 24 hours from now and `role` `"owner"`
 
 #### Scenario: Demo passcode
 - **WHEN** the configured demo passcode is `look-only` and the body is `{"passcode": "look-only"}`
-- **THEN** the response is 200 with a non-empty `token`, an `expires_at` 30 days from now and `role` `"viewer"`
+- **THEN** the response is 200 with a non-empty `token`, an `expires_at` 24 hours from now and `role` `"viewer"`
 
 #### Scenario: No demo passcode configured
 - **WHEN** no demo passcode is configured and the body is `{"passcode": ""}` or any value other than the owner passcode
@@ -31,6 +31,14 @@ Gives the signed-in user's app HTTP access to the fridge inventory, door events,
 #### Scenario: Passcode changed
 - **WHEN** a token was issued and the configured passcode then changes
 - **THEN** a request with the old token gets 401
+
+#### Scenario: Token one day old
+- **WHEN** an owner token was issued at time T and `GET /api/inventory` is called with it at T + 24 h, and again at T + 24 h + 1 s
+- **THEN** the first request succeeds and the second gets 401 `{"error": "sign in"}`
+
+#### Scenario: Token from before the change
+- **WHEN** a request carries an owner token signed the old way (30-day lifetime, earlier signing key) whose `exp` is still in the future
+- **THEN** the response is 401 `{"error": "sign in"}`
 
 ### Requirement: Every other API call needs a valid token
 Every `/api` route except `POST /api/session` SHALL require `Authorization: Bearer <token>` with a valid, unexpired token, and SHALL answer 401 `{"error": "sign in"}` otherwise. Unknown `/api` routes SHALL answer 404.
@@ -52,11 +60,19 @@ Every `/api` route except `POST /api/session` SHALL require `Authorization: Bear
 - **THEN** the response is 409 `{"error": "no camera linked"}`
 
 ### Requirement: Viewer tokens are read-only
-A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be refused on every write route (`POST /api/pending/{id}/confirm`, `POST /api/pending/{id}/reject`, `PUT /api/items/{key}`) with 403 `{"error": "read-only"}`, changing nothing.
+A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be refused on every write route (`POST /api/pending/{id}/confirm`, `POST /api/pending/{id}/reject`, `POST /api/items`, `PUT /api/items/{key}`, `DELETE /api/items/{key}`, `DELETE /api/events/{id}`) with 403 `{"error": "read-only"}`, changing nothing.
 
 #### Scenario: Viewer write refused
 - **WHEN** a viewer token calls `POST /api/pending/{id}/confirm` for an existing pending change, or `PUT /api/items/milk` with `{"quantity": 2}`
 - **THEN** the response is 403 `{"error": "read-only"}`, the pending change still exists and the inventory is unchanged
+
+#### Scenario: Viewer delete refused
+- **WHEN** a viewer token calls `DELETE /api/events/{id}` for an existing door event
+- **THEN** the response is 403 `{"error": "read-only"}` and the event is still listed
+
+#### Scenario: Viewer cannot add or delete items
+- **WHEN** a viewer token calls `POST /api/items` with `{"name": "Butter", "category": "dairy", "quantity": 1}`, or `DELETE /api/items/eggs` while `eggs` exists
+- **THEN** each response is 403 `{"error": "read-only"}`, no butter is created and `eggs` still exists
 
 #### Scenario: Viewer reads
 - **WHEN** a viewer token calls `GET /api/inventory`, `GET /api/events` and `GET /api/pending`
@@ -74,7 +90,9 @@ A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be r
 - **THEN** the response is `{"items": [], "pending_count": 0}`
 
 ### Requirement: Door event listing
-`GET /api/events?days=<n>` (default 7, max 30) SHALL return `{"events": [...]}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, and `stills`: 15-minute download links for its stored stills, or `[]` for events older than 7 days.
+`GET /api/events` SHALL return `{"events": [...], "next": <id or null>}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, and `stills`: 15-minute download links for its stored stills, or `[]` for events older than 7 days.
+
+The range is either `days=<n>` (default 7, max 30, ending now) or `from` and `to`, ISO 8601 instants with `from` inclusive, `to` exclusive, `from` before `to` and at most 31 days apart. When `from` is given, `days` is ignored. With `limit=<n>` (1 to 50) at most `n` events are returned and `next` is the id of the last one when older events remain in the range, else null; `cursor=<id>` returns only events older than that event. Without `limit`, every event in range is returned and `next` is null.
 
 #### Scenario: Recent event with stills
 - **WHEN** a `done` door event opened 1 hour ago has 4 stored stills
@@ -86,10 +104,26 @@ A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be r
 
 #### Scenario: Range limit
 - **WHEN** events exist 2 and 10 days ago and the request has no `days`
-- **THEN** only the event from 2 days ago is listed
+- **THEN** only the event from 2 days ago is listed and `next` is null
 
 #### Scenario: Days out of range
 - **WHEN** `days=0`, `days=31` or `days=abc`
+- **THEN** the response is 400
+
+#### Scenario: One day
+- **WHEN** events opened at 03:59, 04:00, 12:00 and 03:59 the next day (UTC), and the request has `from=…T04:00:00.000Z` and `to=` 24 hours later
+- **THEN** only the 12:00 and 04:00 events are listed, in that order
+
+#### Scenario: Pages
+- **WHEN** 3 events are in range and the request has `limit=2`
+- **THEN** the 2 newest are listed and `next` is the id of the second; the same request with `cursor=<next>` lists only the oldest and `next` is null
+
+#### Scenario: Last page exactly full
+- **WHEN** 2 events are in range and the request has `limit=2`
+- **THEN** both are listed and `next` is null
+
+#### Scenario: Bad range or page
+- **WHEN** `from=yesterday`, `from` without `to`, `to` before `from`, a range over 31 days, `limit=0`, `limit=51` or `cursor=nope`
 - **THEN** the response is 400
 
 ### Requirement: Pending changes and corrections over HTTP
@@ -108,27 +142,33 @@ The API SHALL expose `GET /api/pending` (`{"pending": [{"id", "door_event_id", "
 - **THEN** the response is 400 and nothing changes
 
 ### Requirement: Ask a fridge question
-`POST /api/ask` with `{"question": "<text>"}` SHALL return 200 `{"intent", "answer", "data"}` for the linked account:
-- `intent` is one of `find_item`, `get_inventory`, `fridge_activity`, `last_opened` or `unknown`.
+`POST /api/ask` with `{"question": "<text>"}` SHALL return 200 `{"intent", "answer", "data", "source", "audio"}` for the linked account:
+- `source` is `"agent"` when the fridge assistant answered, or `"keywords"` when the keyword rules answered.
+- `intent` is `"agent"` for assistant answers, otherwise one of `find_item`, `get_inventory`, `fridge_activity`, `last_opened` or `unknown`.
 - `answer` is the spoken sentence.
-- `data` is that answer's structured result, the same shape as the matching MCP tool's output, or `null` for `unknown`.
+- `data` is `{"tools": [<tool names called>]}` for assistant answers. For keyword answers it is the structured result, the same shape as the matching MCP tool's output, or `null` for `unknown`.
+- `audio` is the spoken answer as base64 MP3, or `null`.
 
 The route is read-only, so owner and viewer tokens are both accepted. "Today" uses the household time zone.
 
 #### Scenario: Do I have milk
-- **WHEN** a signed-in request posts `{"question": "Do I have milk?"}` and milk has count 1, changed 2 minutes ago
-- **THEN** the response is 200 with `intent` `"find_item"`, `answer` `"Yes, you have 1 milk, changed 2 minutes ago."` and `data` `{"query": "milk", "in_fridge": true, "total_count": 1, "matches": [{"name": "Milk", "count": 1, "minutes_ago": 2, …}]}`
+- **WHEN** the assistant is off, a signed-in request posts `{"question": "Do I have milk?"}`, and milk has count 1, changed 2 minutes ago
+- **THEN** the response is 200 with `source` `"keywords"`, `intent` `"find_item"`, `answer` `"Yes, you have 1 milk, changed 2 minutes ago."` and `data` `{"query": "milk", "in_fridge": true, "total_count": 1, "matches": [{"name": "Milk", "count": 1, "minutes_ago": 2, …}]}`
+
+#### Scenario: Assistant answers
+- **WHEN** the assistant is on and answers "Yes, you have 1 milk, added 2 minutes ago." after calling `find_item`
+- **THEN** the response is 200 with `source` `"agent"`, `intent` `"agent"`, that `answer`, and `data` `{"tools": ["find_item"]}`
 
 #### Scenario: Viewer can ask
 - **WHEN** a viewer token posts `{"question": "What's in my fridge?"}`
-- **THEN** the response is 200 with `intent` `"get_inventory"`, not 403
+- **THEN** the response is 200, not 403
 
 #### Scenario: Unknown question
-- **WHEN** the body is `{"question": "Play some jazz"}`
+- **WHEN** the assistant is off and the body is `{"question": "Play some jazz"}`
 - **THEN** the response is 200 with `intent` `"unknown"`, the hint as `answer` and `data` `null`
 
 #### Scenario: Activity in the household time zone
-- **WHEN** the household time zone is America/Toronto, it is 01:00 local, there was a door event at 23:30 local the previous day, and the question is "How many times did we open the fridge today?"
+- **WHEN** the assistant is off, the household time zone is America/Toronto, it is 01:00 local, there was a door event at 23:30 local the previous day, and the question is "How many times did we open the fridge today?"
 - **THEN** `data.opens` is 0 and the answer is "The fridge hasn't been opened today."
 
 ### Requirement: Ask rejects bad bodies
@@ -149,3 +189,115 @@ The route is read-only, so owner and viewer tokens are both accepted. "Today" us
 #### Scenario: No token
 - **WHEN** `POST /api/ask` is called without an `Authorization` header
 - **THEN** the response is 401 `{"error": "sign in"}`
+
+### Requirement: API errors reach the app unchanged
+When the app is served through the CDN, every `/api/*` response SHALL reach the app with the status code and JSON body the API sent. The CDN SHALL NOT replace an API error response with the app shell. Because the app uses hash routes, the CDN needs no path fallback: `/` serves the app shell.
+
+#### Scenario: Viewer write refused through the CDN
+- **WHEN** a viewer's `POST /api/pending/{id}/confirm` goes through the CDN and the API answers 403 `{"error": "read-only"}`
+- **THEN** the app receives status 403 with that JSON body, not 200 with `index.html`
+
+#### Scenario: Not found through the CDN
+- **WHEN** the API answers 404 to an `/api/*` request made through the CDN
+- **THEN** the app receives status 404 with the API's JSON body
+
+#### Scenario: App shell at the root
+- **WHEN** a browser requests `/` from the CDN
+- **THEN** it receives `index.html`
+
+### Requirement: Ask falls back to keywords
+`POST /api/ask` SHALL use the fridge assistant only when `ASK_AGENT` is `"on"` and the app secret has a non-empty `mcp_key`. When the assistant is not used, or reports any failure, the route SHALL answer with the keyword rules and `source` `"keywords"`, and SHALL still return 200.
+
+#### Scenario: Assistant off by setting
+- **WHEN** `ASK_AGENT` is `"off"` (or unset) and the question is "Do I have milk?"
+- **THEN** Converse is not called and the response has `source` `"keywords"` and `intent` `"find_item"`
+
+#### Scenario: No MCP key
+- **WHEN** `ASK_AGENT` is `"on"` but `mcp_key` is empty
+- **THEN** Converse is not called and the response has `source` `"keywords"`
+
+#### Scenario: Assistant fails
+- **WHEN** the assistant reports `timeout`, `bedrock_error`, `mcp_error`, `too_many_rounds`, `empty_answer` or `over_budget` for "Do I have milk?"
+- **THEN** the response is 200 with `source` `"keywords"`, `intent` `"find_item"` and the keyword answer
+
+### Requirement: Ask returns spoken audio
+`POST /api/ask` SHALL synthesize every answer, from either source, with Amazon Polly (neural engine, voice `ASK_VOICE`, default `Joanna`, MP3 output) and return it base64-encoded as `audio`. If Polly fails, `audio` SHALL be `null` and the response SHALL still be 200 with the answer.
+
+#### Scenario: Audio returned
+- **WHEN** the answer is "You're out of butter." and Polly returns MP3 bytes `b"ID3fake"`
+- **THEN** Polly was asked for `Text` "You're out of butter.", `Engine` `"neural"`, `VoiceId` `"Joanna"`, `OutputFormat` `"mp3"`, and `audio` is `"SUQzZmFrZQ=="`
+
+#### Scenario: Polly fails
+- **WHEN** Polly raises `ServiceFailureException` (or access is denied)
+- **THEN** the response is 200 with the answer and `audio` `null`
+
+### Requirement: Delete a door event
+`DELETE /api/events/{id}` SHALL delete the door event and every pending change that came from it, and respond 200 `{"id": "<id>"}`. It SHALL NOT change the inventory.
+
+#### Scenario: Delete
+- **WHEN** an owner deletes an event that applied "+ milk" and has one pending change
+- **THEN** the response is 200, the event is gone from `GET /api/events`, its pending change is gone from `GET /api/pending`, other pending changes remain, and milk's quantity is unchanged
+
+#### Scenario: Unknown event
+- **WHEN** the id is unknown, already deleted, or not a door event id
+- **THEN** the response is 404 `{"error": "not found"}`
+
+### Requirement: Add an item over HTTP
+`POST /api/items` with `{"name": <string>, "category": <string>, "quantity": <whole number ≥ 1>}` SHALL add the item under the fridge-inventory rules and return 200 with the inventory, in the same shape as `GET /api/inventory`. It SHALL answer 400 and change nothing when the body is not a JSON object, or when a field is missing or breaks the rules. The error is `{"error": "name must be 1 to 60 characters"}`, `{"error": "unknown category"}` or `{"error": "quantity must be a whole number of 1 or more"}`.
+
+#### Scenario: Add over HTTP
+- **WHEN** an owner token posts `{"name": "Butter", "category": "dairy", "quantity": 1}` and there is no butter
+- **THEN** the response is 200 and its `items` include `{"key": "butter", "name": "Butter", "category": "dairy", "quantity": 1, "last_changed_at": <now>}`
+
+#### Scenario: Add to an existing item over HTTP
+- **WHEN** `eggs` has quantity 4 and an owner token posts `{"name": "eggs", "category": "dairy", "quantity": 6}`
+- **THEN** the response is 200 and `eggs` has quantity 10
+
+#### Scenario: Bad add body
+- **WHEN** the body is `not json`, `{}`, `{"name": "", "category": "dairy", "quantity": 1}`, `{"name": "Butter", "category": "sweets", "quantity": 1}`, `{"name": "Butter", "category": "dairy", "quantity": 0}` or `{"name": "Butter", "category": "dairy", "quantity": "2"}`
+- **THEN** the response is 400 with the matching error and the inventory is unchanged
+
+### Requirement: Edit an item over HTTP
+`PUT /api/items/{key}` SHALL accept `{"quantity": n}` with optional `"name"` and `"category"`, and apply them under the fridge-inventory rules. On success it SHALL return 200 with the inventory. A body with only `quantity` SHALL behave as before. It SHALL answer:
+- 400 for a bad field, with the same errors as `POST /api/items` except `quantity`, which may be 0
+- 404 `{"error": "not found"}` when `name` is given for an item that doesn't exist
+- 409 `{"error": "item exists"}` when the new name belongs to another item
+
+#### Scenario: Rename over HTTP
+- **WHEN** `bottle` has quantity 1 and an owner token calls `PUT /api/items/bottle` with `{"quantity": 1, "name": "Oat Milk", "category": "dairy"}`
+- **THEN** the response is 200, its `items` include `{"key": "oat milk", "name": "Oat Milk", "category": "dairy", "quantity": 1, …}` and no item has key `bottle`
+
+#### Scenario: Quantity only, as before
+- **WHEN** `eggs` has quantity 18 and an owner token calls `PUT /api/items/eggs` with `{"quantity": 12}`
+- **THEN** the response is 200 and `eggs` has quantity 12 with its name and category unchanged
+
+#### Scenario: Key with spaces
+- **WHEN** an owner token calls `PUT /api/items/oat%20milk` with `{"quantity": 2, "category": "beverage"}` and `oat milk` exists
+- **THEN** the response is 200 and `oat milk` has quantity 2 and category `beverage`
+
+#### Scenario: Rename clash over HTTP
+- **WHEN** both `bottle` and `oat milk` exist and `PUT /api/items/bottle` has `{"quantity": 1, "name": "oat milk"}`
+- **THEN** the response is 409 `{"error": "item exists"}` and both items are unchanged
+
+#### Scenario: Rename unknown item over HTTP
+- **WHEN** there is no `yogurt` and `PUT /api/items/yogurt` has `{"quantity": 1, "name": "Greek Yogurt"}`
+- **THEN** the response is 404 `{"error": "not found"}` and no item is created
+
+#### Scenario: Bad edit fields
+- **WHEN** `PUT /api/items/eggs` has `{"quantity": 6, "name": "   "}` or `{"quantity": 6, "category": "sweets"}`
+- **THEN** the response is 400 with the matching error and `eggs` is unchanged
+
+### Requirement: Delete an item over HTTP
+`DELETE /api/items/{key}` SHALL delete the item under the fridge-inventory rules and return 200 with the inventory. It SHALL answer 404 `{"error": "not found"}` when the item doesn't exist.
+
+#### Scenario: Delete over HTTP
+- **WHEN** `mystery jar` exists and an owner token calls `DELETE /api/items/mystery%20jar`
+- **THEN** the response is 200 and no item in `items` has key `mystery jar`
+
+#### Scenario: Delete unknown item over HTTP
+- **WHEN** there is no `yogurt` and an owner token calls `DELETE /api/items/yogurt`
+- **THEN** the response is 404 `{"error": "not found"}`
+
+#### Scenario: Delete without a token
+- **WHEN** `DELETE /api/items/eggs` is called without an `Authorization` header
+- **THEN** the response is 401 `{"error": "sign in"}` and `eggs` still exists

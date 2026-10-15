@@ -1,5 +1,10 @@
 """inventory-api: session tokens for the owner and the read-only demo viewer."""
 
+import base64
+import hashlib
+import hmac
+import json
+
 from fridgesense.session import TTL_S, sign_in, verify
 from fridgesense.store import AppConfig
 
@@ -10,7 +15,7 @@ OWNER = AppConfig(passcode="open-sesame", demo_passcode="look-only")
 def test_owner_sign_in_and_verify():
     token, expires_at, role = sign_in(OWNER, "open-sesame", now=NOW)
     assert role == "owner" and expires_at == NOW + TTL_S
-    assert TTL_S == 30 * 24 * 3600
+    assert TTL_S == 24 * 3600
     assert verify(OWNER, token, now=NOW + 60) == "owner"
 
 
@@ -65,3 +70,25 @@ def test_viewer_token_with_no_demo_passcode_configured():
 def test_owner_passcode_wins_if_both_match():
     same = AppConfig(passcode="x", demo_passcode="x")
     assert sign_in(same, "x", now=NOW)[2] == "owner"
+
+
+# Token one day old
+def test_token_valid_for_exactly_24_hours():
+    token, expires_at, _ = sign_in(OWNER, "open-sesame", now=NOW)
+    assert expires_at == NOW + 24 * 3600
+    assert verify(OWNER, token, now=NOW + 24 * 3600) == "owner"
+    assert verify(OWNER, token, now=NOW + 24 * 3600 + 1) is None
+
+
+def _v1_token(passcode: str, role: str, exp: int) -> str:
+    """A token signed the pre-change way: 30-day exp, fridgesense-session-v1 key."""
+    key = hmac.new(passcode.encode(), b"fridgesense-session-v1", hashlib.sha256).digest()
+    raw = json.dumps({"exp": exp, "role": role}, separators=(",", ":")).encode()
+    payload = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+    return f"{payload}.{hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()}"
+
+
+# Token from before the change
+def test_token_signed_before_the_change_is_rejected():
+    old = _v1_token("open-sesame", "owner", NOW + 30 * 24 * 3600)
+    assert verify(OWNER, old, now=NOW) is None
