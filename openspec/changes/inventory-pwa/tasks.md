@@ -2,11 +2,11 @@
 
 ## 1. Inventory rules for confirm, reject and manual fixes
 
-- [ ] 1.1 Write failing tests that `save_task` stores `change_index` on pending items (extending "Low-confidence item") and that `quantity_put` keeps the floor-at-0 and no-unknown-removal rules; verify they fail
-- [ ] 1.2 Extract `quantity_put` from `save_task`, store `change_index`, and keep the whole existing suite green
-- [ ] 1.3 Write failing moto tests for "Confirm as reported", "Confirm with a correction", "Confirm a removal of an unknown item" and "Reject" (inventory, pending item and door event `changes[i]` plus `pending_count`); verify they fail
-- [ ] 1.4 Implement `confirm_pending` and `reject_pending` as conditional transactions (pending must still exist) to make the tests pass
-- [ ] 1.5 Write failing tests for "Correct a count" and "Add an item by hand"; then implement `set_quantity` and verify they pass
+- [x] 1.1 Write failing tests that `save_task` stores `change_index` on pending items (extending "Low-confidence item") and that `quantity_put` keeps the floor-at-0 and no-unknown-removal rules; verify they fail
+- [x] 1.2 Extract `quantity_put` from `save_task`, store `change_index`, and keep the whole existing suite green
+- [x] 1.3 Write failing moto tests for "Confirm as reported", "Confirm with a correction", "Confirm a removal of an unknown item" and "Reject" (inventory, pending item and door event `changes[i]` plus `pending_count`); verify they fail
+- [x] 1.4 Implement `confirm_pending` and `reject_pending` as conditional transactions (pending must still exist) to make the tests pass
+- [x] 1.5 Write failing tests for "Correct a count" and "Add an item by hand"; then implement `set_quantity` and verify they pass
 
 ## 2. API: sessions and routing
 
