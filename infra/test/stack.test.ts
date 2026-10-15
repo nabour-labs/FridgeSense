@@ -36,27 +36,41 @@ describe("HTTP API", () => {
 });
 
 describe("Lambdas", () => {
-  it("are two Python 3.13 arm64 functions with the shared env vars", () => {
+  it("are three Python 3.13 arm64 functions", () => {
     const fns = Object.values(resourcesOf("AWS::Lambda::Function")).filter(
       (f) => f.Properties.Runtime === "python3.13",
     );
-    expect(fns).toHaveLength(2);
-    for (const fn of fns) {
-      expect(fn.Properties.Architectures).toEqual(["arm64"]);
-      expect(fn.Properties.Timeout).toBe(10);
-      expect(fn.Properties.MemorySize).toBe(256);
-      const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
-      expect(Object.keys(vars).sort()).toEqual([
+    expect(fns.map((f) => f.Properties.Handler).sort()).toEqual([
+      "fridgesense.handlers.http.handler",
+      "fridgesense.handlers.pipeline.handler",
+      "fridgesense.handlers.token_refresh.handler",
+    ]);
+    for (const fn of fns) expect(fn.Properties.Architectures).toEqual(["arm64"]);
+  });
+
+  it("run the Ring endpoints and token refresh with 256 MB, 10 s and the shared env vars", () => {
+    const expected: Record<string, string[]> = {
+      "fridgesense.handlers.http.handler": [
+        "RING_APP_SECRET_ID",
+        "RING_TOKENS_SECRET_ID",
+        "STATE_MACHINE_ARN",
+        "TABLE_NAME",
+      ],
+      "fridgesense.handlers.token_refresh.handler": [
         "RING_APP_SECRET_ID",
         "RING_TOKENS_SECRET_ID",
         "TABLE_NAME",
-      ]);
+      ],
+    };
+    for (const [handler, vars] of Object.entries(expected)) {
+      const [fn] = Object.values(resourcesOf("AWS::Lambda::Function")).filter(
+        (f) => f.Properties.Handler === handler,
+      );
+      expect(fn.Properties.Timeout).toBe(10);
+      expect(fn.Properties.MemorySize).toBe(256);
+      const env = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+      expect(Object.keys(env).sort()).toEqual(vars);
     }
-    const handlers = fns.map((f) => f.Properties.Handler).sort();
-    expect(handlers).toEqual([
-      "fridgesense.handlers.http.handler",
-      "fridgesense.handlers.token_refresh.handler",
-    ]);
   });
 
   it("refreshes Ring tokens every 3 hours", () => {
@@ -152,7 +166,7 @@ describe("IAM", () => {
     }
   });
 
-  it("gives the table only to the HTTP function", () => {
+  it("never gives the table to the token refresh function", () => {
     const tableActions = (fn: string) =>
       statementsFor(`${fn}ServiceRole`)
         .filter((s) => resource(s).includes("Table"))

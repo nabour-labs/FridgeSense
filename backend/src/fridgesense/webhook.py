@@ -13,10 +13,10 @@ import boto3
 from botocore.exceptions import ClientError
 
 from fridgesense.crypto import verify_signature
-from fridgesense.devices import account_pk
 from fridgesense.logs import log_event
 from fridgesense.store import AppConfig
 from fridgesense.store import table_name as table_name_default
+from fridgesense.table import account_pk
 from fridgesense.web import Request, json_response
 
 DEDUPE_TTL_S = 7 * 24 * 3600
@@ -64,6 +64,9 @@ class WebhookLog:
             raise
         return True
 
+    def forget(self, account_id: str, request_id: str) -> None:
+        self.table.delete_item(Key={"pk": account_pk(account_id), "sk": f"WEBHOOK#{request_id}"})
+
 
 def handle_webhook(
     req: Request, cfg: AppConfig, log: WebhookLog, motion: MotionHandler, now: float
@@ -101,7 +104,15 @@ def handle_webhook(
         except (KeyError, TypeError, ValueError) as e:
             log_event("webhook_malformed", logging.WARNING, error=type(e).__name__)
             return json_response(200, {"ok": True})
-        motion.handle(event)
+        try:
+            motion.handle(event)
+        except Exception as e:
+            # Forget the delivery so Ring's retry is handled as new; starting a run is idempotent.
+            log.forget(account_id, request_id)
+            log_event(
+                "motion_handoff_failed", logging.ERROR, error=type(e).__name__, **event.__dict__
+            )
+            return json_response(500, {"error": "hand-over failed"})
     elif event_type == "app_integration_added":
         log_event("app_integration_added", account_id=account_id, request_id=request_id)
     else:

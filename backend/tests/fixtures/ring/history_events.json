@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "type": "history-events",
+      "id": "evt_1786715596000",
+      "attributes": {"event_type": "motion", "is_third_party_reviewed": false, "start": 1786715596000, "end": 1786715621000},
+      "relationships": {"source": {"data": {"type": "devices", "id": "ava1.ring.device.D1"}}}
+    },
+    {
+      "type": "history-events",
+      "id": "evt_1786711000000",
+      "attributes": {"event_type": "motion", "is_third_party_reviewed": false, "start": 1786711000000, "end": 1786711020000},
+      "relationships": {"source": {"data": {"type": "devices", "id": "ava1.ring.device.D1"}}}
+    }
+  ],
+  "links": {}
+}
