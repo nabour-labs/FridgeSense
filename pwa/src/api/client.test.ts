@@ -34,9 +34,21 @@ test("item keys are URL-encoded", async () => {
 });
 
 test("ask posts the question", async () => {
-  const fetch = respond(200, { intent: "find_item", answer: "Yes.", data: {} });
+  const fetch = respond(200, {
+    intent: "agent",
+    answer: "Yes.",
+    data: { tools: ["find_item"] },
+    source: "agent",
+    audio: "SUQz",
+  });
   const result = await new ApiClient(() => "tok", fetch).ask("do I have milk?");
-  expect(result.answer).toBe("Yes.");
+  expect(result).toEqual({
+    intent: "agent",
+    answer: "Yes.",
+    data: { tools: ["find_item"] },
+    source: "agent",
+    audio: "SUQz",
+  });
   const [url, init] = fetch.mock.calls[0];
   expect(url).toBe("/api/ask");
   expect(init.method).toBe("POST");

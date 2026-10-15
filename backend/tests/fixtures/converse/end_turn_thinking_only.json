@@ -1,0 +1,21 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "<thinking>hmm</thinking>"
+        }
+      ]
+    }
+  },
+  "stopReason": "end_turn",
+  "usage": {
+    "inputTokens": 1300,
+    "outputTokens": 10,
+    "totalTokens": 1310
+  },
+  "metrics": {
+    "latencyMs": 900
+  }
+}

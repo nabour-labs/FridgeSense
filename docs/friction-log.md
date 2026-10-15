@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-15 · Strands Agents / MCP Python SDK · Strands can't share a project with an MCP server on `mcp` 2.3
+
+- **Task:** build the Ask screen's assistant (Nova answering through our own MCP server) as a Strands agent in the backend, which already runs the MCP server on `mcp>=2.3,<3`.
+- **Steps:** read the `strands-agents` metadata on PyPI (`https://pypi.org/pypi/strands-agents/json`), then resolved both together with `uv pip compile` on `mcp>=2.3,<3` + `strands-agents>=1.61`, and again with `strands-agents` unpinned.
+- **Expected:** the latest Strands works with the latest MCP SDK.
+- **Actual:** `strands-agents` 1.61.0 requires `mcp<2.2,>=1.23.0`. Pinned: "Because strands-agents>=1.61.0 depends on mcp>=1.23.0,<2.2 and you require mcp>=2.3, we can conclude that your requirements and strands-agents>=1.61.0 are incompatible." Unpinned, the resolver succeeds silently with `strands-agents==0.0.1`, a placeholder release, which is easy to miss.
+- **Severity:** Medium
+- **Workaround:** no Strands. A short Bedrock Converse tool-use loop uses the MCP SDK's own `mcp.Client` (Streamable HTTP) to call the tools. The other option was Strands in its own Lambda and project pinned to `mcp<2.2`.
+- **Suggestion:** support `mcp` 2.x in Strands, or document the supported `mcp` range. Yank or mark the 0.0.1 placeholder so unpinned installs fail loudly.
+
 ### 2026-10-15 · AWS CDK / API Gateway · HTTP API route throttling needs the L1 stage, and its keys are not converted
 
 - **Task:** throttle the HTTP API: a default limit for every route, and a lower limit on `POST /api/session` and `POST /ring/link`.
@@ -32,6 +42,26 @@ Each entry uses this template. Put the newest entry first.
 - **Severity:** Low
 - **Workaround:** write the `routeSettings` values in PascalCase, `stage.node.addDependency(route)` for each throttled route, and assert both in a template test.
 - **Suggestion:** add per-route throttling to the L2 HTTP API stage (for example `routeThrottle: { route, rateLimit, burstLimit }`), or type `CfnStage.routeSettings` as `Record<string, RouteSettingsProperty>` so the keys are converted.
+
+### 2026-10-15 · AWS SDK (botocore) · `retries={"max_attempts": 1}` still makes two HTTP attempts
+
+- **Task:** limit the Bedrock Converse client in the pipeline Lambda to a single HTTP attempt, so that Step Functions owns retries and two Nova calls fit inside the 90 s task timeout.
+- **Steps:** configured `boto3.client("bedrock-runtime", config=Config(retries={"max_attempts": 1}, read_timeout=60))`, then asserted the resolved config in a test: `pipeline.bedrock_client().meta.config.retries["total_max_attempts"]`.
+- **Expected:** 1 attempt in total.
+- **Actual:** `assert 2 == 1`. In the client config, `max_attempts` counts retries, not attempts, so `max_attempts: 1` is one retry and two attempts in total. With `read_timeout=60` and our own second Nova request, one analyze call could take about 240 s and be killed at the Lambda's 90 s timeout.
+- **Severity:** Medium
+- **Workaround:** `Config(retries={"total_max_attempts": 1, "mode": "standard"}, connect_timeout=5, read_timeout=30)`, plus mapping botocore `ReadTimeoutError` and `ConnectTimeoutError` to our retryable error so the workflow retries them.
+- **Suggestion:** give the two keys clearly different names in the retry docs and examples, or warn when `max_attempts` is set without a mode.
+
+### 2026-10-15 · Ring Partner API · Account linking page asks for a fourth URL the docs don't mention
+
+- **Task:** configure the Private app's account linking in the Ring developer console.
+- **Steps:** opened the app's **Account linking** page in the developer console, after planning from the docs that a private app needs three public HTTPS URLs (Account Link, Token Exchange, Webhook).
+- **Expected:** three URL fields.
+- **Actual:** four fields: Account Link URL, **App Homepage URL** ("The URL where users can manage their connection to your service."), Token Exchange URL and Webhook URL. The docs we had read didn't say what the homepage URL is used for or whether it's required.
+- **Severity:** Low
+- **Workaround:** set App Homepage URL to the PWA (`SiteUrl` from the stack outputs).
+- **Suggestion:** list all four fields in the account-linking docs, with where Ring shows the homepage URL to the user.
 
 ### 2026-10-14 · AWS CDK · Local bundling output picks up ANSI colors
 

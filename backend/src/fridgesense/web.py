@@ -14,18 +14,21 @@ class Request:
     headers: dict[str, str]
     query: dict[str, str]
     raw_body: bytes
+    host: str = ""  # the API's own domain name (requestContext.domainName)
 
     @classmethod
     def from_event(cls, event: dict) -> "Request":
         body = event.get("body") or ""
         raw = base64.b64decode(body) if event.get("isBase64Encoded") else body.encode()
-        http = event.get("requestContext", {}).get("http", {})
+        request_context = event.get("requestContext", {})
+        http = request_context.get("http", {})
         return cls(
             method=http.get("method", ""),
             path=event.get("rawPath", http.get("path", "")),
             headers={k.lower(): v for k, v in (event.get("headers") or {}).items()},
             query=dict(event.get("queryStringParameters") or {}),
             raw_body=raw,
+            host=request_context.get("domainName", ""),
         )
 
     @property
