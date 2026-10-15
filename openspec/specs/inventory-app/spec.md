@@ -195,9 +195,11 @@ The app SHALL define its colours as Tailwind theme tokens (`--color-brand-*` for
 - **THEN** a `@media (prefers-reduced-motion: reduce)` rule sets animation and transition durations to near zero
 
 ### Requirement: Ask screen
-The app SHALL have a fifth tab, "Ask" (hash `#ask`), with a text box, a send button and three example questions:
+The app SHALL have a fifth tab, "Ask" (hash `#ask`), with a text box, a send button and five example questions:
 - "Do I have milk?"
 - "What's in my fridge?"
+- "What should I eat first?"
+- "What do I need to buy?"
 - "When was the fridge last opened?"
 
 Sending a question, or tapping an example, SHALL post it to `/api/ask`. While waiting, the screen shows "Thinking…". The screen then shows the question and the answer, newest first, and reads the answer aloud: it plays the response's `audio` (MP3) when there is one, and otherwise uses speech synthesis when the browser supports it. When `source` is `"agent"` and tools were called, the answer has a small line "Checked: <tool names, comma-separated>". The Ask screen SHALL work the same for owner and viewer roles.
@@ -209,6 +211,10 @@ Sending a question, or tapping an example, SHALL post it to `/api/ask`. While wa
 #### Scenario: Example question
 - **WHEN** the user taps "What's in my fridge?"
 - **THEN** that question is posted and its answer is shown
+
+#### Scenario: Five examples
+- **WHEN** the user opens `#ask`
+- **THEN** the five example questions are shown as buttons in the order above, and tapping "What should I eat first?" posts that question
 
 #### Scenario: Newest first
 - **WHEN** the user asks two questions in a row
