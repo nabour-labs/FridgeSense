@@ -182,6 +182,49 @@ Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in
 cd pwa && FRIDGESENSE_MOCK=1 npm run dev
 ```
 
+### Voice and MCP (Alexa+)
+
+FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec 2025-11-25, Streamable HTTP) with four tools: `find_item`, `get_inventory`, `fridge_activity` and `last_opened`. Ask things like:
+
+- "Do I have milk?"
+- "What's in my fridge?" / "What dairy do I have?"
+- "How many times did we open the fridge today?"
+- "When was the fridge last opened, and what changed?"
+
+**Turn it on.** The URL contains a random key; without it the endpoint answers 404. Set the key and print the full URL:
+
+```bash
+set -a; source .env; set +a; KEY=$(openssl rand -hex 32); aws secretsmanager get-secret-value --secret-id fridgesense/ring-app --query SecretString --output text | jq --arg k "$KEY" '.mcp_key=$k' | aws secretsmanager put-secret-value --secret-id fridgesense/ring-app --secret-string file:///dev/stdin && aws cloudformation describe-stacks --stack-name FridgeSense --query "Stacks[0].Outputs[?OutputKey=='McpUrlTemplate'].OutputValue" --output text | sed "s/<mcp_key>/$KEY/"
+```
+
+Keep that URL private: anyone with it can read the inventory and door times (nothing can be changed). The Lambdas cache the secret for up to 5 minutes. To revoke it, run the command again; the old URL stops working.
+
+**MCP Inspector:** run `npx @modelcontextprotocol/inspector`, choose **Streamable HTTP**, paste the URL, then **Connect** and **List Tools**.
+
+**Claude Desktop:** Settings → Connectors → **Add custom connector**, and paste the URL.
+
+**Alexa+ (MCP Toolkit).** Amazon's toolkit may need access granted through Amazon; try it early:
+
+```bash
+npm install -g @alexa-ai/cli
+```
+
+```bash
+alexa-ai configure
+```
+
+```bash
+alexa-ai new mcp --mcp-server-url "<the URL above>"
+```
+
+```bash
+alexa-ai deploy
+```
+
+Then test in the simulator under [Alexa+ add-ons](https://developer.amazon.com/alexa/console/ask/addons) in the developer console, or on an Echo linked to the same account.
+
+"Today" uses the household's time zone (default `America/Toronto`). Change it with `cdk deploy -c timeZone=America/Vancouver`. A schedule pings the MCP Lambda every 5 minutes so the first question after a quiet spell still answers within Alexa's 500 ms budget.
+
 ### Remove
 
 ```bash
