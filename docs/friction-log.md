@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-15 · MCP Python SDK · The MCP client logs full server URLs, secrets in the path included
+
+- **Task:** live check of the Ask assistant: Nova calls our MCP server at `/mcp/<mcp_key>` through `mcp.Client(url)` from the API Lambda.
+- **Steps:** asked three questions on the deployed app, then searched the API Lambda's logs: `aws logs filter-log-events --log-group-name /fridgesense/api --filter-pattern '"/mcp/"'`.
+- **Expected:** no URLs in our logs; our own `ask_agent` events deliberately leave the URL out.
+- **Actual:** 12 lines like `HTTP Request: POST https://<api>/mcp/<mcp_key> "HTTP/1.1 200 OK"`, from the `httpx2` logger the SDK's Streamable HTTP client uses, at INFO, which Lambda's root level lets through. On the server side, Mangum's `mangum.http` logger also wrote `POST /mcp/<mcp_key> 200` to the MCP Lambda's logs. A unit test on our own log events didn't catch either.
+- **Severity:** Medium
+- **Workaround:** set the `httpx`, `httpx2` and `mangum.http` loggers to WARNING, with tests that fail if the key appears in any log record. Rotate the key once the fix is deployed.
+- **Suggestion:** have the SDK's HTTP transport log at DEBUG, or redact the path, and document that URL-embedded tokens end up in logs at INFO.
+
 ### 2026-10-15 · Strands Agents / MCP Python SDK · Strands can't share a project with an MCP server on `mcp` 2.3
 
 - **Task:** build the Ask screen's assistant (Nova answering through our own MCP server) as a Strands agent in the backend, which already runs the MCP server on `mcp>=2.3,<3`.

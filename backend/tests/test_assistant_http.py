@@ -3,6 +3,7 @@
 Local only (127.0.0.1); Converse is stubbed.
 """
 
+import logging
 import socket
 import threading
 import time
@@ -16,7 +17,7 @@ from tests.api_helpers import link_account
 from tests.mcp_helpers import put_item
 
 pytestmark = pytest.mark.anyio
-KEY = "k1"
+KEY = "0123456789abcdef" * 4  # looks like a real mcp_key
 
 
 @pytest.fixture
@@ -70,3 +71,15 @@ async def test_wrong_key_is_mcp_error(mcp_base, converse_stub):
     )
     assert result.reason == "mcp_error"
     assert converse_stub.requests == []
+
+
+async def test_key_never_logged(mcp_base, converse_stub, caplog):
+    """The MCP URL holds the key: no logger (ours or the HTTP client's) may write it."""
+    caplog.set_level(logging.INFO)  # what the API Lambda sets on the root logger
+    put_item("milk", 1)
+    converse_stub.answer("tool_use_find_milk.json", "end_turn_milk.json")
+    await assistant.run(
+        "Do I have milk?", server=f"{mcp_base}/mcp/{KEY}", bedrock=converse_stub.client
+    )
+    assert caplog.records, "nothing was logged at all"
+    assert KEY not in caplog.text
