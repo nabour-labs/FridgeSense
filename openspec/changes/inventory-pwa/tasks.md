@@ -17,9 +17,9 @@
 
 ## 3. API: reads
 
-- [ ] 3.1 Write failing tests for "Inventory with items" and "Empty inventory"; then implement `GET /api/inventory` and verify they pass
-- [ ] 3.2 Write failing tests (moto S3 + DynamoDB) for "Recent event with stills", "Old event", "Range limit" and "Days out of range"; verify they fail
-- [ ] 3.3 Implement `FridgeTable.query_range`, opaque IDs and `GET /api/events` with presigned still links to make the tests pass
+- [x] 3.1 Write failing tests for "Inventory with items" and "Empty inventory"; then implement `GET /api/inventory` and verify they pass
+- [x] 3.2 Write failing tests (moto S3 + DynamoDB) for "Recent event with stills", "Old event", "Range limit" and "Days out of range"; verify they fail
+- [x] 3.3 Implement `FridgeTable.query_range`, opaque IDs and `GET /api/events` with presigned still links to make the tests pass
 
 ## 4. API: writes
 
