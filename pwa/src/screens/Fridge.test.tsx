@@ -2,6 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { Inventory, Item } from "../api/types";
+import { ApiError, Offline } from "../api/client";
 import { fakeApi, signedIn } from "../test-utils";
 
 function item(key: string, quantity: number, category: string, name = key): Item {
@@ -158,4 +159,66 @@ test("each item row shows its icon", async () => {
   await screen.findByText("Milk");
   const icons = Array.from(document.querySelectorAll("[data-icon]")).map((e) => e.getAttribute("data-icon"));
   expect(icons).toEqual(["🥛", "🍎", "🍝"]);
+});
+
+describe("no data", () => {
+  // No camera linked
+  test("a 409 shows No Data instead of the skeleton", async () => {
+    renderFailing(new ApiError(409));
+    expect(await screen.findByText("No Data")).toBeInTheDocument();
+    expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+  });
+
+  // First load fails
+  test.each([
+    ["a server error", new ApiError(500)],
+    ["being offline", new Offline("x")],
+  ])("a first load failing with %s shows No Data", async (_, error) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    renderFailing(error);
+    expect(await screen.findByText("No Data")).toBeInTheDocument();
+    expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+  });
+
+  test("offline on first load also shows the offline banner", async () => {
+    renderFailing(new Offline("x"));
+    expect(await screen.findByText("No Data")).toBeInTheDocument();
+    expect(screen.getByText(/Can't reach FridgeSense/)).toBeInTheDocument();
+  });
+
+  // Still loading
+  test("the skeleton shows while the first request is in flight", () => {
+    signedIn();
+    location.hash = "";
+    render(<App api={fakeApi({ inventory: vi.fn(() => new Promise(() => {})) })} />);
+    expect(screen.getByTestId("loading")).toBeInTheDocument();
+    expect(screen.queryByText("No Data")).not.toBeInTheDocument();
+  });
+
+  // Data arrives later
+  test("data from a later poll replaces No Data", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      signedIn();
+      location.hash = "";
+      const inventory = vi.fn().mockRejectedValueOnce(new ApiError(409)).mockResolvedValue({
+        items: [item("eggs", 6, "dairy", "Eggs")],
+        pending_count: 0,
+      });
+      render(<App api={fakeApi({ inventory })} />);
+      expect(await screen.findByText("No Data")).toBeInTheDocument();
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(await screen.findByText("Eggs")).toBeInTheDocument();
+      expect(screen.getByText("×6")).toBeInTheDocument();
+      expect(screen.queryByText("No Data")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  function renderFailing(error: Error) {
+    signedIn();
+    location.hash = "";
+    render(<App api={fakeApi({ inventory: vi.fn().mockRejectedValue(error) })} />);
+  }
 });

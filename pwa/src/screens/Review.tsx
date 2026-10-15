@@ -3,24 +3,20 @@ import { useCallback, useState, type FormEvent } from "react";
 import type { Pending } from "../api/types";
 import { useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
+import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
 import { changeLabel, clock, dayLabel } from "../format";
-import { usePolling } from "../usePolling";
+import { useLoad } from "../useLoad";
 
 export function Review() {
-  const { api, report, online, role } = useApp();
+  const { api, report, role } = useApp();
   const canAct = role === "owner";
-  const [items, setItems] = useState<Pending[] | null>(null);
+  const { data: items, setData: setItems, failed } = useLoad(
+    useCallback(() => api.pending().then((r) => r.pending), [api]),
+    10_000,
+  );
   const [editing, setEditing] = useState<Pending | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    api.pending().then((r) => {
-      setItems(r.pending);
-      online();
-    }, report);
-  }, [api, report, online]);
-  usePolling(load, 10_000);
 
   async function act(p: Pending, action: () => Promise<unknown>) {
     setBusy(p.id);
@@ -35,7 +31,10 @@ export function Review() {
     }
   }
 
-  if (!items) return <div aria-hidden className="h-32 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  if (!items) {
+    if (failed) return <NoData />;
+    return <div aria-hidden data-testid="loading" className="h-32 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  }
   if (items.length === 0) {
     return (
       <EmptyState

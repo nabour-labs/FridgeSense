@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { DoorEvent } from "../api/types";
+import { ApiError } from "../api/client";
 import { fakeApi, signedIn } from "../test-utils";
 
 const opened = new Date();
@@ -116,4 +117,32 @@ test("a failed analysis says so instead of listing changes", async () => {
 test("no door openings yet", async () => {
   renderActivity([]);
   expect(await screen.findByText(/No door openings in the last 7 days/)).toBeInTheDocument();
+});
+
+// No camera linked
+test("a 409 shows No Data instead of the skeleton", async () => {
+  signedIn();
+  location.hash = "#activity";
+  render(<App api={fakeApi({ events: vi.fn().mockRejectedValue(new ApiError(409)) })} />);
+  expect(await screen.findByText("No Data")).toBeInTheDocument();
+  expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+});
+
+// Later poll fails
+test("door openings stay listed when a later poll fails", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    signedIn();
+    location.hash = "#activity";
+    const events = vi.fn().mockResolvedValueOnce({ events: [event()] }).mockRejectedValue(new ApiError(500));
+    render(<App api={fakeApi({ events })} />);
+    expect(await screen.findByRole("article")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(events).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("article")).toBeInTheDocument();
+    expect(screen.queryByText("No Data")).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });
