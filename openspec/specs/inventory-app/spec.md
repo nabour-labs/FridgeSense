@@ -25,7 +25,7 @@ The app SHALL show a passcode screen when it has no valid session, keep the sess
 - **THEN** the stored token is removed and the passcode screen is shown
 
 ### Requirement: Fridge screen
-The Fridge screen SHALL list in-stock items grouped by category with name, quantity and when each last changed, list items with quantity 0 in a collapsed "Out of" section, and show a banner linking to Review when changes are pending. It SHALL refresh every 10 s while the app is visible.
+The Fridge screen SHALL show a summary card with the number of in-stock items, when the inventory last changed and, when changes are pending, a link to Review. It SHALL list in-stock items grouped by category with an emoji icon, name, quantity and when each last changed, list items with quantity 0 in a collapsed "Out of" section, and show an illustrated message when the fridge is empty. It SHALL refresh every 10 s while the app is visible.
 
 #### Scenario: Items by category
 - **WHEN** the API returns eggs (6, dairy), milk (1, dairy) and apple (3, produce)
@@ -37,7 +37,23 @@ The Fridge screen SHALL list in-stock items grouped by category with name, quant
 
 #### Scenario: Pending banner
 - **WHEN** `pending_count` is 2
-- **THEN** a banner reads "2 items to confirm" and tapping it opens Review
+- **THEN** a link reads "2 items to confirm" and tapping it opens Review
+
+#### Scenario: Summary card
+- **WHEN** the API returns eggs (6), milk (1, last changed 2 minutes ago), apple (3) and soda can (0)
+- **THEN** a "Fridge summary" region shows "3 in stock" and "Last change 2 min ago"
+
+#### Scenario: Summary with nothing changed yet
+- **WHEN** no item has a `last_changed_at`
+- **THEN** the summary card shows the in-stock count and no "Last change" text
+
+#### Scenario: Item icons from name
+- **WHEN** the items are milk (dairy), apple (produce) and leftover pasta (leftovers)
+- **THEN** their rows show 🥛, 🍎 and 🍝
+
+#### Scenario: Item icon falls back to category, then a plate
+- **WHEN** the items are kefir (dairy) and mystery jar (other)
+- **THEN** kefir shows the dairy icon 🧀 and mystery jar shows 🍽️
 
 #### Scenario: Empty fridge
 - **WHEN** there are no items
@@ -56,26 +72,50 @@ The Fridge screen SHALL list in-stock items grouped by category with name, quant
 - **THEN** `PUT /api/items/eggs` is sent with `{"quantity": 12}` and the list shows eggs ×12
 
 ### Requirement: Activity screen
-The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs", a marker on unconfirmed changes, and thumbnails of the stills that open full size when tapped.
+The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs" with an arrow showing the direction, a marker on unconfirmed changes, and the stills with the first one shown large. Tapping a still SHALL open it full size in a viewer that can step to the previous and next still.
 
 #### Scenario: Door opening shown
 - **WHEN** an event opened at 18:02 local time for 25 s added 1 milk and removed 2 eggs
 - **THEN** it shows "18:02", "25 s", "+ milk" and "− 2 eggs"
 
+#### Scenario: Unconfirmed change marked
+- **WHEN** an event has a change with `applied = false`
+- **THEN** that change shows "to confirm"
+
 #### Scenario: Stills
 - **WHEN** an event has 4 still links
-- **THEN** 4 thumbnails are shown, and tapping one shows it full size
+- **THEN** 4 still buttons are shown, the first one is marked as the featured still, and tapping one shows it full size
+
+#### Scenario: Step through stills
+- **WHEN** the viewer shows still 3 of 4 and the user taps "Next still", then "Previous still" twice
+- **THEN** it shows still 4, then still 3, then still 2
+
+#### Scenario: Viewer at the ends
+- **WHEN** the viewer shows still 1 of 4
+- **THEN** "Previous still" is disabled, and on still 4 of 4 "Next still" is disabled
+
+#### Scenario: No stills
+- **WHEN** an event has no still links
+- **THEN** no still area is shown for it
 
 #### Scenario: Failed analysis
 - **WHEN** an event has `status = "analysis_failed"`
 - **THEN** it shows "Couldn't tell what changed" instead of a change list
 
+#### Scenario: No door openings
+- **WHEN** there are no events in the last 7 days
+- **THEN** the screen says there were no door openings in the last 7 days
+
 ### Requirement: Review screen
-The Review screen SHALL list pending changes with the item, direction, quantity and confidence as a percentage, and let the user confirm, edit then confirm, or reject each one.
+The Review screen SHALL list pending changes with the item, direction, quantity and confidence as a percentage and as a meter coloured by confidence, and let the user confirm, edit then confirm, or reject each one.
 
 #### Scenario: Confirm
 - **WHEN** the user taps "Confirm" on a pending "− chocolate bar" at 62%
 - **THEN** `POST /api/pending/{id}/confirm` is sent and the change disappears from the list
+
+#### Scenario: Confidence meter
+- **WHEN** pending changes have confidence 0.62, 0.48 and 0.85
+- **THEN** each card has a "Confidence" meter with value 62, 48 and 85, toned "medium", "low" and "high"
 
 #### Scenario: Edit and confirm
 - **WHEN** the user taps "Edit" on "+ bottle", changes the name to "Oat Milk" and quantity to 2, and confirms
@@ -90,11 +130,19 @@ The Review screen SHALL list pending changes with the item, direction, quantity 
 - **THEN** the screen says everything is confirmed
 
 ### Requirement: Stats screen
-The Stats screen SHALL show, from the last 7 days of door events in the device's time zone: opens per day as a bar chart, opens by hour of day as a bar chart, today's number of opens, and the average time the door stayed open.
+The Stats screen SHALL show, from the last 7 days of door events in the device's time zone: opens per day as a bar chart with today's bar highlighted, opens by hour of day as a 24-cell heat strip, today's number of opens, and the average time the door stayed open.
 
 #### Scenario: Stats from events
 - **WHEN** the last 7 days have 3 openings today (20 s, 30 s and 40 s) and 2 yesterday (25 s and 35 s)
 - **THEN** "Today" shows 3, the per-day chart has 7 bars with 3 for today and 2 for yesterday, and the average open time shows "30 s"
+
+#### Scenario: Today marked
+- **WHEN** the per-day counts are computed
+- **THEN** only the last day (today) has `isToday` true
+
+#### Scenario: Hour heat strip
+- **WHEN** there are 2 openings at 19:00 and none at 03:00
+- **THEN** the "Opens by hour" figure has 24 cells, labelled "19:00, 2 opens" and "03:00, 0 opens"
 
 #### Scenario: Local time zone
 - **WHEN** an event opened at 2026-10-15T02:30:00Z and the device is in America/Vancouver (UTC−7)
@@ -105,11 +153,19 @@ The Stats screen SHALL show, from the last 7 days of door events in the device's
 - **THEN** the screen shows zeros and the charts show empty bars, without errors
 
 ### Requirement: Installable app
-The app SHALL ship a web app manifest (name "FridgeSense", standalone display, icons of 192 and 512 px) and a service worker that serves the app shell offline, and SHALL fit phone screens from 360 px wide without horizontal scrolling.
+The app SHALL ship a web app manifest (name "FridgeSense", standalone display, icons of 192 and 512 px, theme colours that match the brand theme) and a service worker that serves the app shell offline. It SHALL set `theme-color` separately for light and dark mode, SHALL ship iOS splash images for common iPhone sizes, and SHALL fit phone screens from 360 px wide without horizontal scrolling.
 
 #### Scenario: Manifest
 - **WHEN** the built app is inspected
 - **THEN** `manifest.webmanifest` has `name` "FridgeSense", `display` "standalone" and icons sized 192x192 and 512x512
+
+#### Scenario: Theme colour per scheme
+- **WHEN** `index.html` is inspected
+- **THEN** it has a `theme-color` meta for `(prefers-color-scheme: light)` and one for `(prefers-color-scheme: dark)`
+
+#### Scenario: iOS splash images
+- **WHEN** `index.html` is inspected
+- **THEN** every `apple-touch-startup-image` link points to a file that exists under `public/`, and there are at least 3
 
 #### Scenario: Offline shell
 - **WHEN** the installed app is opened without a network
@@ -133,3 +189,18 @@ When the session's role is `viewer`, the app SHALL show a "Demo · read-only" ba
 #### Scenario: Write refused
 - **WHEN** a write request answers 403
 - **THEN** the app shows "Read-only demo" and the list on screen is unchanged
+
+### Requirement: Visual style
+The app SHALL define its colours as Tailwind theme tokens (`--color-brand-*` for the teal accent, `--color-warm-*` for the amber accent), SHALL use the bundled Plus Jakarta Sans font so text looks the same offline, and SHALL turn off its animations and transitions when the device asks for reduced motion.
+
+#### Scenario: Theme tokens
+- **WHEN** `src/index.css` is inspected
+- **THEN** it defines `--color-brand-500` and `--color-warm-500` in a `@theme` block and imports `@fontsource-variable/plus-jakarta-sans`
+
+#### Scenario: Font cached offline
+- **WHEN** the service worker precache patterns are inspected
+- **THEN** they include `woff2` files
+
+#### Scenario: Reduced motion
+- **WHEN** `src/index.css` is inspected
+- **THEN** a `@media (prefers-reduced-motion: reduce)` rule sets animation and transition durations to near zero
