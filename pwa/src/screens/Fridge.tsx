@@ -1,28 +1,24 @@
 import { ChevronDown, ChevronRight, Minus, Plus, Refrigerator, Snowflake } from "lucide-react";
 import { useCallback, useState, type FormEvent } from "react";
-import type { Inventory, Item } from "../api/types";
+import type { Item } from "../api/types";
 import { useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
+import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
 import { ago, plural, titleCase } from "../format";
 import { itemIcon } from "../itemIcon";
-import { usePolling } from "../usePolling";
+import { useLoad } from "../useLoad";
 
 export function Fridge() {
-  const { api, report, online, go, role } = useApp();
+  const { api, report, go, role } = useApp();
   const canEdit = role === "owner";
-  const [inventory, setInventory] = useState<Inventory | null>(null);
+  const { data: inventory, setData: setInventory, failed } = useLoad(
+    useCallback(() => api.inventory(), [api]),
+    10_000,
+  );
   const [editing, setEditing] = useState<Item | null>(null);
 
-  const load = useCallback(() => {
-    api.inventory().then((inv) => {
-      setInventory(inv);
-      online();
-    }, report);
-  }, [api, report, online]);
-  usePolling(load, 10_000);
-
-  if (!inventory) return <Skeleton />;
+  if (!inventory) return failed ? <NoData /> : <Skeleton />;
 
   const inStock = inventory.items.filter((i) => i.quantity > 0);
   const outOf = inventory.items.filter((i) => i.quantity === 0);
@@ -253,7 +249,7 @@ function QuantityEditor({
 
 function Skeleton() {
   return (
-    <div aria-hidden className="space-y-3">
+    <div aria-hidden data-testid="loading" className="space-y-3">
       {[0, 1, 2].map((i) => (
         <div key={i} className={`animate-pulse rounded-2xl bg-slate-200/70 dark:bg-slate-800 ${i === 0 ? "h-28" : "h-16"}`} />
       ))}

@@ -1,6 +1,6 @@
 import { ChartColumn, History, ListChecks, Mic, Refrigerator, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ApiClient, Offline, ReadOnly, Unauthorized } from "./api/client";
+import { ApiClient, ApiError, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
 import { Activity } from "./screens/Activity";
 import { Ask } from "./screens/Ask";
@@ -53,6 +53,8 @@ export default function App({ api: injected }: { api?: Api }) {
       setOffline(true);
     } else if (error instanceof ReadOnly) {
       setNotice("Read-only demo");
+    } else if (error instanceof ApiError && error.status === 409) {
+      // No camera linked yet: an expected state, the screens show "No Data".
     } else {
       console.error(error);
       setNotice("Something went wrong");
