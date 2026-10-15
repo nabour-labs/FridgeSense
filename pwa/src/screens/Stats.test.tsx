@@ -20,10 +20,17 @@ function event(daysAgo: number, hour: number, duration_s: number): DoorEvent {
   };
 }
 
+/** Days ago of the most recent `weekday` (0 = Sunday) at least `weeksAgo` weeks back. */
+function daysAgoOn(weekday: number, weeksAgo: number): number {
+  return ((new Date().getDay() - weekday + 7) % 7) + 7 * weeksAgo;
+}
+
 function renderStats(events: DoorEvent[]) {
   signedIn();
   location.hash = "#stats";
-  render(<App api={fakeApi({ events: vi.fn().mockResolvedValue({ events }) })} />);
+  const api = fakeApi({ events: vi.fn().mockResolvedValue({ events }) });
+  render(<App api={api} />);
+  return api;
 }
 
 // Stats from events
@@ -43,7 +50,26 @@ test("shows today's opens and the average open time", async () => {
   const week = screen.getByRole("group", { name: "Last 7 days" });
   expect(within(week).getByText("5")).toBeInTheDocument();
   expect(screen.getByRole("figure", { name: "Opens per day" })).toBeInTheDocument();
-  expect(screen.getByRole("figure", { name: "Opens by hour" })).toBeInTheDocument();
+  expect(screen.getByRole("figure", { name: "Opens by day and hour" })).toBeInTheDocument();
+});
+
+// Four weeks requested
+test("requests the last 28 days of events", async () => {
+  const api = renderStats([]);
+  await screen.findByRole("group", { name: "Today" });
+  expect(api.events).toHaveBeenCalledWith(28);
+});
+
+// Older events only in the heatmap
+test("an event 10 days ago is in the heatmap but not in the last 7 days", async () => {
+  const hour = Math.min(new Date().getHours(), 20);
+  const old = event(10, 7, 30);
+  renderStats([event(0, hour, 20), old]);
+  const week = await screen.findByRole("group", { name: "Last 7 days" });
+  expect(within(week).getByText("1")).toBeInTheDocument();
+  const figure = screen.getByRole("figure", { name: "Opens by day and hour" });
+  const day = new Date(old.opened_at).toLocaleDateString("en-US", { weekday: "short" });
+  expect(within(figure).getByRole("cell", { name: `${day} 07:00, 1 open` })).toBeInTheDocument();
 });
 
 // No openings yet
@@ -54,13 +80,15 @@ test("no openings shows zeros without errors", async () => {
   expect(within(screen.getByRole("group", { name: "Average open time" })).getByText("–")).toBeInTheDocument();
 });
 
-// Hour heat strip
-test("opens by hour is a 24-cell strip labelled per hour", async () => {
-  renderStats([event(0, 19, 20), event(1, 19, 30)]);
-  const figure = await screen.findByRole("figure", { name: "Opens by hour" });
-  expect(within(figure).getAllByRole("listitem")).toHaveLength(24);
-  expect(within(figure).getByRole("listitem", { name: "19:00, 2 opens" })).toBeInTheDocument();
-  expect(within(figure).getByRole("listitem", { name: "03:00, 0 opens" })).toBeInTheDocument();
+// Day and hour heatmap
+test("opens by day and hour is a 7 by 24 heatmap with a legend", async () => {
+  renderStats([event(daysAgoOn(1, 1), 19, 20), event(daysAgoOn(1, 2), 19, 30)]);
+  const figure = await screen.findByRole("figure", { name: "Opens by day and hour" });
+  expect(within(figure).getAllByRole("cell")).toHaveLength(168);
+  expect(within(figure).getByRole("cell", { name: "Mon 19:00, 2 opens" })).toBeInTheDocument();
+  expect(within(figure).getByRole("cell", { name: "Wed 03:00, 0 opens" })).toBeInTheDocument();
+  expect(within(figure).getByText("Less")).toBeInTheDocument();
+  expect(within(figure).getByText("More")).toBeInTheDocument();
 });
 
 // No camera linked
