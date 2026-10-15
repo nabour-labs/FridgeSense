@@ -66,6 +66,8 @@ export function mockApi(): Plugin {
         };
         const url = req.url ?? "";
         if (req.method === "POST" && url === "/session") return send(200, { token: "mock", expires_at: iso(-30 * 24 * HOUR), role: process.env.FRIDGESENSE_MOCK === "viewer" ? "viewer" : "owner" });
+        // FRIDGESENSE_MOCK=nocamera: signed in, but no Ring account linked yet.
+        if (process.env.FRIDGESENSE_MOCK === "nocamera") return send(409, { error: "no camera linked" });
         if (url === "/inventory") return send(200, inventory());
         if (url.startsWith("/events")) return send(200, { events });
         if (url === "/pending") return send(200, { pending });

@@ -3,24 +3,23 @@ import { useCallback, useState } from "react";
 import type { Change, DoorEvent } from "../api/types";
 import { useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
+import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
 import { changeLabel, clock, dayLabel } from "../format";
-import { usePolling } from "../usePolling";
+import { useLoad } from "../useLoad";
 
 export function Activity() {
-  const { api, report, online } = useApp();
-  const [events, setEvents] = useState<DoorEvent[] | null>(null);
+  const { api } = useApp();
+  const { data: events, failed } = useLoad(
+    useCallback(() => api.events(7).then((r) => r.events), [api]),
+    10_000,
+  );
   const [viewing, setViewing] = useState<{ stills: string[]; index: number } | null>(null);
 
-  const load = useCallback(() => {
-    api.events(7).then((r) => {
-      setEvents(r.events);
-      online();
-    }, report);
-  }, [api, report, online]);
-  usePolling(load, 10_000);
-
-  if (!events) return <div aria-hidden className="h-40 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  if (!events) {
+    if (failed) return <NoData />;
+    return <div aria-hidden data-testid="loading" className="h-40 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  }
   if (events.length === 0) {
     return (
       <EmptyState
