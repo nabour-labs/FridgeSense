@@ -15,9 +15,9 @@
 
 ## 3. MCP server
 
-- [ ] 3.1 Write failing in-memory `mcp.Client` tests for "Tool list" (names, annotations, outputSchema) and `tools/call` of each tool returning `structuredContent`; verify they fail
-- [ ] 3.2 Implement `mcp_server.py` (an `MCPServer` with the four tools wired to the answer functions) to make the tests pass
-- [ ] 3.3 Write failing tests for "Unknown period" and "Not linked"; then implement the validation (`Literal["today", "week"]`) and the no-account error, and verify they pass
+- [x] 3.1 Write failing in-memory `mcp.Client` tests for "Tool list" (names, annotations, outputSchema) and `tools/call` of each tool returning `structuredContent`; verify they fail
+- [x] 3.2 Implement `mcp_server.py` (an `MCPServer` with the four tools wired to the answer functions) to make the tests pass
+- [x] 3.3 Write failing tests for "Unknown period" and "Not linked"; then implement the validation (`Literal["today", "week"]`) and the no-account error, and verify they pass
 
 ## 4. Lambda endpoint
 
