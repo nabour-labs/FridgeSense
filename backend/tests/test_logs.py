@@ -29,3 +29,10 @@ def test_log_event_writes_redacted_json(caplog):
     log_event("token_exchange", code="abc123", account_id="A1")
     record = json.loads(caplog.records[-1].getMessage())
     assert record == {"event": "token_exchange", "code": "[redacted]", "account_id": "A1"}
+
+
+def test_token_counts_are_not_redacted():
+    assert redact({"input_tokens": 1180, "security_token": "x"}) == {
+        "input_tokens": 1180,
+        "security_token": "[redacted]",
+    }

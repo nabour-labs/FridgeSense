@@ -19,6 +19,7 @@ import { Architecture, Code, Function as LambdaFn, Runtime } from "aws-cdk-lib/a
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
+import { DoorPipeline } from "./door-pipeline.js";
 
 const BACKEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../backend");
 
@@ -55,7 +56,7 @@ function backendCode(): Code {
             "--target",
             outputDir,
             "--python-platform",
-            "aarch64-manylinux2014",
+            "aarch64-manylinux_2_28", // Lambda python3.13 runs on Amazon Linux 2023 (glibc 2.34)
             "--python-version",
             "3.13",
             "--only-binary",
@@ -106,8 +107,14 @@ export class FridgeSenseStack extends Stack {
       secretStringValue: SecretValue.unsafePlainText("{}"),
     });
 
+    const logGroupNames: Record<string, string> = {
+      HttpFunction: "/fridgesense/http",
+      TokenRefreshFunction: "/fridgesense/token-refresh",
+      PipelineFunction: "/fridgesense/pipeline",
+    };
     const logGroup = (id: string) =>
       new LogGroup(this, `${id}Logs`, {
+        logGroupName: logGroupNames[id],
         retention: RetentionDays.TWO_WEEKS,
         removalPolicy: RemovalPolicy.DESTROY,
       });
@@ -126,8 +133,29 @@ export class FridgeSenseStack extends Stack {
       },
     };
 
+    const context = (key: string, fallback: string) =>
+      String(this.node.tryGetContext(key) ?? fallback);
+    const doors = new DoorPipeline(this, "Doors", {
+      code,
+      baseEnvironment: common.environment,
+      table,
+      appSecret,
+      tokenSecret,
+      logGroup,
+      // Tune on real footage: cdk deploy -c doorBox=x,y,w,h -c doorThreshold=0.5
+      doorBox: context("doorBox", "0.25,0.1,0.5,0.8"),
+      doorThreshold: context("doorThreshold", "0.5"),
+      novaModelId: context("novaModelId", "us.amazon.nova-2-lite-v1:0"),
+      novaPriceIn: context("novaPriceIn", "0.00033"),
+      novaPriceOut: context("novaPriceOut", "0.00275"),
+    });
+
     const httpFn = new LambdaFn(this, "HttpFunction", {
       ...common,
+      environment: {
+        ...common.environment,
+        STATE_MACHINE_ARN: doors.stateMachine.stateMachineArn,
+      },
       handler: "fridgesense.handlers.http.handler",
       logGroup: logGroup("HttpFunction"),
       description: "Ring token exchange, account link page and webhook",
@@ -136,6 +164,7 @@ export class FridgeSenseStack extends Stack {
     tokenSecret.grantRead(httpFn);
     tokenSecret.grantWrite(httpFn);
     table.grantReadWriteData(httpFn);
+    doors.stateMachine.grantStartExecution(httpFn);
 
     const refreshFn = new LambdaFn(this, "TokenRefreshFunction", {
       ...common,

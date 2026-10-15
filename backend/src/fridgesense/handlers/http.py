@@ -3,12 +3,12 @@
 import logging
 import time
 
-from fridgesense import deps, devices, linking, webhook
+from fridgesense import deps, devices, linking, webhook, workflow
 from fridgesense.store import TokenStore, load_app_config
 from fridgesense.web import Request, json_response
 
 now = time.time
-motion_handler: webhook.MotionHandler = webhook.LoggingMotionHandler()
+motion_handler: webhook.MotionHandler = workflow.default_motion_handler()
 
 
 def handler(event, context):
