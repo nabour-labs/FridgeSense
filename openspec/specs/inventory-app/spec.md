@@ -200,10 +200,10 @@ The app SHALL have a fifth tab, "Ask" (hash `#ask`), with a text box, a send but
 - "What's in my fridge?"
 - "When was the fridge last opened?"
 
-Sending a question, or tapping an example, SHALL post it to `/api/ask`. The screen then shows the question and the answer, newest first, and reads the answer aloud when the browser supports speech synthesis. The Ask screen SHALL work the same for owner and viewer roles.
+Sending a question, or tapping an example, SHALL post it to `/api/ask`. While waiting, the screen shows "Thinking…". The screen then shows the question and the answer, newest first, and reads the answer aloud: it plays the response's `audio` (MP3) when there is one, and otherwise uses speech synthesis when the browser supports it. When `source` is `"agent"` and tools were called, the answer has a small line "Checked: <tool names, comma-separated>". The Ask screen SHALL work the same for owner and viewer roles.
 
 #### Scenario: Typed question
-- **WHEN** the user opens `#ask`, types "do I have milk?" and presses send, and the API answers "Yes, you have 1 milk, changed 2 minutes ago."
+- **WHEN** the user opens `#ask`, types "do I have milk?" and presses send, and the API answers "Yes, you have 1 milk, changed 2 minutes ago." with `audio` `null`
 - **THEN** one `ask("do I have milk?")` request is sent, the question and the answer are shown, the text box is cleared, and speech synthesis is asked to speak the answer
 
 #### Scenario: Example question
@@ -219,7 +219,7 @@ Sending a question, or tapping an example, SHALL post it to `/api/ask`. The scre
 - **THEN** no request is sent
 
 #### Scenario: No speech synthesis
-- **WHEN** the browser has no `speechSynthesis` and a question is answered
+- **WHEN** the browser has no `speechSynthesis`, the response has no `audio`, and a question is answered
 - **THEN** the answer is shown and no error appears
 
 #### Scenario: Viewer asks
@@ -233,6 +233,30 @@ Sending a question, or tapping an example, SHALL post it to `/api/ask`. The scre
 #### Scenario: Five tabs
 - **WHEN** the signed-in app is shown
 - **THEN** the bottom navigation has Fridge, Activity, Review, Stats and Ask, and opening `#ask` shows the Ask screen with the title "Ask"
+
+#### Scenario: Thinking
+- **WHEN** a question has been sent and the API has not answered yet
+- **THEN** "Thinking…" is shown, and it is gone once the answer appears
+
+#### Scenario: Plays the voice audio
+- **WHEN** the API answers with `audio` `"SUQzZmFrZQ=="`
+- **THEN** an audio element plays `data:audio/mpeg;base64,SUQzZmFrZQ==` and speech synthesis is not used
+
+#### Scenario: Audio can't play
+- **WHEN** the API answers with `audio` but playing it is rejected (for example by the browser's autoplay policy)
+- **THEN** speech synthesis is asked to speak the answer instead
+
+#### Scenario: Tools checked
+- **WHEN** the API answers with `source` `"agent"` and `data` `{"tools": ["get_inventory", "find_item"]}`
+- **THEN** the answer shows "Checked: get_inventory, find_item"
+
+#### Scenario: Keyword answer has no tools line
+- **WHEN** the API answers with `source` `"keywords"`
+- **THEN** no "Checked:" line is shown
+
+#### Scenario: Leaving stops the voice
+- **WHEN** an answer's audio is playing and the user switches to another tab
+- **THEN** the audio is paused
 
 ### Requirement: Speak a question
 When the browser supports speech recognition (`SpeechRecognition` or `webkitSpeechRecognition`), the Ask screen SHALL show a mic button. Tapping it starts listening in English (`en-US`), with a visible "Listening…" state. The first final transcript SHALL be posted as the question. Tapping the button again while listening SHALL stop listening without sending anything. Without speech recognition, the mic button SHALL NOT be shown.
