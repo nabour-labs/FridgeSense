@@ -27,7 +27,8 @@ def _bucket() -> str:
 
 def handler(event, context):
     logging.getLogger().setLevel(logging.INFO)
-    state = {k: v for k, v in event.items() if k != "task"}
+    # The state machine sends {"task", "input"}; direct calls may send the state flat.
+    state = event["input"] if "input" in event else {k: v for k, v in event.items() if k != "task"}
     task = event.get("task")
     if task == "find_window":
         return door_events.find_window(deps.ring_client(), state)

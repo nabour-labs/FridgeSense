@@ -93,3 +93,12 @@ def test_closed_door_stops_before_nova(env):
 def test_unknown_task_is_an_error(env):
     with pytest.raises(ValueError):
         step("dance", RUN_INPUT)
+
+
+@respx.mock
+def test_state_machine_payload_shape(env):
+    """The state machine sends {"task": ..., "input": <run state>}."""
+    respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
+    out = pipeline.handler({"task": "find_window", "input": RUN_INPUT}, None)
+    assert out["window"]["status"] == "ready"
+    assert out["account_id"] == ACCOUNT and "input" not in out
