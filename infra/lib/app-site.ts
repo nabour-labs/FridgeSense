@@ -97,13 +97,7 @@ export class AppSite extends Construct {
           originRequestPolicy: OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
-      // Any screen can be reloaded: unknown paths get the app shell.
-      errorResponses: [403, 404].map((httpStatus) => ({
-        httpStatus,
-        responseHttpStatus: 200,
-        responsePagePath: "/index.html",
-        ttl: Duration.seconds(0),
-      })),
+      // No errorResponses: they would also rewrite /api/* errors, and the app routes by #hash.
     });
 
     new BucketDeployment(this, "Deploy", {

@@ -146,3 +146,65 @@ test("door openings stay listed when a later poll fails", async () => {
     vi.useRealTimers();
   }
 });
+
+// Stable still links on Activity
+describe("still links across polls", () => {
+  const links = (tag: string, n = 4) =>
+    Array.from({ length: n }, (_, i) => `https://stills.example.com/still-${i + 1}.jpg?sig=${tag}`);
+  const shownSrcs = () =>
+    Array.from(document.querySelectorAll("[data-stills] img")).map((img) => img.getAttribute("src"));
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  async function poll(ms = 10_000) {
+    await act(async () => void vi.advanceTimersByTime(ms));
+  }
+
+  function renderPolls(events: ReturnType<typeof vi.fn>) {
+    signedIn();
+    location.hash = "#activity";
+    render(<App api={fakeApi({ events })} />);
+  }
+
+  // Poll with fresh links
+  test("a poll with fresh links keeps the links on screen", async () => {
+    const events = vi
+      .fn()
+      .mockResolvedValueOnce({ events: [event({ stills: links("a") })] })
+      .mockResolvedValue({ events: [event({ stills: links("b") })] });
+    renderPolls(events);
+    await act(async () => {});
+    expect(shownSrcs()).toEqual(links("a"));
+    await poll();
+    expect(events).toHaveBeenCalledTimes(2);
+    expect(shownSrcs()).toEqual(links("a"));
+  });
+
+  // Links refreshed after 10 minutes
+  test("links older than 10 minutes are replaced by the latest poll", async () => {
+    let tag = "a";
+    const events = vi.fn(async () => ({ events: [event({ stills: links(tag) })] }));
+    renderPolls(events);
+    await act(async () => {});
+    tag = "b";
+    await poll(9 * 60_000);
+    expect(shownSrcs()).toEqual(links("a"));
+    tag = "c";
+    await poll(60_000 + 10_000);
+    expect(shownSrcs()).toEqual(links("c"));
+  });
+
+  // Still count changes
+  test("a change in the number of stills shows the new links", async () => {
+    const events = vi
+      .fn()
+      .mockResolvedValueOnce({ events: [event({ stills: links("a", 2) })] })
+      .mockResolvedValue({ events: [event({ stills: links("b", 4) })] });
+    renderPolls(events);
+    await act(async () => {});
+    expect(shownSrcs()).toEqual(links("a", 2));
+    await poll();
+    expect(shownSrcs()).toEqual(links("b", 4));
+  });
+});

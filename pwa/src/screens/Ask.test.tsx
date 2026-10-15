@@ -233,3 +233,25 @@ test("tapping the mic while listening stops without sending", async () => {
   expect(screen.queryByText("Listening…")).not.toBeInTheDocument();
   expect(ask).not.toHaveBeenCalled();
 });
+
+// Leave while listening
+test("leaving the Ask screen while listening stops recognition and sends nothing", async () => {
+  withRecognition();
+  const ask = renderAsk().ask;
+  await userEvent.click(mic());
+  const rec = FakeRecognition.last!;
+  await userEvent.click(screen.getByRole("link", { name: "Fridge" }));
+  expect(rec.abort.mock.calls.length + rec.stop.mock.calls.length).toBeGreaterThan(0);
+  rec.hear("do I have milk");
+  rec.end();
+  await act(async () => {});
+  expect(ask).not.toHaveBeenCalled();
+});
+
+// Leave while speaking
+test("leaving the Ask screen stops any answer being read aloud", async () => {
+  renderAsk();
+  synth.cancel.mockClear();
+  await userEvent.click(screen.getByRole("link", { name: "Fridge" }));
+  expect(synth.cancel).toHaveBeenCalled();
+});

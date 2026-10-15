@@ -72,3 +72,33 @@ test("setData replaces the data", async () => {
   act(() => result.current.setData(4));
   expect(result.current.data).toBe(4);
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+// Poll in flight during a save
+test("a poll that started before a local save does not undo it", async () => {
+  const first = deferred<number>();
+  const fetch = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(2);
+  const { result } = renderHook(() => useLoad(fetch, 10_000), { wrapper });
+  act(() => result.current.setData(3)); // the save lands while the poll is in flight
+  await act(async () => first.resolve(2));
+  expect(result.current.data).toBe(3);
+  await act(async () => void vi.advanceTimersByTime(10_000)); // a poll started after the save
+  expect(result.current.data).toBe(2);
+});
+
+// Out-of-order polls
+test("an older poll returning after a newer one is ignored", async () => {
+  const a = deferred<string>();
+  const b = deferred<string>();
+  const fetch = vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+  const { result } = renderHook(() => useLoad(fetch, 10_000), { wrapper });
+  await act(async () => void vi.advanceTimersByTime(10_000)); // poll B starts
+  await act(async () => b.resolve("B"));
+  await act(async () => a.resolve("A"));
+  expect(result.current.data).toBe("B");
+});

@@ -16,9 +16,15 @@ sleep = time.sleep
 
 
 def bedrock_client():
-    # Retries belong to the state machine, where they are visible and bounded.
+    # One HTTP attempt: retries belong to the state machine, where they are visible and
+    # bounded. Two Nova requests of at most 5 + 30 s each fit the 90 s task timeout.
     return boto3.client(
-        "bedrock-runtime", config=Config(retries={"max_attempts": 1}, read_timeout=60)
+        "bedrock-runtime",
+        config=Config(
+            retries={"total_max_attempts": 1, "mode": "standard"},
+            connect_timeout=5,
+            read_timeout=30,
+        ),
     )
 
 

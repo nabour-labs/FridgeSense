@@ -1,5 +1,5 @@
 import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, Clock, DoorClosed } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Change, DoorEvent } from "../api/types";
 import { useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
@@ -8,10 +8,28 @@ import { Sheet } from "../components/Sheet";
 import { changeLabel, clock, dayLabel } from "../format";
 import { useLoad } from "../useLoad";
 
+/** Presigned still links last 15 min; reuse them for 10 so a poll doesn't reload every image. */
+const STILL_LINKS_REUSED_MS = 10 * 60_000;
+
 export function Activity() {
   const { api } = useApp();
+  const stillLinks = useRef(new Map<string, { stills: string[]; at: number }>());
   const { data: events, failed } = useLoad(
-    useCallback(() => api.events(7).then((r) => r.events), [api]),
+    useCallback(
+      () =>
+        api.events(7).then((r) =>
+          r.events.map((e) => {
+            const now = Date.now();
+            const kept = stillLinks.current.get(e.id);
+            if (kept && kept.stills.length === e.stills.length && now - kept.at < STILL_LINKS_REUSED_MS) {
+              return { ...e, stills: kept.stills };
+            }
+            stillLinks.current.set(e.id, { stills: e.stills, at: now });
+            return e;
+          }),
+        ),
+      [api],
+    ),
     10_000,
   );
   const [viewing, setViewing] = useState<{ stills: string[]; index: number } | null>(null);
@@ -114,7 +132,7 @@ function Stills({ stills, onStill }: { stills: string[]; onStill: (index: number
         const featured = i === 0;
         return (
           <button
-            key={url}
+            key={i}
             type="button"
             aria-label={stillTitle(i, stills.length)}
             data-featured={featured || undefined}
