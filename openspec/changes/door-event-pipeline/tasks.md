@@ -14,8 +14,8 @@
 
 ## 3. Event window
 
-- [ ] 3.1 Write failing tests for "Recording finished", "Timestamps as strings", "Recording not finished yet", "Recording never finishes" (respx on history; `find_window` task with `attempt`); verify they fail
-- [ ] 3.2 Implement the `find_window` task to make the tests pass
+- [x] 3.1 Write failing tests for "Recording finished", "Timestamps as strings", "Recording not finished yet", "Recording never finishes" (respx on history; `find_window` task with `attempt`); verify they fail
+- [x] 3.2 Implement the `find_window` task to make the tests pass
 
 ## 4. Stills and door-open check
 
