@@ -86,7 +86,7 @@ Ring tokens are refreshed every 3 hours. If a refresh is ever rejected, the logs
 
 1. Ring sends a motion webhook. FridgeSense starts one Step Functions run (`fridgesense-door-events`) for it.
 2. The run waits for Ring to finish the recording, then finds the event's start and end in Ring's history.
-3. It downloads 4 stills from across the opening into S3. The stills are deleted after 7 days.
+3. It downloads 4 stills from across the opening. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
 4. It checks the brightness of the area where the fridge light shows. Motion without the door opening stops here, so no Nova call is made.
 5. Amazon Nova 2 Lite compares the stills and lists items added and removed. Changes with confidence 0.7 or more update the inventory; the rest wait for confirmation.
 
@@ -115,6 +115,16 @@ set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --f
 ```
 
 Each door event also stores its total as `nova_usd`. Expect about $0.0014 per opening with Nova 2 Lite.
+
+### Face detection cost
+
+Every face-detection call (one per still, so four per motion event) logs its cost:
+
+```bash
+set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"face_detect_cost"'
+```
+
+Expect $0.001 per still. Failed calls log `face_detect_failed` instead, with the still number and error. To change the price used in the log, deploy with `-c faceDetectPrice=0.0008`.
 
 ### Remove
 

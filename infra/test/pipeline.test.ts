@@ -119,6 +119,7 @@ describe("pipeline Lambda", () => {
     expect(Object.keys(vars).sort()).toEqual([
       "DOOR_BOX",
       "DOOR_THRESHOLD",
+      "FACE_DETECT_PRICE",
       "NOVA_MODEL_ID",
       "NOVA_PRICE_IN",
       "NOVA_PRICE_OUT",
@@ -130,6 +131,16 @@ describe("pipeline Lambda", () => {
     expect(vars.NOVA_MODEL_ID).toBe("us.amazon.nova-2-lite-v1:0");
     expect(vars.DOOR_BOX).toBe("0.25,0.1,0.5,0.8");
     expect(vars.DOOR_THRESHOLD).toBe("0.5");
+    expect(vars.FACE_DETECT_PRICE).toBe("0.001");
+  });
+
+  it("may call only rekognition:DetectFaces, on *", () => {
+    const [id] = lambdaByHandler("fridgesense.handlers.pipeline.handler");
+    const rekognition = statementsFor(id.replace(/[A-F0-9]{8}$/, "")).filter((s) =>
+      actions(s).some((a) => a.startsWith("rekognition:")),
+    );
+    expect(rekognition.flatMap(actions)).toEqual(["rekognition:DetectFaces"]);
+    expect(rekognition.map((s) => s.Resource)).toEqual(["*"]);
   });
 
   it("may invoke only the Nova 2 Lite profile and its regional models", () => {

@@ -148,6 +148,7 @@ export class FridgeSenseStack extends Stack {
       novaModelId: context("novaModelId", "us.amazon.nova-2-lite-v1:0"),
       novaPriceIn: context("novaPriceIn", "0.00033"),
       novaPriceOut: context("novaPriceOut", "0.00275"),
+      faceDetectPrice: context("faceDetectPrice", "0.001"),
     });
 
     const httpFn = new LambdaFn(this, "HttpFunction", {

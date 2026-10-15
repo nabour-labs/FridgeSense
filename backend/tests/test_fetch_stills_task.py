@@ -8,11 +8,12 @@ import pytest
 import respx
 
 from fridgesense.door_events import DoorCheck, fetch_stills, iso_utc
+from fridgesense.faces import blur_regions
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import API_BASE, RingClient
 from fridgesense.store import Tokens
 from fridgesense.table import FridgeTable
-from tests.conftest import BUCKET, MemoryTokenStore, jpeg
+from tests.conftest import BUCKET, FakeBlurrer, MemoryTokenStore, jpeg
 
 NOW = 1_786_715_700.0
 DOWNLOAD = f"{API_BASE}/v1/devices/ava1.ring.device.D1/media/image/download"
@@ -29,6 +30,7 @@ STATE = {
         "ring_event_id": "evt_1786715596000",
     },
 }
+PREFIX = "accounts/ava1.ring.account.A1/devices/ava1.ring.device.D1/events/1786715596000/"
 DOOR_SK = "DOOR#2026-08-14T13:53:16.000Z#ava1.ring.device.D1"
 CHECK = DoorCheck(box=(0.0, 0.0, 1.0, 1.0), threshold=0.5)
 
@@ -65,11 +67,24 @@ def ring_serves(images: list[bytes] | None, status: int = 200):
     )
 
 
-def run(ring_http, state=STATE):
+def run(ring_http, state=STATE, blurrer=None):
     ring, http = ring_http
     return fetch_stills(
-        ring, http, boto3.client("s3"), FridgeTable(), BUCKET, CHECK, state, sleep=lambda s: None
+        ring,
+        http,
+        boto3.client("s3"),
+        FridgeTable(),
+        BUCKET,
+        CHECK,
+        FakeBlurrer() if blurrer is None else blurrer,
+        state,
+        sleep=lambda s: None,
     )
+
+
+def stored_keys() -> list[str]:
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET)
+    return sorted(o["Key"] for o in listing.get("Contents", []))
 
 
 def door_events():
@@ -151,3 +166,54 @@ def test_one_still_is_too_few(aws, ring_http):
     [event] = door_events()
     assert event["status"] == "no_media"
     assert len(event["still_keys"]) == 1
+
+
+# Detection fails for one still
+@respx.mock
+def test_detection_fails_for_one_still(aws, ring_http):
+    ring_serves([jpeg(0.8)])
+    out = run(ring_http, blurrer=FakeBlurrer(drop={2}))
+    expected = [f"{PREFIX}still-{n}.jpg" for n in (1, 3, 4)]
+    assert stored_keys() == expected
+    assert out["outcome"] == "door_open"
+    [event] = door_events()
+    assert event["still_keys"] == expected
+
+
+# Detection fails for every still / Too few stills (blur failures count)
+@respx.mock
+def test_detection_fails_for_every_still(aws, ring_http):
+    ring_serves([jpeg(0.8)])
+    out = run(ring_http, blurrer=FakeBlurrer(drop={1, 2, 3, 4}))
+    assert stored_keys() == []
+    assert out["outcome"] == "no_media"
+    [event] = door_events()
+    assert event["status"] == "no_media"
+    assert event["still_keys"] == []
+
+
+@respx.mock
+def test_too_few_stills_after_blur_failures(aws, ring_http):
+    ring_serves([jpeg(0.8)])
+    out = run(ring_http, blurrer=FakeBlurrer(drop={1, 2, 3}))
+    assert out["outcome"] == "no_media"
+    [event] = door_events()
+    assert len(event["still_keys"]) == 1
+
+
+# Door check runs on blurred stills
+@respx.mock
+def test_door_check_runs_on_blurred_stills(aws, ring_http):
+    ring_serves([jpeg(0.8)])
+    face = (0.40, 0.20, 0.20, 0.30)  # inside the door box (whole image)
+    out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: blur_regions(data, [face])))
+    assert out["outcome"] == "door_open"
+    body = boto3.client("s3").get_object(Bucket=BUCKET, Key=out["still_keys"][0])["Body"].read()
+    assert body == blur_regions(jpeg(0.8), [face])
+
+
+@respx.mock
+def test_door_check_uses_the_blurred_bytes_not_the_download(aws, ring_http):
+    ring_serves([jpeg(0.8)])
+    out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: jpeg(0.1)))
+    assert out["outcome"] == "not_door"
