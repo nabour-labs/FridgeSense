@@ -192,6 +192,11 @@ describe("logs", () => {
       .map((g) => g.Properties.LogGroupName)
       .filter((n) => typeof n === "string")
       .sort();
-    expect(names).toEqual(["/fridgesense/http", "/fridgesense/pipeline", "/fridgesense/token-refresh"]);
+    expect(names).toEqual([
+      "/fridgesense/api",
+      "/fridgesense/http",
+      "/fridgesense/pipeline",
+      "/fridgesense/token-refresh",
+    ]);
   });
 });

@@ -16,9 +16,9 @@ function resourcesOf(type: string): Record<string, Resource> {
 
 describe("HTTP API", () => {
   it("has exactly the four Ring routes", () => {
-    const routes = Object.values(resourcesOf("AWS::ApiGatewayV2::Route")).map(
-      (r) => r.Properties.RouteKey,
-    );
+    const routes = Object.values(resourcesOf("AWS::ApiGatewayV2::Route"))
+      .map((r) => r.Properties.RouteKey as string)
+      .filter((key) => key.includes("/ring/"));
     expect(routes.sort()).toEqual([
       "GET /ring/link",
       "POST /ring/link",
@@ -36,11 +36,13 @@ describe("HTTP API", () => {
 });
 
 describe("Lambdas", () => {
-  it("are three Python 3.13 arm64 functions", () => {
-    const fns = Object.values(resourcesOf("AWS::Lambda::Function")).filter(
-      (f) => f.Properties.Runtime === "python3.13",
+  it("are four Python 3.13 arm64 functions", () => {
+    const fns = Object.values(resourcesOf("AWS::Lambda::Function")).filter((f) =>
+      String(f.Properties.Handler).startsWith("fridgesense."),
     );
+    for (const fn of fns) expect(fn.Properties.Runtime).toBe("python3.13");
     expect(fns.map((f) => f.Properties.Handler).sort()).toEqual([
+      "fridgesense.handlers.api.handler",
       "fridgesense.handlers.http.handler",
       "fridgesense.handlers.pipeline.handler",
       "fridgesense.handlers.token_refresh.handler",
