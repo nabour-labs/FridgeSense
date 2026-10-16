@@ -152,7 +152,7 @@ def test_summary_written(aws):
     assert item["stills_requested"] == 4
     assert item["stills_downloaded"] == 4
     assert item["best"]["zone"] == 2
-    assert item["best"]["feature"] == "color"
+    assert item["best"]["feature"] == "blue"
     assert item["best"]["threshold"] == 0.02
     assert item["best"]["value"] == pytest.approx(0.2, abs=0.02)
 
@@ -248,7 +248,7 @@ def test_default_rule(aws):
             {
                 "zone": 1,
                 "box": {"x": 0.6, "y": 0.0, "width": 0.4, "height": 1.0},
-                "feature": "color",
+                "feature": "blue",
                 "direction": "above",
                 "threshold": 0.03,
                 "margin": None,

@@ -6,13 +6,13 @@
 
 ## 2. The blue feature
 
-- [ ] 2.1 Write failing tests in `backend/tests/test_door_check.py` for `measure(..., "blue")`: a `(40,90,200)` block covering 10% gives about 0.10, and the yellow `(220,170,40)` plate, red `(200,40,40)` packet, navy `(20,25,60)` and plain greys `(230,230,230)`/`(30,30,30)` give 0. Run them and see them fail on the unknown feature.
-- [ ] 2.2 Implement the `blue` feature in `measure` (the existing colourful mask AND `B − max(R,G) > 20`, the threshold as a module constant). Verify that the 2.1 tests pass.
+- [x] 2.1 Write failing tests in `backend/tests/test_door_check.py` for `measure(..., "blue")`: a `(40,90,200)` block covering 10% gives about 0.10, and the yellow `(220,170,40)` plate, red `(200,40,40)` packet, navy `(20,25,60)` and plain greys `(230,230,230)`/`(30,30,30)` give 0. Run them and see them fail on the unknown feature.
+- [x] 2.2 Implement the `blue` feature in `measure` (the existing colourful mask AND `B − max(R,G) > 20`, the threshold as a module constant). Verify that the 2.1 tests pass.
 
 ## 3. Default door check
 
-- [ ] 3.1 Write failing tests in `backend/tests/test_fetch_stills_task.py` for the scenarios Food in front of closed doors, Faint fridge light counts at the default threshold, and Stored color setup still works. Update the scenarios Drawer opening seen only in the drawers zone, Box and threshold from config, and Threshold is inclusive to the modified spec (blue-lit blocks, feature value). Check that Fridge light visible, Brightness alone does not count, Dark colored clothing does not count, Door stayed closed, Closed door costs no face detection, Fallback when setup never ran, Setup lookup fails and Invalid zone config still hold. Confirm red for the new or changed ones.
-- [ ] 3.2 Make `blue` the default rule's feature and set `DEFAULT_THRESHOLD` to 0.01. Verify that the 3.1 tests and all door-check, still-sampling and pipeline tests pass.
+- [x] 3.1 Write failing tests in `backend/tests/test_fetch_stills_task.py` for the scenarios Food in front of closed doors, Faint fridge light counts at the default threshold, and Stored color setup still works. Update the scenarios Drawer opening seen only in the drawers zone, Box and threshold from config, and Threshold is inclusive to the modified spec (blue-lit blocks, feature value). Check that Fridge light visible, Brightness alone does not count, Dark colored clothing does not count, Door stayed closed, Closed door costs no face detection, Fallback when setup never ran, Setup lookup fails and Invalid zone config still hold. Confirm red for the new or changed ones.
+- [x] 3.2 Make `blue` the default rule's feature and set `DEFAULT_THRESHOLD` to 0.01. Verify that the 3.1 tests and all door-check, still-sampling and pipeline tests pass.
 
 ## 4. Setup chooses blue
 
@@ -21,7 +21,7 @@
 
 ## 5. Debug traces
 
-- [ ] 5.1 Update the default-rule scenario of Deciding rule in the door trace in `backend/tests/test_door_traces.py` (and `test_api_debug.py` if it asserts the feature) to expect `feature = "blue"` with the 0.01 threshold. Confirm red, make it pass, and verify that the setup-rule trace scenario is unchanged.
+- [x] 5.1 Update the default-rule scenario of Deciding rule in the door trace in `backend/tests/test_door_traces.py` (and `test_api_debug.py` if it asserts the feature) to expect `feature = "blue"` with the 0.01 threshold. Confirm red, make it pass, and verify that the setup-rule trace scenario is unchanged.
 
 ## 6. PWA and infra
 

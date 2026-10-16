@@ -141,7 +141,7 @@ def test_nothing_set_up_yet(tokens):
                 {"x": 0.38, "y": 0.32, "width": 0.21, "height": 0.30},
                 {"x": 0.455, "y": 0.60, "width": 0.12, "height": 0.18},
             ],
-            "threshold": 0.02,
+            "threshold": 0.01,
         },
     }
 

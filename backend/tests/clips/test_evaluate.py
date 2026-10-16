@@ -79,7 +79,7 @@ def test_missed_opening():
     assert CLIP in message
     assert "missed opening" in message
     assert "best zone value 0.000" in message
-    assert "threshold 0.02" in message
+    assert "threshold 0.01" in message
 
 
 # False opening
