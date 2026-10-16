@@ -197,10 +197,11 @@ The app asks for the passcode again every 24 hours, owner and demo alike. It not
 
 ### Teach the camera your fridge
 
-The gear at the top right opens **Config**. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6).
+The gear at the top right opens **Config**. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6); its **Fridge area** tab marks where the fridge is.
 
 - **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
 - **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
+- **Fridge area:** tap **Set area**, drag one box around the whole fridge on a camera snapshot, and save. It is stored per camera (`GET`/`PUT /api/fridge-area`) along with the snapshot. Nothing uses it yet; a later change will crop stills to it before analysis.
 
 Changes apply from the next door opening. Each reference adds roughly 1–2K input tokens per analysis, which shows up in the `nova_cost` log. The demo passcode sees Config read-only.
 

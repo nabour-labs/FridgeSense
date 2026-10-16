@@ -36,6 +36,8 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     addDoorReference: vi.fn(),
     deleteDoorReference: vi.fn(),
     runDoorSetup: vi.fn(),
+    fridgeArea: vi.fn().mockResolvedValue({ device_id: "ava1.ring.device.D1", area: null }),
+    saveFridgeArea: vi.fn(),
     ...overrides,
   } as Api;
 }

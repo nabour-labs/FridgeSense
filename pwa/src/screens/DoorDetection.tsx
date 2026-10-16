@@ -1,12 +1,12 @@
 import { Camera, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
-import type { Box, DoorFeature, DoorReference, DoorSetup, DoorStatus, Snapshot } from "../api/types";
+import type { DoorFeature, DoorReference, DoorSetup, DoorStatus, Snapshot } from "../api/types";
 import { useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
-import { shapeToBox, type Shape } from "../shapes";
+import { boxShape, shapeToBox, type Shape } from "../shapes";
 import { useLoad } from "../useLoad";
 import { CARD, HEADING, PRIMARY } from "./configStyles";
 import { NO_FOOTAGE } from "./ReferenceImages";
@@ -16,10 +16,6 @@ const ZONE_COLOR = "#14b8a6";
 const FEATURE_LABEL: Record<DoorFeature, string> = { color: "Color", brightness: "Brightness", change: "Change" };
 
 const percent = (v: number) => `${(v * 100).toFixed(1)}%`;
-
-function boxShape(b: Box): Shape {
-  return { kind: "box", x1: b.x, y1: b.y, x2: b.x + b.width, y2: b.y + b.height };
-}
 
 function StatusBadge({ status }: { status: DoorStatus }) {
   const open = status === "open";

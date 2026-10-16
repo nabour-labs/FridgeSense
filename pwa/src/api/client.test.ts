@@ -210,6 +210,14 @@ test.each([
     undefined,
   ],
   ["runDoorSetup", (api: ApiClient) => api.runDoorSetup(), "POST", "/api/door-calibration/run", undefined],
+  ["fridgeArea", (api: ApiClient) => api.fridgeArea(), "GET", "/api/fridge-area", undefined],
+  [
+    "saveFridgeArea",
+    (api: ApiClient) => api.saveFridgeArea("/9j/SNAP", BOX),
+    "PUT",
+    "/api/fridge-area",
+    { image: "/9j/SNAP", box: BOX },
+  ],
 ])("%s sends the right request", async (_, callApi, method, path, body) => {
   const fetch = respond(200, { ok: true });
   await expect(callApi(new ApiClient(() => "t", fetch))).resolves.toEqual({ ok: true });
