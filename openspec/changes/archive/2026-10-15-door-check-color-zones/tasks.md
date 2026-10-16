@@ -34,4 +34,4 @@ Test command for every backend task: `cd backend && uv run pytest -q` (plus `uv 
 ## 5. Integration check
 
 - [x] 5.1 Run the full suites and linters green: `cd backend && uv run pytest -q && uv run ruff check . && uv run ruff format --check .`, then `cd infra && npm test`. Report the commands and their results.
-- [ ] 5.2 Run `cdk diff` and confirm that only Lambda environment variables change. Then ask Jayson before `cdk deploy`. After the deploy, open the doors, the middle drawer and the bottom drawer once each, and confirm `door_event_recorded` for each one and a cropped stored still.
+- [x] 5.2 Moved to `door-zone-setup` (its final deploy task covers both changes, with Jayson's OK): `cdk diff`, `cdk deploy`, then open the doors and drawers once each and confirm `door_event_recorded` and a cropped stored still.
