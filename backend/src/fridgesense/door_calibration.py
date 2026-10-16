@@ -318,9 +318,10 @@ def setup_check(table: FridgeTable, account_id: str, device_id: str) -> DoorChec
     if setup is None:
         return None
     rules = tuple(
-        ZoneRule(z.box, z.feature, z.direction, z.threshold, z.baseline) for z in setup.zones
+        ZoneRule(z.box, z.feature, z.direction, z.threshold, z.baseline, z.margin)
+        for z in setup.zones
     )
-    return DoorCheck(rules=rules, source="setup")
+    return DoorCheck(rules=rules, source="setup", ran_at=setup.ran_at)
 
 
 def reference_scores(refs: list[DoorReference], setup: Setup | None) -> dict[str, float | None]:
