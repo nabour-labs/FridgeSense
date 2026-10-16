@@ -270,6 +270,14 @@ cd pwa && FRIDGESENSE_MOCK=1 npm run dev
 
 `FRIDGESENSE_MOCK=nocamera` answers every request with 409 "no camera linked", to see the "No Data" screens.
 
+**Mock video (dev server only).** `npm run dev` always runs in debug mode: a Debug bar under the header has a **Mock video** switch, remembered in the browser. With it on, camera snapshots (Reference images, Open/close detection, Fridge area) open a clip picker instead of asking the camera. You pick a clip, scrub to a moment and tap **Use this frame**. **Livestream** plays a clip on a loop instead of the live view. The clips are the `.mp4` files in the repo's gitignored `tmp/` folder, or in another folder:
+
+```bash
+cd pwa && FRIDGESENSE_VIDEOS=/path/to/clips FRIDGESENSE_MOCK=1 npm run dev
+```
+
+Clip frames are **not face-blurred**. With `FRIDGESENSE_URL`, saving a reference made from a clip uploads that frame to the deployed backend, and the picker warns you. The production build has no debug mode and no clip routes.
+
 ### Voice and MCP (Alexa+)
 
 FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec 2025-11-25, Streamable HTTP) with six tools: `find_item`, `get_inventory`, `fridge_activity`, `last_opened`, `oldest_items` and `low_stock`. Ask things like:
