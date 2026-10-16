@@ -278,6 +278,30 @@ cd pwa && FRIDGESENSE_VIDEOS=/path/to/clips FRIDGESENSE_MOCK=1 npm run dev
 
 Clip frames are **not face-blurred**. With `FRIDGESENSE_URL`, saving a reference made from a clip uploads that frame to the deployed backend, and the picker warns you. The production build has no debug mode and no clip routes.
 
+**Door check on recorded clips (local only).** The same clips can test the open/close check. A fake camera serves clip frames as Ring stills, and the unchanged pipeline step runs on them. Results are scored against hand-written labels in [`backend/tests/fixtures/clips/door_labels.json`](backend/tests/fixtures/clips/door_labels.json): for each clip, the seconds it opened and closed. Nothing calls Ring, AWS or Bedrock. Without the clips or the decoder, the tests skip, so CI never runs them.
+
+```bash
+cd backend && uv sync --group clips
+```
+
+```bash
+cd backend && uv run --group clips pytest -m clips
+```
+
+```bash
+cd backend && uv run --group clips python scripts/door_clip_report.py
+```
+
+```bash
+cd backend && uv run --group clips python scripts/door_clip_report.py --threshold 0.005,0.01,0.02 --interval 500,1000
+```
+
+```bash
+cd backend && uv run --group clips python scripts/door_clip_report.py --dump
+```
+
+The report prints one row per clip and the confusion matrix (TP, FP, FN, TN), plus open and close timing errors. `--threshold`/`--interval` sweep values and print one summary row per combination. `--dump` writes every sampled still with its zone values to `tmp/clip-stills/` to help with labelling. Clips come from `tmp/`, or from `FRIDGESENSE_CLIPS_DIR`.
+
 ### Voice and MCP (Alexa+)
 
 FridgeSense runs a read-only [MCP](https://modelcontextprotocol.io) server (spec 2025-11-25, Streamable HTTP) with six tools: `find_item`, `get_inventory`, `fridge_activity`, `last_opened`, `oldest_items` and `low_stock`. Ask things like:
