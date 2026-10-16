@@ -74,14 +74,14 @@
 
 ## 6. API routes
 
-- [ ] 6.1 Write failing tests in `backend/tests/test_api_debug.py`, using `api_helpers` and moto:
+- [x] 6.1 Write failing tests in `backend/tests/test_api_debug.py`, using `api_helpers` and moto:
   - "Listing": order, `nova` totals 2380/186/4040 ms, and `calls = 0` for a not-door motion.
   - "Viewer refused" for both routes, with no presign call.
   - "Bad range" (`days=0`, `limit=51`) and paging with `limit`/`cursor`.
   - "Trace by door event id": stills, baseline and Nova image entries have `url` and no `key`.
   - "Untraced event" and "Files expired" give 404 `{"error": "no trace"}`.
   - "Bad id" gives 400.
-- [ ] 6.2 Add the `owner` flag to `route`, generalize `_event_range` to take a sort-key prefix, and implement `GET /api/debug/motions` and `GET /api/debug/motions/{id}`. Verify that the 6.1 tests and every existing API test pass, then refactor with tests green.
+- [x] 6.2 Add the `owner` flag to `route`, generalize `_event_range` to take a sort-key prefix, and implement `GET /api/debug/motions` and `GET /api/debug/motions/{id}`. Verify that the 6.1 tests and every existing API test pass, then refactor with tests green.
 
 ## 7. PWA
 

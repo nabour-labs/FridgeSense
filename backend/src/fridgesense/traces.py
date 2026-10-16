@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import os
+import re
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -332,3 +333,53 @@ class TraceWriter:
                 keys.append(ref_key)
             self._ref_keys[run_ms] = keys
         return self._ref_keys[run_ms]
+
+
+NOVA_FILE = re.compile(r"nova-(\d+)-(\d+)\.json$")
+
+
+def load(s3, bucket: str, account_id: str, item: dict) -> tuple[dict, list[dict]] | None:
+    """A motion's door.json and its Nova call traces (oldest first), or None once expired."""
+    prefix = debug_prefix(account_id, item["device_id"], int(item["start_ms"]))
+    try:
+        door = json.loads(s3.get_object(Bucket=bucket, Key=f"{prefix}door.json")["Body"].read())
+    except s3.exceptions.NoSuchKey:
+        return None
+    found = []
+    pages = s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=f"{prefix}nova-")
+    for page in pages:
+        for obj in page.get("Contents", []):
+            match = NOVA_FILE.search(obj["Key"])
+            if match:
+                found.append(((int(match[1]), int(match[2])), obj["Key"]))
+    calls = [
+        json.loads(s3.get_object(Bucket=bucket, Key=key)["Body"].read()) for _, key in sorted(found)
+    ]
+    return door, calls
+
+
+def _linked(entry: dict, sign, key: str = "key", url: str = "url") -> dict:
+    out = {k: v for k, v in entry.items() if k != key}
+    out[url] = sign(entry[key]) if entry.get(key) else None
+    return out
+
+
+def with_links(doc: dict, sign) -> dict:
+    """A door.json or Nova call trace with every S3 key swapped for a download link."""
+    out = dict(doc)
+    if "stills" in doc:  # door.json
+        out["stills"] = [_linked(s, sign) for s in doc["stills"]]
+        rule = doc["rule"]
+        out["rule"] = {
+            **rule,
+            "zones": [_linked(z, sign, "baseline_key", "baseline_url") for z in rule["zones"]],
+            "references": [_linked(r, sign) for r in rule["references"]],
+        }
+        out.pop("stored_keys", None)
+        out["stored_urls"] = [sign(k) for k in doc.get("stored_keys", [])]
+    if "request" in doc:  # Nova call trace
+        content = [
+            _linked(b, sign) if b["type"] == "image" else b for b in doc["request"]["content"]
+        ]
+        out["request"] = {**doc["request"], "content": content}
+    return out
