@@ -21,6 +21,11 @@ export type Api = Pick<
   | "saveInstructions"
   | "addReference"
   | "deleteReference"
+  | "cameraSnapshot"
+  | "doorCalibration"
+  | "addDoorReference"
+  | "deleteDoorReference"
+  | "runDoorSetup"
 >;
 
 export interface AppContextValue {
