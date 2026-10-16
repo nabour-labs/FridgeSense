@@ -26,6 +26,8 @@ export type Api = Pick<
   | "addDoorReference"
   | "deleteDoorReference"
   | "runDoorSetup"
+  | "fridgeArea"
+  | "saveFridgeArea"
 >;
 
 export interface AppContextValue {

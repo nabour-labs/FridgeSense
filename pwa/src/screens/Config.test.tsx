@@ -199,6 +199,26 @@ test("#config/doors opens on the detection tab", async () => {
   location.hash = "";
 });
 
+// Switch to fridge area
+test("tapping Fridge area switches the tab and the hash", async () => {
+  location.hash = "#config";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  await userEvent.click(await screen.findByRole("tab", { name: "Fridge area" }));
+  expect(location.hash).toBe("#config/fridge");
+  expect(screen.getByRole("tab", { name: "Fridge area", selected: true })).toBeInTheDocument();
+  expect(api.fridgeArea).toHaveBeenCalled();
+  location.hash = "";
+});
+
+// Open the fridge area tab by link
+test("#config/fridge opens on the fridge area tab", async () => {
+  location.hash = "#config/fridge";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  expect(await screen.findByRole("tab", { name: "Fridge area", selected: true })).toBeInTheDocument();
+  expect(api.fridgeArea).toHaveBeenCalled();
+  location.hash = "";
+});
+
 const SNAPSHOT = { image: "/9j/SNAP", captured_at: "2026-10-15T19:20:07.000Z" };
 
 async function openSnapshot(api: Api) {
