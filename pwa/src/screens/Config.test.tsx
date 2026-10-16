@@ -297,3 +297,50 @@ test("Undo removes the last shape and is disabled with none left", async () => {
   expect(screen.queryAllByTestId("markup-shape")).toHaveLength(0);
   expect(undo).toBeDisabled();
 });
+
+// Switch to debug
+test("tapping Debug switches the tab and the hash", async () => {
+  location.hash = "#config";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  await userEvent.click(await screen.findByRole("tab", { name: "Debug" }));
+  expect(location.hash).toBe("#config/debug");
+  expect(screen.getByRole("tab", { name: "Debug", selected: true })).toBeInTheDocument();
+  expect(api.debugMotions).toHaveBeenCalled();
+  location.hash = "";
+});
+
+test("#config/debug/<id> opens one motion on the debug tab", async () => {
+  location.hash = "#config/debug/abc";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  expect(await screen.findByRole("tab", { name: "Debug", selected: true })).toBeInTheDocument();
+  expect(api.debugMotion).toHaveBeenCalledWith("abc");
+  location.hash = "";
+});
+
+// Four tabs fit a phone
+test("the owner gets four tabs in one row", async () => {
+  location.hash = "#config";
+  renderConfig({ instructions: "", references: [] });
+  const tabs = await screen.findAllByRole("tab");
+  expect(tabs.map((t) => t.textContent)).toEqual(["Reference images", "Open/close detection", "Fridge area", "Debug"]);
+  expect(screen.getByRole("tablist")).toHaveClass("grid-cols-4");
+});
+
+// Viewer sees read-only config (no Debug tab)
+test("a viewer gets no Debug tab", async () => {
+  location.hash = "#config";
+  renderConfig({ instructions: "", references: [] }, { role: "viewer" });
+  const tabs = await screen.findAllByRole("tab");
+  expect(tabs.map((t) => t.textContent)).toEqual(["Reference images", "Open/close detection", "Fridge area"]);
+  expect(screen.getByRole("tablist")).toHaveClass("grid-cols-3");
+});
+
+// Viewer opens the debug link
+test("a viewer opening #config/debug sees reference images instead", async () => {
+  location.hash = "#config/debug";
+  const { api } = renderConfig({ instructions: "", references: [] }, { role: "viewer" });
+  expect(await screen.findByRole("tab", { name: "Reference images", selected: true })).toBeInTheDocument();
+  expect(api.debugMotions).not.toHaveBeenCalled();
+  expect(api.debugMotion).not.toHaveBeenCalled();
+  location.hash = "";
+});

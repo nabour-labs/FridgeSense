@@ -1,36 +1,46 @@
 import { useEffect, useState } from "react";
 import type { Resize } from "../image";
 import { toJpeg } from "../image";
+import { useApp } from "../AppContext";
+import { Debug } from "./Debug";
 import { DoorDetection } from "./DoorDetection";
 import { FridgeArea } from "./FridgeArea";
 import { ReferenceImages } from "./ReferenceImages";
 
-type Section = "refs" | "doors" | "fridge";
+type Section = "refs" | "doors" | "fridge" | "debug";
 
 const SECTIONS: { id: Section; label: string; hash: string }[] = [
   { id: "refs", label: "Reference images", hash: "#config" },
   { id: "doors", label: "Open/close detection", hash: "#config/doors" },
   { id: "fridge", label: "Fridge area", hash: "#config/fridge" },
+  { id: "debug", label: "Debug", hash: "#config/debug" },
 ];
+/** Debug traces hold unblurred stills: the owner's only. */
+const OWNER_ONLY: Section[] = ["debug"];
 
-function sectionFromHash(): Section {
-  return SECTIONS.find((s) => s.hash === location.hash)?.id ?? "refs";
+function sectionFromHash(owner: boolean): Section {
+  const found =
+    SECTIONS.find((s) => s.hash === location.hash)?.id ??
+    (location.hash.startsWith("#config/debug/") ? "debug" : "refs");
+  return !owner && OWNER_ONLY.includes(found) ? "refs" : found;
 }
 
 /** Config: what guides the item analysis, and how door openings are detected. */
 export function Config({ resize = toJpeg }: { resize?: Resize }) {
-  const [section, setSection] = useState<Section>(sectionFromHash);
+  const owner = useApp().role === "owner";
+  const sections = SECTIONS.filter((s) => owner || !OWNER_ONLY.includes(s.id));
+  const [section, setSection] = useState<Section>(() => sectionFromHash(owner));
 
   useEffect(() => {
-    const onHash = () => setSection(sectionFromHash());
+    const onHash = () => setSection(sectionFromHash(owner));
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
-  }, []);
+  }, [owner]);
 
   return (
     <div className="space-y-5">
-      <div role="tablist" aria-label="Config" className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-200/70 p-1 dark:bg-slate-800/70">
-        {SECTIONS.map((s) => (
+      <div role="tablist" aria-label="Config" className={`grid ${sections.length === 4 ? "grid-cols-4" : "grid-cols-3"} gap-1 rounded-2xl bg-slate-200/70 p-1 dark:bg-slate-800/70`}>
+        {sections.map((s) => (
           <button
             key={s.id}
             type="button"
@@ -56,6 +66,7 @@ export function Config({ resize = toJpeg }: { resize?: Resize }) {
         {section === "refs" && <ReferenceImages resize={resize} />}
         {section === "doors" && <DoorDetection />}
         {section === "fridge" && <FridgeArea />}
+        {section === "debug" && <Debug />}
       </div>
     </div>
   );

@@ -85,19 +85,19 @@
 
 ## 7. PWA
 
-- [ ] 7.1 Add `debugMotions(from, to, limit, cursor)` and `debugMotion(id)` to `api/client.ts`, and add `DebugMotion`, `MotionTrace`, `DoorTrace` and `NovaCall` to `api/types.ts`. Write failing tests in `client.test.ts` for the paths and query strings first, then verify they pass.
-- [ ] 7.2 Add the two debug routes to `pwa/scripts/mock-api.ts` with one door-opening trace (6 SVG stills, setup rule, 2 Nova calls including one invalid) and one not-door trace.
-- [ ] 7.3 Write failing tests in `Config.test.tsx`:
+- [x] 7.1 Add `debugMotions(from, to, limit, cursor)` and `debugMotion(id)` to `api/client.ts`, and add `DebugMotion`, `MotionTrace`, `DoorTrace` and `NovaCall` to `api/types.ts`. Write failing tests in `client.test.ts` for the paths and query strings first, then verify they pass.
+- [x] 7.2 Add the two debug routes to `pwa/scripts/mock-api.ts` with one door-opening trace (6 SVG stills, setup rule, 2 Nova calls including one invalid) and one not-door trace.
+- [x] 7.3 Write failing tests in `Config.test.tsx`:
   - "Switch to debug".
   - "Viewer sees read-only config": no Debug tab.
   - "Viewer opens the debug link": falls back to refs, no request.
   - The existing tab tests still pass.
   - Then add the owner-only fourth tab and the `#config/debug[/<id>]` hash handling to `Config.tsx` and `App.tsx`, and verify.
-- [ ] 7.4 Write failing tests in `screens/Debug.test.tsx` for:
+- [x] 7.4 Write failing tests in `screens/Debug.test.tsx` for:
   - "Not-door row", "Door opening row", "No motions" and "Open a motion".
   - "Door section", "Picked stills marked", "Missing still", "Default rule" and "Missing detail".
   - "Request in order", "Numbers shown", "Failed call" and "Invalid answer".
-- [ ] 7.5 Implement `screens/Debug.tsx` (list with day picker and paging, detail with door and Nova sections, `Sheet` viewer, read-only `ImageMarkup` zone boxes). Verify that the 7.4 tests pass and that `npm test` passes in `pwa/`.
+- [x] 7.5 Implement `screens/Debug.tsx` (list with day picker and paging, detail with door and Nova sections, `Sheet` viewer, read-only `ImageMarkup` zone boxes). Verify that the 7.4 tests pass and that `npm test` passes in `pwa/`.
 - [ ] 7.6 Write failing tests in `Activity.test.tsx` for "Owner follows the link" and "Viewer has no link". Add the link to `EventCard` and verify.
 - [ ] 7.7 In the browser preview against the mock API, check:
   - The four tabs fit at 375 px with no horizontal scroll ("Four tabs fit a phone").
