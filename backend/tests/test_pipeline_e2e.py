@@ -246,3 +246,35 @@ def test_invalid_interval_config_fails_before_ring(env, monkeypatch, value):
     with pytest.raises(ValueError, match="STILL_INTERVAL_MS"):
         step("fetch_stills", state)
     assert not download.called
+
+
+def run_setup_for(device: str) -> None:
+    """Setup on `device` whose single zone is the right 40%: colourful there means open."""
+    from fridgesense import door_calibration
+
+    right = {"x": 0.6, "y": 0.0, "width": 0.4, "height": 1.0}
+    lit = color_jpeg((128, 128, 128), [((0.6, 0.0, 0.4, 1.0), (40, 90, 200))])
+    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, lit, right, "open", 1)
+    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, CLOSED, right, "closed", 2)
+    door_calibration.run(FridgeTable(), ACCOUNT, device, now_ms=3)
+
+
+# Setup result used for the device (through the pipeline handler and the table)
+@respx.mock
+def test_pipeline_uses_the_devices_setup(env, faces, monkeypatch):
+    monkeypatch.setenv("DOOR_ZONES", "0,0,0.4,1")  # would miss the right-hand light
+    run_setup_for(DEVICE)
+    no_faces(faces)
+    ring_serves(color_jpeg((128, 128, 128), [((0.6, 0.0, 0.4, 1.0), (40, 90, 200))]))
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+
+
+# Setup kept per device
+@respx.mock
+def test_setup_kept_per_device(env, faces, monkeypatch):
+    monkeypatch.setenv("DOOR_ZONES", "0,0,0.4,1")
+    run_setup_for("ava1.ring.device.D2")
+    ring_serves(color_jpeg((128, 128, 128), [((0.6, 0.0, 0.4, 1.0), (40, 90, 200))]))
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "not_door"  # D1 has no setup: DOOR_ZONES misses the light

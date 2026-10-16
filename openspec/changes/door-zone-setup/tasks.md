@@ -24,12 +24,12 @@ Test commands: backend `cd backend && uv run pytest -q && uv run ruff check .`; 
 
 ## 4. Door references and setup (backend)
 
-- [ ] 4.1 Write failing tests in `test_door_calibration.py` for reference validation ("Invalid reference rejected"), "Reference limit", add/list/delete on moto DynamoDB ("Reference added", "Reference deleted"), and the stale flag ("Setup marked stale").
-- [ ] 4.2 Implement references in `backend/src/fridgesense/door_calibration.py` (`DOORREF#`, the `DOORREFS#` marker, Binary image). Verify that the 4.1 tests pass.
-- [ ] 4.3 Write failing tests for the setup run: "Setup from one open and one closed reference", "Brightness chosen when there is no color", "Change chosen when brightness is the same", "Darker when open", "Overlapping boxes become one zone", "Missing a status", "Open and closed overlap" and "Too many zones" (stored setup unchanged on each failure).
-- [ ] 4.4 Implement `run` (grouping by IoU, per-zone baselines, the three features through `measure`, best margin ≥ 0.01, midpoint threshold, tie order) and `DOORSETUP#` storage with Binary baselines. Verify that the 4.3 tests pass.
-- [ ] 4.5 Write failing task-level tests for "Setup result used for the device", "Setup threshold applied", "Brightness rule applied", "Darker rule applied", "Change rule applied", "Fallback when setup never ran", "Setup lookup fails", "Setup kept per device", "Box and threshold from config", "Door stayed closed" (with `zones_source`) and "Invalid zone config".
-- [ ] 4.6 Add the `setup_for` lookup to `fetch_stills` and `handlers/pipeline.py`, and log `zones_source`, `feature` and the threshold used in `motion_not_door` and `door_event_recorded`. Verify that the 4.5 tests pass.
+- [x] 4.1 Write failing tests in `test_door_calibration.py` for reference validation ("Invalid reference rejected"), "Reference limit", add/list/delete on moto DynamoDB ("Reference added", "Reference deleted"), and the stale flag ("Setup marked stale").
+- [x] 4.2 Implement references in `backend/src/fridgesense/door_calibration.py` (`DOORREF#`, the `DOORREFS#` marker, Binary image). Verify that the 4.1 tests pass.
+- [x] 4.3 Write failing tests for the setup run: "Setup from one open and one closed reference", "Brightness chosen when there is no color", "Change chosen when brightness is the same", "Darker when open", "Overlapping boxes become one zone", "Missing a status", "Open and closed overlap" and "Too many zones" (stored setup unchanged on each failure).
+- [x] 4.4 Implement `run` (grouping by IoU, per-zone baselines, the three features through `measure`, best margin ≥ 0.01, midpoint threshold, tie order) and `DOORSETUP#` storage with Binary baselines. Verify that the 4.3 tests pass.
+- [x] 4.5 Write failing task-level tests for "Setup result used for the device", "Setup threshold applied", "Brightness rule applied", "Darker rule applied", "Change rule applied", "Fallback when setup never ran", "Setup lookup fails", "Setup kept per device", "Box and threshold from config", "Door stayed closed" (with `zones_source`) and "Invalid zone config".
+- [x] 4.6 Add the `setup_for` lookup to `fetch_stills` and `handlers/pipeline.py`, and log `zones_source`, `feature` and the threshold used in `motion_not_door` and `door_event_recorded`. Verify that the 4.5 tests pass.
 
 ## 5. API routes (backend)
 
