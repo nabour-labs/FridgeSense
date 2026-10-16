@@ -249,22 +249,26 @@ function AddReference({
     <Sheet title="Add a reference" onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <label htmlFor="ref-photo" className="sr-only">
+          <div className="flex flex-wrap items-center gap-2">
+            <label
+              htmlFor="ref-photo"
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full bg-brand-50 px-3.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-brand-500/30 dark:bg-brand-950 dark:text-brand-300"
+            >
+              <ImagePlus aria-hidden className="size-4" />
               Choose photo
+              <input
+                id="ref-photo"
+                type="file"
+                accept="image/*"
+                onChange={(e) => pick(e.target.files?.[0] ?? null)}
+                className="sr-only"
+              />
             </label>
-            <input
-              id="ref-photo"
-              type="file"
-              accept="image/*"
-              onChange={(e) => pick(e.target.files?.[0] ?? null)}
-              className="block min-w-0 flex-1 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:font-semibold file:text-brand-700 dark:file:bg-brand-950 dark:file:text-brand-300"
-            />
             <button
               type="button"
               onClick={snapshot}
               disabled={snapping}
-              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-brand-50 px-4 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50 dark:bg-brand-950 dark:text-brand-300"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-brand-50 px-3.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50 dark:bg-brand-950 dark:text-brand-300"
             >
               <Camera aria-hidden className="size-4" />
               {snapping ? "Taking snapshot…" : "Camera snapshot"}
