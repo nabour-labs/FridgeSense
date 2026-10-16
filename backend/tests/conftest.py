@@ -176,6 +176,33 @@ def jpeg(
     return buf.getvalue()
 
 
+Rgb = tuple[int, int, int]
+
+
+def color_jpeg(
+    fill: Rgb = (128, 128, 128),
+    blocks: list[tuple[tuple[float, float, float, float], Rgb]] = (),
+    size: tuple[int, int] = (320, 180),
+) -> bytes:
+    """A test JPEG: one `fill` colour with coloured blocks ((x, y, w, h) fractions, colour)."""
+    import io
+
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", size, fill)
+    W, H = size
+    draw = ImageDraw.Draw(img)
+    for (x, y, w, h), colour in blocks:
+        draw.rectangle(
+            [round(x * W), round(y * H), round((x + w) * W) - 1, round((y + h) * H) - 1],
+            fill=colour,
+        )
+    buf = io.BytesIO()
+    # No chroma subsampling, so block edges keep their colour and fractions stay exact.
+    img.save(buf, format="JPEG", quality=95, subsampling=0)
+    return buf.getvalue()
+
+
 def checkerboard_jpeg(size: tuple[int, int] = (320, 180), square: int = 4) -> bytes:
     """A high-contrast test JPEG: black and white squares of `square` px."""
     import io

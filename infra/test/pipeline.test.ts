@@ -125,8 +125,8 @@ describe("pipeline Lambda", () => {
     expect(fn.Properties.Timeout).toBe(90);
     const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
     expect(Object.keys(vars).sort()).toEqual([
-      "DOOR_BOX",
       "DOOR_THRESHOLD",
+      "DOOR_ZONES",
       "FACE_DETECT_PRICE",
       "NOVA_CACHE_ANALYSIS",
       "NOVA_MODEL_ID",
@@ -137,6 +137,7 @@ describe("pipeline Lambda", () => {
       "RING_APP_SECRET_ID",
       "RING_TOKENS_SECRET_ID",
       "STILLS_BUCKET",
+      "STILL_CROP",
       "TABLE_NAME",
       "TIME_ZONE",
     ]);
@@ -145,8 +146,10 @@ describe("pipeline Lambda", () => {
     expect(vars.NOVA_PRICE_CACHE_WRITE).toBe("0");
     expect(vars.NOVA_CACHE_ANALYSIS).toBe("false");
     expect(vars.TIME_ZONE).toBe("America/Toronto");
-    expect(vars.DOOR_BOX).toBe("0.25,0.1,0.5,0.8");
-    expect(vars.DOOR_THRESHOLD).toBe("0.5");
+    expect(vars.DOOR_ZONES).toBe("0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18");
+    expect(vars.DOOR_THRESHOLD).toBe("0.02");
+    expect(vars.STILL_CROP).toBe("0.30,0.0,0.34,1.0");
+    expect(vars).not.toHaveProperty("DOOR_BOX");
     expect(vars.FACE_DETECT_PRICE).toBe("0.001");
   });
 

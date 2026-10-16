@@ -53,7 +53,7 @@ def handler(event, context):
         return door_events.find_window(deps.ring_client(), state)
     if task == "fetch_stills":
         check = door_events.DoorCheck.from_config(
-            os.environ.get("DOOR_BOX"), os.environ.get("DOOR_THRESHOLD")
+            os.environ.get("DOOR_ZONES"), os.environ.get("DOOR_THRESHOLD")
         )
         return door_events.fetch_stills(
             deps.ring_client(),
@@ -65,6 +65,7 @@ def handler(event, context):
             _blurrer(),
             state,
             sleep,
+            crop=door_events.parse_crop(os.environ.get("STILL_CROP")),
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())

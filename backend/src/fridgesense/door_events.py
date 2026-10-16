@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from PIL import Image, ImageStat
+from PIL import Image, ImageChops, ImageStat
 
 from fridgesense.faces import FaceBlurrer
 from fridgesense.logs import log_event
@@ -76,10 +76,14 @@ def _matching_event(ring: RingClient, device_id: str, ts: int) -> dict | None:
 
 
 STILL_COUNT = 4
-DEFAULT_BOX = (0.25, 0.1, 0.5, 0.8)
-DEFAULT_THRESHOLD = 0.5
 
 Box = tuple[float, float, float, float]
+
+# Measured on the fridge camera (2026-10-15 clip): French doors, then the two drawers.
+DEFAULT_ZONES: tuple[Box, ...] = ((0.38, 0.32, 0.21, 0.30), (0.455, 0.60, 0.12, 0.18))
+DEFAULT_THRESHOLD = 0.02
+MIN_CHROMA = 60  # max(R,G,B) - min(R,G,B): grey steel, white and wood stay below this
+MIN_PEAK = 100  # brightest channel: keeps dark saturated clothing (navy) out
 
 
 def still_times(start_ms: int, end_ms: int, count: int = STILL_COUNT) -> list[int]:
@@ -88,37 +92,85 @@ def still_times(start_ms: int, end_ms: int, count: int = STILL_COUNT) -> list[in
     return [start_ms + span * k // (count + 1) for k in range(1, count + 1)]
 
 
-def brightness(jpeg_bytes: bytes, box: Box) -> float:
-    """Mean brightness (0-1) of a box given as fractions (x, y, width, height)."""
-    img = Image.open(io.BytesIO(jpeg_bytes)).convert("L")
+def parse_box(text: str, setting: str) -> Box:
+    """`x,y,width,height` fractions that must lie inside the image; errors name the setting."""
+    parts = tuple(float(v) for v in text.split(","))
+    if len(parts) != 4:
+        raise ValueError(f"{setting} needs four numbers per box: x,y,width,height")
+    x, y, bw, bh = parts
+    if min(parts) < 0 or bw <= 0 or bh <= 0 or x + bw > 1 or y + bh > 1:
+        raise ValueError(f"{setting} boxes must lie inside the image (fractions 0-1)")
+    return parts
+
+
+def _crop_box(img: Image.Image, box: Box) -> Image.Image:
     w, h = img.size
     x, y, bw, bh = box
-    crop = img.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
-    return ImageStat.Stat(crop).mean[0] / 255
+    return img.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
+
+
+def colorful_fraction(jpeg_bytes: bytes, box: Box) -> float:
+    """Share (0-1) of colourful pixels in a box given as fractions (x, y, width, height).
+
+    The lit fridge interior and its food are colourful; closed steel doors are grey
+    at any ambient light level.
+    """
+    zone = _crop_box(Image.open(io.BytesIO(jpeg_bytes)).convert("RGB"), box)
+    r, g, b = zone.split()
+    peak = ImageChops.lighter(ImageChops.lighter(r, g), b)
+    low = ImageChops.darker(ImageChops.darker(r, g), b)
+    chroma = ImageChops.subtract(peak, low)
+    colourful = ImageChops.multiply(
+        chroma.point(lambda v: 255 if v > MIN_CHROMA else 0),
+        peak.point(lambda v: 255 if v > MIN_PEAK else 0),
+    )
+    return ImageStat.Stat(colourful).mean[0] / 255
+
+
+CROP_JPEG_QUALITY = 95
+
+
+def parse_crop(setting: str | None) -> Box | None:
+    """The STILL_CROP box, or None when unset (stills are stored as downloaded)."""
+    if not setting or not setting.strip():
+        return None
+    return parse_box(setting, "STILL_CROP")
+
+
+def crop_still(jpeg_bytes: bytes, box: Box | None) -> bytes:
+    """Cut a still down to `box` (e.g. the strip the camera's privacy mask leaves visible)."""
+    if box is None:
+        return jpeg_bytes
+    buf = io.BytesIO()
+    _crop_box(Image.open(io.BytesIO(jpeg_bytes)).convert("RGB"), box).save(
+        buf, format="JPEG", quality=CROP_JPEG_QUALITY
+    )
+    return buf.getvalue()
 
 
 @dataclass(frozen=True)
 class DoorCheck:
-    box: Box = DEFAULT_BOX
+    zones: tuple[Box, ...] = DEFAULT_ZONES
     threshold: float = DEFAULT_THRESHOLD
 
     @classmethod
-    def from_config(cls, box: str | None, threshold: str | None) -> "DoorCheck":
-        parsed = DEFAULT_BOX
-        if box:
-            parts = tuple(float(v) for v in box.split(","))
-            if len(parts) != 4:
-                raise ValueError("DOOR_BOX needs four numbers: x,y,width,height")
-            parsed = parts  # type: ignore[assignment]
-        x, y, bw, bh = parsed
-        if min(parsed) < 0 or bw <= 0 or bh <= 0 or x + bw > 1 or y + bh > 1:
-            raise ValueError("DOOR_BOX must lie inside the image (fractions 0-1)")
-        return cls(box=parsed, threshold=float(threshold) if threshold else DEFAULT_THRESHOLD)
+    def from_config(cls, zones: str | None, threshold: str | None) -> "DoorCheck":
+        """Zones as `x,y,w,h;x,y,w,h` (fractions of the uncropped still)."""
+        parsed = DEFAULT_ZONES
+        if zones:
+            parsed = tuple(parse_box(z, "DOOR_ZONES") for z in zones.split(";") if z.strip())
+            if not parsed:
+                raise ValueError("DOOR_ZONES needs at least one zone: x,y,width,height")
+        return cls(zones=parsed, threshold=float(threshold) if threshold else DEFAULT_THRESHOLD)
 
-    def evaluate(self, stills: list[bytes]) -> tuple[bool, float]:
-        """(door open?, brightest box value) over the stills."""
-        brightest = max(brightness(s, self.box) for s in stills)
-        return brightest >= self.threshold, brightest
+    def evaluate(self, stills: list[bytes]) -> tuple[bool, float, int]:
+        """(door open?, best colourful fraction, its 1-based zone) over all stills and zones."""
+        score, zone = max(
+            (colorful_fraction(s, box), n)
+            for s in stills
+            for n, box in enumerate(self.zones, start=1)
+        )
+        return score >= self.threshold, score, zone
 
 
 STILL_ATTEMPTS = 3
@@ -213,11 +265,12 @@ def fetch_stills(
     blurrer: FaceBlurrer,
     state: dict,
     sleep: Callable[[float], None] = time.sleep,
+    crop: Box | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
-    The door check runs on the raw stills in memory; only door openings pay for
-    face detection, and only their blurred stills are stored.
+    The door check runs on the raw, uncropped stills in memory; only door openings
+    are cropped to `crop`, pay for face detection, and have their blurred stills stored.
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
     """
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
@@ -226,17 +279,19 @@ def fetch_stills(
     status = "no_media"
 
     if len(raw) >= MIN_STILLS:
-        is_open, brightest = check.evaluate([data for _, data in raw])
+        is_open, score, zone = check.evaluate([data for _, data in raw])
         if not is_open:
             log_event(
                 "motion_not_door",
                 account_id=account_id,
                 device_id=device_id,
-                brightest=round(brightest, 3),
+                score=round(score, 3),
+                zone=zone,
                 threshold=check.threshold,
             )
-            return {**state, "outcome": "not_door", "brightest": round(brightest, 3)}
-        stills = store_blurred_stills(s3, bucket, blurrer, state, raw)
+            return {**state, "outcome": "not_door", "score": round(score, 3)}
+        cropped = [(n, crop_still(data, crop)) for n, data in raw]
+        stills = store_blurred_stills(s3, bucket, blurrer, state, cropped)
         still_keys = [k for k, _ in stills]
         if len(stills) >= MIN_STILLS:
             status = "analyzing"
