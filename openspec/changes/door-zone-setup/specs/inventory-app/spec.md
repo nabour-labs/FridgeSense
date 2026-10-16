@@ -65,12 +65,12 @@ The "Reference images" sub-section SHALL list each reference as a thumbnail with
 ### Requirement: Open/close detection tab
 The "Open/close detection" tab SHALL list the door references as thumbnails, each with its box drawn on it, an "Open" or "Closed" badge, and its score as a percentage with one decimal (or "–" when it has none), oldest first, with "n of 12" shown. The owner SHALL be able to add a reference: tapping "Add" requests a camera snapshot, the owner drags on it to draw one box (a new drag replaces the box), picks "Open" or "Closed", and taps "Save" to send `POST /api/door-calibration/references`. The owner SHALL be able to delete a reference after confirming. A "Run setup" button SHALL send `POST /api/door-calibration/run`. It is enabled only when there is at least one open and one closed reference. The tab SHALL show the setup state:
 - "Not set up yet. Using default zones." when `setup` is null.
-- "Set up: open above n%" with the threshold, plus "closed up to a%, open from b%", when `setup` exists.
+- One line per setup zone when `setup` exists: "Zone n: <Color | Brightness | Change> above (or below) t%, margin m%".
 - "References changed. Run setup again." when `setup.stale` is true.
 
 #### Scenario: References shown
-- **WHEN** the tab loads two references, open with score 0.1 and closed with score 0.0, and a setup with threshold 0.05
-- **THEN** both thumbnails show their boxes, the badges read "Open" and "Closed", the scores read "10.0%" and "0.0%", "2 of 12" is shown, and the state reads "Set up: open above 5.0%" with "closed up to 0.0%, open from 10.0%"
+- **WHEN** the tab loads two references, open with score 0.1 and closed with score 0.0, and a setup with one zone using `color` above 0.05 with margin 0.1
+- **THEN** both thumbnails show their boxes, the badges read "Open" and "Closed", the scores read "10.0%" and "0.0%", "2 of 12" is shown, and the state reads "Zone 1: Color above 5.0%, margin 10.0%"
 
 #### Scenario: Not set up
 - **WHEN** the tab loads with no references and `setup = null`
@@ -105,7 +105,7 @@ The "Open/close detection" tab SHALL list the door references as thumbnails, eac
 - **THEN** `POST /api/door-calibration/run` is sent once, the button shows a busy state until the answer, and the new setup state and scores are shown
 
 #### Scenario: Setup fails
-- **WHEN** the API answers 422 `{"error": "open and closed references overlap", "references": [...]}`
+- **WHEN** the API answers 422 `{"error": "zone 1: open and closed references overlap", "references": [...]}`
 - **THEN** that error message is shown, and the scores from the response are shown on the references
 
 #### Scenario: Run setup needs both statuses

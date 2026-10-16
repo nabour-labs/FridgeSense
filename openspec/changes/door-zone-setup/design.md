@@ -13,12 +13,12 @@ Facts that shape the approach:
 
 **Goals:**
 - One scoring function shared by setup and the pipeline, so the scores the owner sees are what the check does.
-- Setup is deterministic and explainable: zones from the drawn boxes, and the threshold halfway between the worst closed and the weakest open reference.
+- Setup is deterministic and explainable: zones from the drawn boxes, and per zone the feature (color, brightness or change) whose open and closed reference values are furthest apart, with the threshold halfway between them.
 - Drawing is pure geometry in a tested module. React components only turn pointer events into fractions.
 - Fetch-stills runtime stays well inside the 90 s task timeout at 30 stills.
 
 **Non-Goals:**
-- Learning the chroma and brightness limits, per-zone thresholds, or any ML model.
+- Learning the colorful-pixel limits (chroma 60, peak 100), or any ML model.
 - Storing snapshots server-side between the snapshot and the add (the client sends the image back).
 
 ## Decisions
@@ -31,19 +31,27 @@ That keeps it under the 300 KB upload limit. Zones are fractions, so they carry 
 
 **3. Storage per device in the single table.**
 - `DOORREF#<device_id>#<created_at>#<rand>` holds `image` (DynamoDB Binary, so 300 KB fits under the 400 KB item limit, unlike base64), `box` (as Decimals), `status` and `created_at`.
-- `DOORSETUP#<device_id>` holds `zones`, `threshold`, `closed_max`, `open_min` and `ran_at`.
+- `DOORSETUP#<device_id>` holds `zones` (box, feature, direction, threshold, margin, and the 32×32 baseline as Binary) and `ran_at`.
 
 Adds and deletes update `refs_changed_at` on a small `DOORREFS#<device_id>` marker item, and `stale = refs_changed_at > ran_at`. The pipeline reads only `DOORSETUP#…`, one small `GetItem`. Reference ids in the API are the url-safe base64 of the sort key, like analysis references (`encode_id`/`decode_id`).
 
-**4. Setup algorithm (`door_calibration.run`).**
-- Group boxes by IoU ≥ 0.3 against each group's bounding box, in creation order, and use each group's bounding box as a zone. A user who draws the same door slightly differently on an open and a closed image gets one zone, and two doors get two zones.
-- Score each reference by the max colorful fraction over the zones, with the same function the pipeline uses.
-- Threshold = midpoint of `closed_max` and `open_min`, with a floor of 0.005 so a noise-free closed set can't produce a near-zero threshold.
+**4. Setup algorithm: three features per zone, the best separator wins.**
+The owner asked for the check to watch colour, intensity and light changes in their boxes. Each zone measures three values from 0 to 1:
+- `color`: the colorful-pixel fraction, unchanged from `door-check-color-zones`.
+- `brightness`: mean luminance.
+- `change`: mean absolute difference from a 32×32 RGB baseline averaged over the zone's closed references.
 
-Considered: using only the open references' boxes for zones. Rejected because a closed reference of a drawer would then be ignored, and the owner expects every drawn box to count. Considered: requiring a margin ratio. Rejected for now; the UI shows `closed_max` and `open_min` so the owner sees the margin.
+For each zone and feature, setup takes the gap between the open and closed reference values in either direction, keeps the feature with the widest gap (at least 0.01), and puts the threshold at the gap's midpoint.
+- **Why every feature:** colour is robust to ambient light but misses a greyscale (night/IR) or dark interior. Brightness catches an interior light without colour. Change catches anything that looks different from shut, but also a person standing in front, which the owner's closed references with a person in them will expose as a small margin. Letting the references pick per zone keeps each door on the signal that actually works for it, and the UI shows which one was chosen and its margin.
+- **Why 32×32 for change:** it makes the baseline independent of still resolution (960 px references vs full-size pipeline stills) and cheap to store: 3 KB per zone, as Binary in `DOORSETUP#`.
+- **Grouping:** boxes are grouped by IoU ≥ 0.3 against each group's bounding box, in creation order, and each reference belongs to its box's zone. Each zone needs its own open and closed references, so a closed drawer reference never decides a door.
+- **Ties** go color, change, brightness, the most specific signal first.
+- **Considered:** a learned classifier (logistic regression over the three features). Rejected: with a handful of references it overfits, and a single threshold per zone is explainable on screen.
+
+In code, `DoorCheck` gains per-zone rules `ZoneRule(box, feature, direction, threshold, baseline)`. With no setup, the rules are built from `DOOR_ZONES`/`DOOR_THRESHOLD` as `color`/`above`. `door_events.measure(image, box, feature, baseline)` is the one feature function shared by setup and the pipeline.
 
 **5. Pipeline lookup.**
-`fetch_stills` gets `setup_for(account_id, device_id) -> DoorCheck | None`, built in `handlers/pipeline.py` from `FridgeTable`. If it returns None or raises, the env/default `DoorCheck` is used (`zones_source = "default"`, `door_setup_unavailable` warning on error). Env config is still parsed up front, so invalid `DOOR_ZONES` fails before any Ring call.
+`fetch_stills` gets `setup_for(account_id, device_id) -> DoorCheck | None` (rules from `DOORSETUP#`), built in `handlers/pipeline.py` from `FridgeTable`. If it returns None or raises, the env/default `DoorCheck` is used (`zones_source = "default"`, `door_setup_unavailable` warning on error). Env config is still parsed up front, so invalid `DOOR_ZONES` fails before any Ring call.
 
 **6. Dense sampling with a thread pool.**
 `still_times(start, end, count)` already spaces stills evenly, so only `count` changes: `clamp(span // interval, 4, 30)`. Downloads run in a `ThreadPoolExecutor(max_workers=8)`, results sorted by still number. When more than 4 stills are requested, the per-still retry delays drop to 1 s and 2 s, keeping the worst case under 90 s.
@@ -60,11 +68,11 @@ Considered: using only the open references' boxes for zones. Rejected because a 
 ## Test strategy
 
 - **Unit, backend:**
-  - `test_door_calibration.py`: box, status and image validation, the 12-reference limit, add/delete/list on moto DynamoDB, the stale flag, grouping (the IoU example), threshold midpoint and floor, the three 422 failures leaving the setup unchanged, and per-device isolation.
+  - `test_door_calibration.py`: box, status and image validation, the 12-reference limit, add/delete/list on moto DynamoDB, the stale flag, grouping (the IoU example), feature choice (color, brightness, change, direction below, ties), the margin minimum, the 422 failures leaving the setup unchanged, and per-device isolation.
   - `test_camera.py`: the snapshot timestamp, the downscale to 960×540, the ≤300 KB re-encode, blur applied (Rekognition Stubber), 416 twice, Ring 500, refresh failure and Rekognition failure.
 - **Unit, backend (`test_still_sampling.py`, `test_door_check.py`):** the count clamp and timestamps, `STILL_INTERVAL_MS` parsing, `open_span`/`pick`, scored times.
 - **API (`test_api_door_calibration.py`):** every route through `handlers.api.handler` with the existing token helpers. respx for Ring, Stubber for Rekognition, moto DynamoDB, frozen clock. Covers 401, 403 for viewers with no Ring call, 404 and 409 (no camera found).
-- **Task level (`test_fetch_stills_task.py`):** the setup result beats env (zones and threshold), the setup threshold applied, the fallback, a raising lookup, per-device isolation, the open-span picks and stored keys, the event times, and the closed-door and too-few-stills cases. Ring is stubbed with respx, keyed by request timestamp.
+- **Task level (`test_fetch_stills_task.py`):** the setup result beats env, the setup threshold applied, the brightness, darker and change rules, the fallback, a raising lookup, per-device isolation, the open-span picks and stored keys, the event times, and the closed-door and too-few-stills cases. Ring is stubbed with respx, keyed by request timestamp.
 - **E2E (`test_pipeline_e2e.py`):** existing runs updated to dense sampling. Nova (stubbed Converse) gets the 4 open-span images.
 - **PWA (Vitest + Testing Library):**
   - `shapes.test.ts`: the geometry.

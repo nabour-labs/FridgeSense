@@ -36,13 +36,14 @@ Teaches the door check what open and closed look like for one camera. Covers cam
   "device_id": "<device id>",
   "references": [{"id": "<id>", "image": "<base64 JPEG>", "box": {"x": 0, "y": 0, "width": 0.5, "height": 1},
                   "status": "open" | "closed", "score": 0.1 | null, "created_at": "<ISO 8601 UTC>"}],
-  "setup": {"zones": [{"x", "y", "width", "height"}], "threshold": 0.05, "closed_max": 0.0, "open_min": 0.1,
+  "setup": {"zones": [{"x", "y", "width", "height", "feature": "color" | "brightness" | "change",
+                        "direction": "above" | "below", "threshold": 0.05, "margin": 0.1}],
             "ran_at": "<ISO 8601 UTC>", "stale": false} | null,
   "defaults": {"zones": [{"x", "y", "width", "height"}], "threshold": 0.02}
 }
 ```
 
-References SHALL be listed oldest first. Each reference's `score` SHALL be its door-check score (the highest colorful-pixel fraction over the setup's zones), rounded to 3 places, or null when there is no setup result. `setup.stale` SHALL be true when a reference was added or deleted after `ran_at`. `defaults` SHALL be what the door check uses without a setup result (`DOOR_ZONES`/`DOOR_THRESHOLD`, else the built-in defaults). Owner and viewer tokens SHALL both be accepted.
+References SHALL be listed oldest first. Each reference's `score` SHALL be the value of its zone's chosen feature on its image (see "Run setup"), rounded to 3 places, or null when there is no setup result or its box belongs to no setup zone. `setup.stale` SHALL be true when a reference was added or deleted after `ran_at`. `defaults` SHALL be what the door check uses without a setup result (`DOOR_ZONES`/`DOOR_THRESHOLD`, else the built-in defaults). Owner and viewer tokens SHALL both be accepted.
 
 #### Scenario: Nothing set up yet
 - **WHEN** no references were added and setup never ran, and `DOOR_ZONES` and `DOOR_THRESHOLD` are unset
@@ -50,7 +51,7 @@ References SHALL be listed oldest first. Each reference's `score` SHALL be its d
 
 #### Scenario: Setup marked stale
 - **WHEN** setup ran and then the owner added a reference
-- **THEN** `setup.stale` is true, and the new reference's `score` is computed with the existing setup's zones
+- **THEN** `setup.stale` is true, and the new reference's `score` is computed with the existing setup's zones and features
 
 #### Scenario: No token
 - **WHEN** `GET /api/door-calibration` is called without a token
@@ -76,33 +77,49 @@ References SHALL be listed oldest first. Each reference's `score` SHALL be its d
 - **THEN** it is no longer listed, and deleting an unknown id answers 404 `{"error": "not found"}`
 
 ### Requirement: Run setup
-`POST /api/door-calibration/run` SHALL compute the zones and threshold from the device's references, store them as the device's setup result, and answer 200 with the `GET /api/door-calibration` body:
+`POST /api/door-calibration/run` SHALL work out, for each zone, which signal tells open from closed and at what level, store the result as the device's setup result, and answer 200 with the `GET /api/door-calibration` body:
 
-1. **Zones:** the references' boxes, in the order they were added, are grouped. A box joins the first group whose bounding box it overlaps with intersection-over-union ≥ 0.3, otherwise it starts a new group. Each group's zone is the bounding box of its boxes, rounded to 3 places. More than 6 groups SHALL fail.
-2. **Scores:** each reference's score is the highest colorful-pixel fraction over the zones, by the door check's rule.
-3. **Threshold:** with `closed_max` the highest closed score and `open_min` the lowest open score, the threshold is `(closed_max + open_min) / 2` rounded to 3 places, and at least 0.005. It SHALL fail when `open_min ≤ closed_max`.
+1. **Zones:** the references' boxes, in the order they were added, are grouped. A box joins the first group whose bounding box it overlaps with intersection-over-union ≥ 0.3, otherwise it starts a new group. Each group's zone is the bounding box of its boxes, rounded to 3 places, and each reference belongs to its box's zone. More than 6 groups SHALL fail.
+2. **Features:** for a zone of an image, three values are measured, each from 0 to 1:
+   - `color`: the fraction of colorful pixels, by the door check's rule (`max − min > 60` and `max > 100`).
+   - `brightness`: the mean luminance divided by 255.
+   - `change`: the mean absolute difference, over every channel, between the zone scaled to 32×32 RGB and the zone's *baseline*, divided by 255. The baseline is the per-pixel mean of the zone's closed references, each scaled to 32×32.
+3. **Choice:** for each zone and feature, with `O` the values of the zone's open references and `C` of its closed ones:
+   - If `min(O) > max(C)`, the direction is `above` and `margin = min(O) − max(C)`.
+   - If `max(O) < min(C)`, the direction is `below` and `margin = min(C) − max(O)`.
+   - Otherwise the feature does not separate.
 
-On failure the stored setup result SHALL be unchanged, and the response SHALL be 422 with an `error` and the `references` with the scores from this attempt.
+   The threshold is the midpoint of the two values that set the margin. The zone uses the feature with the largest margin, with ties going in the order color, change, brightness. A margin below 0.01 counts as not separating. Thresholds and margins are rounded to 4 places.
+
+On failure the stored setup result SHALL be unchanged, and the response SHALL be 422 with an `error` and the `references` with their `score` set to the color value from this attempt.
 
 #### Scenario: Setup from one open and one closed reference
 - **WHEN** both references have box `{"x": 0, "y": 0, "width": 0.5, "height": 1}`, the open one is a 200×100 grey `(128,128,128)` still with a `(40,90,200)` block covering 10% of the left half, and the closed one is plain grey
-- **THEN** the response has `setup.zones = [{"x": 0, "y": 0, "width": 0.5, "height": 1}]`, `threshold = 0.05`, `closed_max = 0.0`, `open_min = 0.1`, `stale = false`, and scores 0.1 and 0.0
+- **THEN** the response has one zone `{"x": 0, "y": 0, "width": 0.5, "height": 1, "feature": "color", "direction": "above", "threshold": 0.05, "margin": 0.1}` (±0.005), `stale = false`, and scores 0.1 and 0.0
+
+#### Scenario: Brightness chosen when there is no color
+- **WHEN** one zone has two closed references, plain `(100,100,100)` and one whose left half is `(40,40,40)` and right half `(160,160,160)` (someone in front), and one open reference that is plain `(200,200,200)`
+- **THEN** that zone's feature is `brightness`, direction `above`, with a margin of about 0.39 and a threshold of about 0.59
+
+#### Scenario: Change chosen when brightness is the same
+- **WHEN** a zone's closed reference is plain `(128,128,128)` and its open reference has its left half `(40,40,40)` and right half `(216,216,216)`
+- **THEN** that zone's feature is `change`, direction `above`, with a margin of about 0.35
+
+#### Scenario: Darker when open
+- **WHEN** a zone's closed references are plain `(220,220,220)` and one whose left half is `(180,180,180)` and right half `(240,240,240)`, and its open reference is plain `(90,90,90)`, with no color in any
+- **THEN** that zone's feature is `brightness` with direction `below`, a margin of about 0.47 and a threshold of about 0.59
 
 #### Scenario: Overlapping boxes become one zone
 - **WHEN** the references' boxes are `{0.1, 0.1, 0.3, 0.4}`, `{0.12, 0.1, 0.3, 0.4}` and `{0.5, 0.6, 0.1, 0.1}` (x, y, width, height)
-- **THEN** `setup.zones` is `[{"x": 0.1, "y": 0.1, "width": 0.32, "height": 0.4}, {"x": 0.5, "y": 0.6, "width": 0.1, "height": 0.1}]`
-
-#### Scenario: Threshold floor
-- **WHEN** the closed references score 0.0 and the only open reference scores 0.006
-- **THEN** `threshold = 0.005`
+- **THEN** the zones are `{"x": 0.1, "y": 0.1, "width": 0.32, "height": 0.4}` and `{"x": 0.5, "y": 0.6, "width": 0.1, "height": 0.1}`, in that order
 
 #### Scenario: Missing a status
-- **WHEN** every reference is `closed`, or every reference is `open`, or there are none
-- **THEN** the response is 422 `{"error": "add at least one open and one closed reference", "references": [...]}` and the stored setup is unchanged
+- **WHEN** there are no references, or a zone's references are all `closed` or all `open`
+- **THEN** the response is 422 with `{"error": "zone 1 needs an open and a closed reference", "references": [...]}` (naming the first such zone; with no references, zone 1), and the stored setup is unchanged
 
 #### Scenario: Open and closed overlap
-- **WHEN** a closed reference scores 0.08 and an open reference scores 0.05
-- **THEN** the response is 422 `{"error": "open and closed references overlap", "references": [...]}` with those scores, and the stored setup is unchanged
+- **WHEN** a zone's open reference is grey with a `(40,90,200)` block covering 0.5% of the zone and its closed reference is plain grey, so no feature has a margin of at least 0.01
+- **THEN** the response is 422 `{"error": "zone 1: open and closed references overlap", "references": [...]}` and the stored setup is unchanged
 
 #### Scenario: Too many zones
 - **WHEN** the references' boxes form 7 separate groups

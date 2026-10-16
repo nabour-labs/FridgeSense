@@ -10,7 +10,7 @@ import pytest
 import respx
 from PIL import Image
 
-from fridgesense.door_events import DoorCheck, fetch_stills, iso_utc
+from fridgesense.door_events import DoorCheck, fetch_stills, iso_utc, still_count, still_times
 from fridgesense.faces import blur_regions
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import API_BASE, RingClient
@@ -59,22 +59,41 @@ def ring_http():
         yield ring, http
 
 
-def ring_serves(images: list[bytes] | None, status: int = 200):
-    """Mock Ring so the n-th still request returns images[n]; None means 403 for all."""
+def window_times(state=STATE) -> list[int]:
+    w = state["window"]
+    return still_times(w["start_ms"], w["end_ms"], still_count(w["end_ms"] - w["start_ms"]))
+
+
+def ring_serves(images: list[bytes] | None, status: int = 200, state=STATE):
+    """Mock Ring so still n (by its timestamp) gets images[(n - 1) % len]; None: 403 for all."""
     if images is None:
         respx.post(DOWNLOAD).respond(403)
         return
-    counter = iter(range(100))
+    times = window_times(state)
     respx.post(DOWNLOAD).mock(
         side_effect=lambda request: httpx.Response(
-            303, headers={"Location": f"https://dl.example.com/{next(counter)}"}
+            303,
+            headers={
+                "Location": f"https://dl.example.com/{json.loads(request.content)['timestamp']}"
+            },
         )
     )
     respx.get(url__regex=r"https://dl\.example\.com/(\d+)").mock(
         side_effect=lambda request: httpx.Response(
-            status, content=images[int(request.url.path.strip("/")) % len(images)]
+            status,
+            content=images[times.index(int(request.url.path.strip("/"))) % len(images)],
         )
     )
+
+
+def stills_open_at(numbers: set[int], count: int = 25) -> list[bytes]:
+    """`count` distinguishable stills (fill level n); the given numbers show the lit fridge."""
+    return [
+        color_jpeg((100 + n, 100 + n, 100 + n), [((0.2, 0.2, 0.4, 0.5), (40, 90, 200))])
+        if n in numbers
+        else color_jpeg((100 + n, 100 + n, 100 + n))
+        for n in range(1, count + 1)
+    ]
 
 
 def run(ring_http, state=STATE, blurrer=None, check=CHECK, crop=None):
@@ -107,10 +126,10 @@ def test_iso_utc():
     assert iso_utc(1786715596787) == "2026-08-14T13:53:16.787Z"
 
 
-# Door event saved
+# Door event saved (25 stills, stills 6-15 open)
 @respx.mock
 def test_door_event_saved(aws, ring_http):
-    ring_serves([closed(30), OPEN, OPEN, closed(60)])
+    ring_serves(stills_open_at(set(range(6, 16))))
     out = run(ring_http)
     assert out["outcome"] == "door_open"
     assert out["door_sk"] == DOOR_SK
@@ -119,11 +138,52 @@ def test_door_event_saved(aws, ring_http):
     assert event["sk"] == DOOR_SK
     assert event["device_id"] == "ava1.ring.device.D1"
     assert event["ring_event_id"] == "evt_1786715596000"
-    assert event["opened_at"] == "2026-08-14T13:53:16.000Z"
-    assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
-    assert event["duration_s"] == 25
+    assert event["opened_at"] == "2026-08-14T13:53:21.769Z"
+    assert event["closed_at"] == "2026-08-14T13:53:31.384Z"
+    assert event["duration_s"] == 10
     assert event["status"] == "analyzing"
     assert event["still_keys"] == out["still_keys"]
+
+
+# Four stills saved (from the open span: stills 6, 9, 13, 16)
+@respx.mock
+def test_four_stills_saved_from_the_open_span(aws, ring_http):
+    images = stills_open_at(set(range(6, 16)))
+    ring_serves(images)
+    seen = []
+    out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: seen.append(data) or data))
+    assert out["outcome"] == "door_open"
+    assert seen == [images[n - 1] for n in (6, 9, 13, 16)]
+    assert stored_keys() == [f"{PREFIX}still-{n}.jpg" for n in range(1, 5)]
+    bodies = [
+        boto3.client("s3").get_object(Bucket=BUCKET, Key=k)["Body"].read()
+        for k in out["still_keys"]
+    ]
+    assert bodies == seen
+
+
+# Short open span (only still 10 open: stills 10 and 11 go on)
+@respx.mock
+def test_short_open_span(aws, ring_http):
+    images = stills_open_at({10})
+    ring_serves(images)
+    seen = []
+    out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: seen.append(data) or data))
+    assert out["outcome"] == "door_open"
+    assert seen == [images[9], images[10]]
+    assert stored_keys() == [f"{PREFIX}still-1.jpg", f"{PREFIX}still-2.jpg"]
+
+
+# Door still open at the end of the window
+@respx.mock
+def test_door_still_open_at_the_end_of_the_window(aws, ring_http):
+    ring_serves(stills_open_at({23, 24, 25}))
+    run(ring_http)
+    [event] = door_events()
+    times = window_times()
+    assert event["opened_at"] == iso_utc(times[22])
+    assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
+    assert event["duration_s"] == round((1786715621000 - times[22]) / 1000)
 
 
 # Same Ring event in two runs
@@ -194,6 +254,10 @@ def test_one_still_is_too_few(aws, ring_http):
     [event] = door_events()
     assert event["status"] == "no_media"
     assert event["still_keys"] == []
+    # Too few stills keep the window times
+    assert event["opened_at"] == "2026-08-14T13:53:16.000Z"
+    assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
+    assert event["duration_s"] == 25
 
 
 # Detection fails for one still
@@ -243,12 +307,13 @@ def test_fridge_light_visible(aws, ring_http):
     assert len(stored_keys()) == 4
 
 
-# Closed door costs no face detection
+# Closed door costs no face detection (25 stills downloaded)
 @respx.mock
 def test_closed_door_costs_no_face_detection(aws, ring_http):
     ring_serves([closed(30), closed(60), closed(230), closed(30)])
     blurrer = FakeBlurrer()
     out = run(ring_http, blurrer=blurrer)
+    assert len(respx.calls) == 2 * 25
     assert out["outcome"] == "not_door"
     assert blurrer.contexts == []
     assert stored_keys() == []

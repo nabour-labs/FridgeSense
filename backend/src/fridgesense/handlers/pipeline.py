@@ -66,6 +66,7 @@ def handler(event, context):
             state,
             sleep,
             crop=door_events.parse_crop(os.environ.get("STILL_CROP")),
+            interval_ms=door_events.parse_interval(os.environ.get("STILL_INTERVAL_MS")),
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())
