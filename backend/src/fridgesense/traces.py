@@ -8,12 +8,14 @@ import io
 import json
 import logging
 import os
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from PIL import Image
 
 from fridgesense import door_calibration
+from fridgesense.analysis import RESPONSE_FIELDS, CallRecord
 from fridgesense.door_events import (
     BASELINE_SIZE,
     DoorCheck,
@@ -91,12 +93,39 @@ class NullTraceWriter:
     def door(self, state: dict, trace: DoorTrace) -> None:
         pass
 
+    def nova(self, state, run_ms, record, references, still_keys) -> None:
+        pass
+
+
+def _request_content(
+    request: dict, n_references: int, ref_keys: list[str], still_keys: list[str]
+) -> list[dict]:
+    """The request's content blocks, images replaced by what they were and where they are."""
+    content, images = [], 0
+    for block in request["messages"][0]["content"]:
+        if "text" in block:
+            content.append({"type": "text", "text": block["text"]})
+        elif "cachePoint" in block:
+            content.append({"type": "cache_point"})
+        elif "image" in block:
+            images += 1
+            if images <= n_references:
+                content.append(
+                    {"type": "image", "role": "reference", "n": images, "key": ref_keys[images - 1]}
+                )
+            else:
+                n = images - n_references
+                key = still_keys[n - 1] if n <= len(still_keys) else None
+                content.append({"type": "image", "role": "still", "n": n, "key": key})
+    return content
+
 
 class TraceWriter:
     def __init__(self, s3, table: FridgeTable, bucket: str):
         self.s3 = s3
         self.table = table
         self.bucket = bucket
+        self._ref_keys: dict[int, list[str]] = {}  # by run_ms: references written once per run
 
     def _put(self, key: str, body: bytes, content_type: str) -> None:
         self.s3.put_object(Bucket=self.bucket, Key=key, Body=body, ContentType=content_type)
@@ -233,3 +262,73 @@ class TraceWriter:
                 "ttl": window["start_ms"] // 1000 + TRACE_DAYS * 86400,
             }
         )
+
+    def nova(
+        self,
+        state: dict,
+        run_ms: int,
+        record: CallRecord,
+        references: Sequence[tuple[str, bytes]],
+        still_keys: list[str],
+    ) -> None:
+        """nova-<run_ms>-<attempt>.json (plus the run's reference images), then the summary."""
+        try:
+            start_ms = state["window"]["start_ms"]
+            prefix = debug_prefix(state["account_id"], state["device_id"], start_ms)
+        except Exception as e:  # not a traced motion: nothing to attach the call to
+            self._failed(state, "nova", e)
+            return
+        key = f"{prefix}nova-{run_ms}-{record.attempt}.json"
+        numbers = {
+            "input_tokens": record.tokens.input,
+            "output_tokens": record.tokens.output,
+            "cache_read_tokens": record.tokens.cache_read,
+            "cache_write_tokens": record.tokens.cache_write,
+            "usd": record.usd,
+            "latency_ms": record.latency_ms,
+            "wall_ms": record.wall_ms,
+            "error_code": record.error_code,
+        }
+        try:
+            ref_keys = self._references(prefix, run_ms, references)
+            request = record.request
+            doc = {
+                "attempt": record.attempt,
+                "run_ms": run_ms,
+                "model_id": request["modelId"],
+                "outcome": record.outcome,
+                "request": {
+                    "content": _request_content(request, len(references), ref_keys, still_keys),
+                    "inferenceConfig": request.get("inferenceConfig"),
+                    "toolConfig": request.get("toolConfig"),
+                },
+                "response": None
+                if record.response is None
+                else {k: record.response[k] for k in RESPONSE_FIELDS if k in record.response},
+                **numbers,
+            }
+            self._put(key, json.dumps(doc, default=str).encode(), "application/json")
+        except Exception as e:  # a trace must never break the pipeline
+            self._failed(state, "nova", e)
+        try:
+            entry = {"attempt": record.attempt, "run_ms": run_ms, "outcome": record.outcome}
+            self.table.append(
+                account_pk(state["account_id"]),
+                trace_sk(state["device_id"], start_ms),
+                "nova_calls",
+                [{**entry, **numbers, "key": key}],
+            )
+        except Exception as e:
+            self._failed(state, "summary", e)
+
+    def _references(
+        self, prefix: str, run_ms: int, references: Sequence[tuple[str, bytes]]
+    ) -> list[str]:
+        if run_ms not in self._ref_keys:
+            keys = []
+            for n, (_, data) in enumerate(references, start=1):
+                ref_key = f"{prefix}nova-{run_ms}-ref-{n}.jpg"
+                self._put(ref_key, data, "image/jpeg")
+                keys.append(ref_key)
+            self._ref_keys[run_ms] = keys
+        return self._ref_keys[run_ms]

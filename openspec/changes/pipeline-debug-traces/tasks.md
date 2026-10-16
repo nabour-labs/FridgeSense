@@ -57,20 +57,20 @@
 
 ## 5. Trace writer: Nova traces
 
-- [ ] 5.1 Write failing tests in `test_traces.py` for `TraceWriter.nova`:
+- [x] 5.1 Write failing tests in `test_traces.py` for `TraceWriter.nova`:
   - "Request with references": content order with text, image and cache_point entries.
   - "Image keys are retrievable": still keys equal the stored keys, and `nova-<run_ms>-ref-<n>.jpg` equals the reference bytes sent, written once per run.
   - "Owner's instructions shown".
   - "Response kept": `output` and `stopReason`, no `ResponseMetadata`.
   - "Nova calls added later": the summary's `nova_calls` gets one entry and the other fields are unchanged.
   - "Summary write fails during analysis" gives `debug_trace_failed` with `part = "summary"`.
-- [ ] 5.2 Implement `TraceWriter.nova`: request serialization, reference copies, `nova-<run_ms>-<attempt>.json`, and the `list_append` on the summary. Verify that the 5.1 tests pass.
-- [ ] 5.3 Write failing tests in `backend/tests/test_analyze_task.py`:
+- [x] 5.2 Implement `TraceWriter.nova`: request serialization, reference copies, `nova-<run_ms>-<attempt>.json`, and the `list_append` on the summary. Verify that the 5.1 tests pass.
+- [x] 5.3 Write failing tests in `backend/tests/test_analyze_task.py`:
   - "Retried analyze step": two task runs give different `run_ms` values and no overwrite.
   - "Analysis receives blurred bytes": still 1's bytes in the request equal the stored blurred object, not `raw-1.jpg`.
   - A summary failure leaves the analysis result, `nova_usd` and the `USAGE#` totals unchanged.
   - "Off" writes no `nova-*` objects.
-- [ ] 5.4 Wire `on_call` in `inventory.analyze_task` through an optional `writer` argument, with `run_ms = clock()`, and pass the writer from `handlers/pipeline.py`. Verify the 5.3 tests and `test_pipeline_e2e.py` pass, then add one end-to-end assertion that a full run leaves `door.json`, `nova-*-1.json` and a summary with one `nova_calls` entry.
+- [x] 5.4 Wire `on_call` in `inventory.analyze_task` through an optional `writer` argument, with `run_ms = clock()`, and pass the writer from `handlers/pipeline.py`. Verify the 5.3 tests and `test_pipeline_e2e.py` pass, then add one end-to-end assertion that a full run leaves `door.json`, `nova-*-1.json` and a summary with one `nova_calls` entry.
 
 ## 6. API routes
 

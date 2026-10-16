@@ -132,6 +132,16 @@ class FridgeTable:
             ),
         )
 
+    def append(self, pk: str, sk: str, field: str, values: list) -> None:
+        """Atomically append to a list attribute (created empty)."""
+        self.client.update_item(
+            TableName=self.name,
+            Key=serialize({"pk": pk, "sk": sk}),
+            UpdateExpression="SET #f = list_append(if_not_exists(#f, :empty), :v)",
+            ExpressionAttributeNames={"#f": field},
+            ExpressionAttributeValues=serialize({":empty": [], ":v": values}),
+        )
+
     def add(self, pk: str, sk: str, field: str, amount: float) -> None:
         """Atomically add `amount` to a number attribute (created at 0)."""
         self.client.update_item(

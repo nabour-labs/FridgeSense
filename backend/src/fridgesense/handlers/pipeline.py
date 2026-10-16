@@ -78,7 +78,14 @@ def handler(event, context):
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())
-        return inventory.analyze_task(analyzer, boto3.client("s3"), FridgeTable(), _bucket(), state)
+        return inventory.analyze_task(
+            analyzer,
+            boto3.client("s3"),
+            FridgeTable(),
+            _bucket(),
+            state,
+            writer=_trace_writer(),
+        )
     if task == "save":
         return inventory.save_task(FridgeTable(), state)
     if task == "mark_failed":

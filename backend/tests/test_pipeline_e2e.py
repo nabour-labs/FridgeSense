@@ -105,6 +105,30 @@ def test_door_opening_updates_inventory(env, faces):
     assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
     env.assert_no_pending_responses()
 
+    # pipeline-debug-traces: the run leaves its door trace and one Nova call trace
+    debug = f"accounts/{ACCOUNT}/devices/{DEVICE}/events/{state['window']['start_ms']}/debug/"
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET, Prefix=debug)
+    names = {o["Key"].removeprefix(debug) for o in listing["Contents"]}
+    assert "door.json" in names
+    assert len([n for n in names if n.startswith("nova-") and n.endswith("-1.json")]) == 1
+    [trace] = table.query(ACCOUNT, "TRACE#")
+    assert trace["outcome"] == "door_open"
+    [call] = trace["nova_calls"]
+    assert (call["outcome"], call["input_tokens"], call["latency_ms"]) == ("ok", 1180, 2140)
+
+
+@respx.mock
+def test_tracing_off_leaves_no_debug_files(env, faces, monkeypatch):
+    monkeypatch.setenv("DEBUG_TRACES", "false")
+    env.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    no_faces(faces)
+    ring_serves(OPEN)
+    state = step("analyze", step("fetch_stills", step("find_window", RUN_INPUT)))
+    assert "analysis" in state
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET)
+    assert not any("/debug/" in o["Key"] for o in listing["Contents"])
+    assert FridgeTable().query(ACCOUNT, "TRACE#") == []
+
 
 @respx.mock
 def test_closed_door_stops_before_nova(env, faces):
