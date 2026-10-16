@@ -22,6 +22,9 @@ dev = [
     "respx>=0.22",
     "ruff>=0.8",
 ]
+clips = [
+    "av>=14",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -30,6 +33,9 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "clips: door check on local fridge recordings (needs tmp/ clips and `uv sync --group clips`)",
+]
 
 [tool.ruff]
 line-length = 100
