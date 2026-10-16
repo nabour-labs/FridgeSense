@@ -231,3 +231,18 @@ def test_invalid_zone_config_fails_before_ring(env, monkeypatch):
     with pytest.raises(ValueError, match="DOOR_ZONES"):
         step("fetch_stills", state)
     assert not download.called
+
+
+# Invalid interval config
+@respx.mock
+@pytest.mark.parametrize("value", ["0", "-500", "fast"])
+def test_invalid_interval_config_fails_before_ring(env, monkeypatch, value):
+    monkeypatch.setenv("STILL_INTERVAL_MS", value)
+    download = respx.post(DOWNLOAD).respond(303, headers={"Location": "https://dl.example.com/x"})
+    state = {
+        **RUN_INPUT,
+        "window": {"status": "ready", "start_ms": 1, "end_ms": 2, "ring_event_id": None},
+    }
+    with pytest.raises(ValueError, match="STILL_INTERVAL_MS"):
+        step("fetch_stills", state)
+    assert not download.called

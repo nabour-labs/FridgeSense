@@ -10,12 +10,12 @@ Test commands: backend `cd backend && uv run pytest -q && uv run ruff check .`; 
 
 ## 2. Dense sampling and open span (backend)
 
-- [ ] 2.1 Write failing tests for "One still per second", "Long window capped at 30 stills", "Short window keeps 4 stills" and "Invalid interval config". Run them and confirm they fail because no interval exists.
-- [ ] 2.2 Implement `still_count` and `parse_interval`, use them in `download_stills`, and read `STILL_INTERVAL_MS` in `handlers/pipeline.py` before any Ring call. Verify that the 2.1 tests pass.
-- [ ] 2.3 Write failing tests for `open_span` and `pick`: the picks in "Four stills saved" (stills 6, 9, 13, 16), "Short open span" (10, 11) and "Door still open at the end of the window", and None when no still is open.
-- [ ] 2.4 Implement `open_span` and `pick` as pure functions, and add per-still scores to `DoorCheck`. Verify that the 2.3 tests and all existing `test_door_check.py` tests pass, including "Threshold is inclusive" under the per-still meaning.
-- [ ] 2.5 Write failing task-level tests for "Four stills saved", "Short open span", "Door event saved", "Door still open at the end of the window", "Too few stills keep the window times", "Closed door costs no face detection" (25 stills) and "Too few stills survive face detection" (4 picked).
-- [ ] 2.6 Make `fetch_stills` store the picked stills as `still-1…4`, take `opened_at`/`closed_at`/`duration_s` from the span, and download in a `ThreadPoolExecutor(max_workers=8)` with 1 s and 2 s retry delays when more than 4 stills are requested. Verify that the 2.5 tests pass along with "Still not ready yet", "Download link gets no token", "Too few stills", "Same Ring event in two runs" and `test_pipeline_e2e.py`.
+- [x] 2.1 Write failing tests for "One still per second", "Long window capped at 30 stills", "Short window keeps 4 stills" and "Invalid interval config". Run them and confirm they fail because no interval exists.
+- [x] 2.2 Implement `still_count` and `parse_interval`, use them in `download_stills`, and read `STILL_INTERVAL_MS` in `handlers/pipeline.py` before any Ring call. Verify that the 2.1 tests pass.
+- [x] 2.3 Write failing tests for `open_span` and `pick`: the picks in "Four stills saved" (stills 6, 9, 13, 16), "Short open span" (10, 11) and "Door still open at the end of the window", and None when no still is open.
+- [x] 2.4 Implement `open_span` and `pick` as pure functions. Give `DoorCheck` per-zone `ZoneRule`s (feature, direction, threshold, baseline; defaults to `color`/`above` from config) with a shared `measure` for color, brightness and change, and per-still results. Write failing unit tests for `measure` (each feature on synthetic stills) and for the rule directions first. Verify that the 2.3 tests and all existing `test_door_check.py` tests pass, including "Threshold is inclusive" under the per-still meaning.
+- [x] 2.5 Write failing task-level tests for "Four stills saved", "Short open span", "Door event saved", "Door still open at the end of the window", "Too few stills keep the window times", "Closed door costs no face detection" (25 stills) and "Too few stills survive face detection" (4 picked).
+- [x] 2.6 Make `fetch_stills` store the picked stills as `still-1…4`, take `opened_at`/`closed_at`/`duration_s` from the span, and download in a `ThreadPoolExecutor(max_workers=8)` with 1 s and 2 s retry delays when more than 4 stills are requested. Verify that the 2.5 tests pass along with "Still not ready yet", "Download link gets no token", "Too few stills", "Same Ring event in two runs" and `test_pipeline_e2e.py`.
 
 ## 3. Camera snapshot (backend)
 
@@ -26,10 +26,10 @@ Test commands: backend `cd backend && uv run pytest -q && uv run ruff check .`; 
 
 - [ ] 4.1 Write failing tests in `test_door_calibration.py` for reference validation ("Invalid reference rejected"), "Reference limit", add/list/delete on moto DynamoDB ("Reference added", "Reference deleted"), and the stale flag ("Setup marked stale").
 - [ ] 4.2 Implement references in `backend/src/fridgesense/door_calibration.py` (`DOORREF#`, the `DOORREFS#` marker, Binary image). Verify that the 4.1 tests pass.
-- [ ] 4.3 Write failing tests for the setup run: "Setup from one open and one closed reference", "Overlapping boxes become one zone", "Threshold floor", "Missing a status", "Open and closed overlap" and "Too many zones" (stored setup unchanged on each failure).
-- [ ] 4.4 Implement `run` (grouping by IoU, scoring with `colorful_fraction`, midpoint threshold with a floor) and `DOORSETUP#` storage. Verify that the 4.3 tests pass.
-- [ ] 4.5 Write failing task-level tests for "Setup result used for the device", "Setup threshold applied", "Fallback when setup never ran", "Setup lookup fails", "Setup kept per device", "Box and threshold from config", "Door stayed closed" (with `zones_source`) and "Invalid zone config".
-- [ ] 4.6 Add the `setup_for` lookup to `fetch_stills` and `handlers/pipeline.py`, and log `zones_source` (and the threshold used) in `motion_not_door` and `door_event_recorded`. Verify that the 4.5 tests pass.
+- [ ] 4.3 Write failing tests for the setup run: "Setup from one open and one closed reference", "Brightness chosen when there is no color", "Change chosen when brightness is the same", "Darker when open", "Overlapping boxes become one zone", "Missing a status", "Open and closed overlap" and "Too many zones" (stored setup unchanged on each failure).
+- [ ] 4.4 Implement `run` (grouping by IoU, per-zone baselines, the three features through `measure`, best margin ≥ 0.01, midpoint threshold, tie order) and `DOORSETUP#` storage with Binary baselines. Verify that the 4.3 tests pass.
+- [ ] 4.5 Write failing task-level tests for "Setup result used for the device", "Setup threshold applied", "Brightness rule applied", "Darker rule applied", "Change rule applied", "Fallback when setup never ran", "Setup lookup fails", "Setup kept per device", "Box and threshold from config", "Door stayed closed" (with `zones_source`) and "Invalid zone config".
+- [ ] 4.6 Add the `setup_for` lookup to `fetch_stills` and `handlers/pipeline.py`, and log `zones_source`, `feature` and the threshold used in `motion_not_door` and `door_event_recorded`. Verify that the 4.5 tests pass.
 
 ## 5. API routes (backend)
 
