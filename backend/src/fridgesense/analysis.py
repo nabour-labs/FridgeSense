@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -148,6 +149,27 @@ class AnalysisResult:
         return round(sum(u.usd for u in self.usage), 6)
 
 
+Outcome = Literal["ok", "invalid", "error"]
+
+
+@dataclass(frozen=True)
+class CallRecord:
+    """One Converse attempt, for the debug trace: what was sent, what came back, and when."""
+
+    attempt: int
+    request: dict
+    response: dict | None  # output, stopReason, usage, metrics; None if the call failed
+    outcome: Outcome
+    tokens: Tokens = field(default_factory=Tokens)
+    usd: float = 0.0
+    latency_ms: int | None = None  # Bedrock's own measure
+    wall_ms: int = 0  # measured around the call
+    error_code: str | None = None
+
+
+RESPONSE_FIELDS = ("output", "stopReason", "usage", "metrics")
+
+
 def build_request(
     model_id: str,
     stills: list[bytes],
@@ -216,8 +238,10 @@ class NovaAnalyzer:
         prices: Prices | None = None,
         attempts: int = 2,
         cache_analysis: bool = False,
+        timer: Callable[[], float] = time.perf_counter,
     ):
         self.client = client
+        self.timer = timer
         self.model_id = model_id
         self.prices = prices or Prices()
         self.attempts = attempts
@@ -248,26 +272,39 @@ class NovaAnalyzer:
         references: Sequence[tuple[str, bytes]] = (),
         instructions: str = "",
         on_usage: Callable[[Tokens, float], None] | None = None,
+        on_call: Callable[[CallRecord], None] | None = None,
     ) -> AnalysisResult:
         """Ask Nova; one more request if the answer is invalid. Raises BedrockRetryable
-        or BedrockRejected for API errors. `on_usage` gets each response's tokens and cost."""
+        or BedrockRejected for API errors. `on_usage` gets each response's tokens and cost;
+        `on_call` gets a record of every attempt, failed ones included."""
         result = AnalysisResult(changes=None)
         request = build_request(
             self.model_id, stills, inventory, references, instructions, cache=self.cache_analysis
         )
-        for _ in range(self.attempts):
+
+        def record(attempt: int, wall_ms: int, **fields) -> None:
+            if on_call is not None:
+                on_call(CallRecord(attempt=attempt, request=request, wall_ms=wall_ms, **fields))
+
+        for attempt in range(1, self.attempts + 1):
+            started = self.timer()
             try:
                 resp = self.client.converse(**request)
             except ClientError as e:
+                wall_ms = round((self.timer() - started) * 1000)
                 code = e.response["Error"]["Code"]
+                record(attempt, wall_ms, response=None, outcome="error", error_code=code)
                 log_event("nova_error", logging.WARNING, error_code=code, **(context or {}))
                 if code in RETRYABLE:
                     raise BedrockRetryable(code) from None
                 raise BedrockRejected(code) from None
             except (ReadTimeoutError, ConnectTimeoutError) as e:
+                wall_ms = round((self.timer() - started) * 1000)
                 code = "ReadTimeout" if isinstance(e, ReadTimeoutError) else "ConnectTimeout"
+                record(attempt, wall_ms, response=None, outcome="error", error_code=code)
                 log_event("nova_error", logging.WARNING, error_code=code, **(context or {}))
                 raise BedrockRetryable(code) from None
+            wall_ms = round((self.timer() - started) * 1000)
             tokens = Tokens.from_converse(resp.get("usage"))
             spent = Usage(tokens=tokens, usd=price(tokens, self.prices))
             result.usage.append(spent)
@@ -284,6 +321,16 @@ class NovaAnalyzer:
             if on_usage is not None:
                 on_usage(tokens, spent.usd)
             changes = parse_response(resp)
+            latency = (resp.get("metrics") or {}).get("latencyMs")
+            record(
+                attempt,
+                wall_ms,
+                response={k: resp[k] for k in RESPONSE_FIELDS if k in resp},
+                outcome="ok" if changes is not None else "invalid",
+                tokens=tokens,
+                usd=spent.usd,
+                latency_ms=None if latency is None else int(latency),
+            )
             if changes is not None:
                 result.changes = changes
                 return result

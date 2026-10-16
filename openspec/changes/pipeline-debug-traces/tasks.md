@@ -47,13 +47,13 @@
 
 ## 4. Nova call records
 
-- [ ] 4.1 Add fixtures `backend/tests/fixtures/nova/converse_tool_use_metrics.json` and `converse_end_turn_metrics.json`. They are copies of the existing fixtures plus `"metrics": {"latencyMs": 2140}`. Verify that `test_fixtures.py` loads them.
-- [ ] 4.2 Write failing tests in `backend/tests/test_analysis_response.py` for `NovaAnalyzer.analyze(on_call=...)`:
+- [x] 4.1 Nova fixtures with `metrics.latencyMs`: the existing `tests/fixtures/nova/converse_tool_use.json` (2140 ms) and `converse_end_turn.json` (1900 ms) already carry it, so no copies are needed. The "metrics absent" case deletes the field in the test.
+- [x] 4.2 Write failing tests in `backend/tests/test_analysis_response.py` for `NovaAnalyzer.analyze(on_call=...)`:
   - "Valid answer": tokens, `usd = 0.000818`, `latency_ms = 2140`, and `wall_ms` from an injected clock.
   - "Invalid answer then valid": two records with `outcome` `invalid`, then `ok`.
   - "Call that raises an error": `ThrottlingException` gives an error record, then `BedrockRetryable`. `ReadTimeoutError` behaves the same.
   - `metrics` absent gives `latency_ms = None`.
-- [ ] 4.3 Implement `CallRecord` and the `on_call` callback, with timing via an injectable `perf_counter`. Verify the 4.2 tests and all existing analysis, usage and `llm_usage` tests pass unchanged, including "No content in the log".
+- [x] 4.3 Implement `CallRecord` and the `on_call` callback, with timing via an injectable `perf_counter`. Verify the 4.2 tests and all existing analysis, usage and `llm_usage` tests pass unchanged, including "No content in the log".
 
 ## 5. Trace writer: Nova traces
 
