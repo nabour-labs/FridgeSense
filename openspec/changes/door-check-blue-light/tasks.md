@@ -16,8 +16,8 @@
 
 ## 4. Setup chooses blue
 
-- [ ] 4.1 Write failing tests in `backend/tests/test_door_calibration.py` and `test_api_door_calibration.py` for Blue preferred over color on a tie, Color chosen when the open reference is not blue, and the updated Setup from one open and one closed reference (`feature = "blue"`). Check that Brightness chosen when there is no color still holds, and that `defaults` reports `blue` at 0.01. Confirm red.
-- [ ] 4.2 Add `blue` first in `FEATURES` (the setup tie order). Verify that the 4.1 tests and the existing setup tests pass.
+- [x] 4.1 Write failing tests in `backend/tests/test_door_calibration.py` and `test_api_door_calibration.py` for Blue preferred over color on a tie, Color chosen when the open reference is not blue, and the updated Setup from one open and one closed reference (`feature = "blue"`). Check that Brightness chosen when there is no color still holds, and that `defaults` reports `blue` at 0.01. Confirm red.
+- [x] 4.2 Add `blue` first in `FEATURES` (the setup tie order). Verify that the 4.1 tests and the existing setup tests pass.
 
 ## 5. Debug traces
 

@@ -187,7 +187,7 @@ def colorful_fraction(jpeg_bytes: bytes, box: Box) -> float:
     return _colorful(_crop_box(_open_rgb(jpeg_bytes), box))
 
 
-FEATURES = ("color", "change", "brightness")  # also the tie order when setup picks one
+FEATURES = ("blue", "color", "change", "brightness")  # also the tie order when setup picks one
 BASELINE_SIZE = (32, 32)
 
 

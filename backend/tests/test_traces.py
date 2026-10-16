@@ -206,7 +206,7 @@ def test_setup_rule(aws):
     assert rule["ran_at"] == "2026-10-15T19:21:00.000Z"
     [zone] = rule["zones"]
     assert zone["box"] == {"x": 0.0, "y": 0.0, "width": 0.5, "height": 1.0}
-    assert (zone["feature"], zone["direction"]) == ("color", "above")
+    assert (zone["feature"], zone["direction"]) == ("blue", "above")
     assert zone["threshold"] == pytest.approx(0.05, abs=0.005)
     assert zone["margin"] == pytest.approx(0.1, abs=0.005)
     assert zone["baseline_key"] == PREFIX + "baseline-1.png"
