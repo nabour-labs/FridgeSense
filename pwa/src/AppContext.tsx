@@ -21,6 +21,7 @@ export type Api = Pick<
   | "saveInstructions"
   | "addReference"
   | "deleteReference"
+  | "camera"
   | "cameraSnapshot"
   | "startLive"
   | "stopLive"

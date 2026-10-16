@@ -108,6 +108,33 @@ export interface LiveSession {
   max_seconds: number;
 }
 
+export interface StatusChange {
+  online: boolean;
+  at: string;
+  source: "webhook" | "poll";
+}
+
+/** The connected camera as Ring reports it, with its recorded online/offline history.
+ * Detail fields are null when Ring did not report them; `ring` is "unavailable" when Ring
+ * could not be reached and only the saved name and history are shown. */
+export interface CameraInfo {
+  device_id: string;
+  name: string;
+  image_url: string | null;
+  manufacturer: string;
+  online: boolean | null;
+  video: { codecs: string[]; ratio: string | null; max_resolution: number | null; supported_resolutions: number[] } | null;
+  image_enhancements: { name: string; on: boolean | null }[] | null;
+  motion_detection: boolean | null;
+  e2e_encryption: boolean | null;
+  location: Record<string, string> | null;
+  /** Newest first, last 30 days. */
+  history: StatusChange[];
+  uptime: { window_days: number; percent: number | null; since: string | null };
+  checked_at: string;
+  ring?: "unavailable";
+}
+
 export interface Snapshot {
   /** Base64 JPEG, faces blurred. */
   image: string;

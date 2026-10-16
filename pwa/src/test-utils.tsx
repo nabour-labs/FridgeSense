@@ -26,6 +26,7 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     saveInstructions: vi.fn(),
     addReference: vi.fn(),
     deleteReference: vi.fn(),
+    camera: vi.fn().mockReturnValue(new Promise(() => {})),
     cameraSnapshot: vi.fn(),
     startLive: vi.fn().mockReturnValue(new Promise(() => {})),
     stopLive: vi.fn().mockResolvedValue({ ok: true }),

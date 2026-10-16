@@ -107,9 +107,8 @@ test("the header gear opens Config and loads it", async () => {
   await userEvent.click(screen.getByRole("link", { name: "Config" }));
   expect(await screen.findByRole("heading", { level: 1, name: "Config" })).toBeInTheDocument();
   expect(location.hash).toBe("#config");
-  expect(api.config).toHaveBeenCalled();
-  expect(await screen.findByRole("region", { name: "Reference images" })).toBeInTheDocument();
-  expect(screen.getByRole("region", { name: "Custom instructions" })).toBeInTheDocument();
+  expect(await screen.findByRole("tab", { name: "Camera", selected: true })).toBeInTheDocument();
+  expect(api.camera).toHaveBeenCalled();
 });
 
 // Open the detection tab by link

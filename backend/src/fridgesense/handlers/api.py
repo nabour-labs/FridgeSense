@@ -22,6 +22,7 @@ from fridgesense import (
     ask,
     assistant,
     camera,
+    camera_info,
     deps,
     door_calibration,
     fridge_area,
@@ -531,6 +532,22 @@ def with_device(fn: Callable[[Context, str], dict]) -> Callable[[Context], dict]
         return fn(ctx, device_id)
 
     return handle
+
+
+@route("GET", "/api/camera")
+def get_camera(ctx: Context) -> dict:
+    devices = sorted(DeviceRepository().list(ctx.account_id), key=lambda d: d.device_id)
+    if not devices:
+        return json_response(409, {"error": "no camera linked"})
+    body = camera_info.camera_body(
+        deps.ring_client(now=now),
+        camera_info.StatusHistory(ctx.table),
+        ctx.account_id,
+        devices[0].device_id,
+        devices[0].name,
+        int(now() * 1000),
+    )
+    return json_response(200, body)
 
 
 @route("POST", "/api/camera/snapshot", write=True)
