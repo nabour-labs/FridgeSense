@@ -99,7 +99,7 @@
   - "Request in order", "Numbers shown", "Failed call" and "Invalid answer".
 - [x] 7.5 Implement `screens/Debug.tsx` (list with day picker and paging, detail with door and Nova sections, `Sheet` viewer, read-only `ImageMarkup` zone boxes). Verify that the 7.4 tests pass and that `npm test` passes in `pwa/`.
 - [x] 7.6 Write failing tests in `Activity.test.tsx` for "Owner follows the link" and "Viewer has no link". Add the link to `EventCard` and verify.
-- [ ] 7.7 In the browser preview against the mock API, check:
+- [x] 7.7 In the browser preview against the mock API, check:
   - The four tabs fit at 375 px with no horizontal scroll ("Four tabs fit a phone").
   - The list and detail render in light and dark.
   - Images open full size.
