@@ -31,5 +31,5 @@
 ## 7. Measure and check
 
 - [ ] 7.1 Rerun the report and `pytest -m clips` from 1.1 with the new check. Record the "After" numbers in `design.md` next to "Before". If any clip got worse, stop and discuss before going on.
-- [ ] 7.2 Run the full `uv run pytest`, `uv run ruff check . && uv run ruff format --check .` in `backend/`, and `npm test` in `pwa/` and `infra/`. All green.
+- [x] 7.2 Run the full `uv run pytest`, `uv run ruff check . && uv run ruff format --check .` in `backend/`, and `npm test` in `pwa/` and `infra/`. All green.
 - [ ] 7.3 Run `cdk diff` and ask Jayson before `cdk deploy`. After the deploy, open the fridge door once and hold a plate of food in front of the closed fridge once. Confirm that the first is a door event with `feature = "blue"` in Config → Debug and the second is `motion_not_door`. Add friction-log entries for anything surprising.
