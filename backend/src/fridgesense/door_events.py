@@ -410,6 +410,25 @@ def _download_still(
 MIN_STILLS = 2
 
 
+def _device_check(
+    default: "DoorCheck",
+    setup_for: Callable[[str, str], "DoorCheck | None"] | None,
+    account_id: str,
+    device_id: str,
+) -> "DoorCheck":
+    """The device's setup rules if setup ran; otherwise (or if the lookup fails) the default."""
+    if setup_for is None:
+        return default
+    try:
+        found = setup_for(account_id, device_id)
+    except Exception as e:  # a table hiccup must not drop a door opening
+        log_event(
+            "door_setup_unavailable", logging.WARNING, device_id=device_id, error=type(e).__name__
+        )
+        return default
+    return found or default
+
+
 def iso_utc(ms: int) -> str:
     dt = datetime.fromtimestamp(ms // 1000, UTC)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ms % 1000:03d}Z"
@@ -427,6 +446,7 @@ def fetch_stills(
     sleep: Callable[[float], None] = time.sleep,
     crop: Box | None = None,
     interval_ms: int = STILL_INTERVAL_MS,
+    setup_for: Callable[[str, str], "DoorCheck | None"] | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
@@ -436,25 +456,28 @@ def fetch_stills(
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
     """
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
+    check = _device_check(check, setup_for, account_id, device_id)
     raw = download_stills(ring, http, state, sleep, interval_ms)
     count = still_count(window["end_ms"] - window["start_ms"], interval_ms)
     times = still_times(window["start_ms"], window["end_ms"], count)
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
     status = "no_media"
+    rule_log: dict = {"zones_source": check.source}
 
     if len(raw) >= MIN_STILLS:
         results = check.results([data for _, data in raw])
+        best = check.best(results)
+        rule_log = {**rule_log, "feature": best.feature, "threshold": best.threshold}
         span = open_span([1.0 if r.is_open else 0.0 for r in results], 1.0)
         if span is None:
-            best = check.best(results)
             log_event(
                 "motion_not_door",
                 account_id=account_id,
                 device_id=device_id,
                 score=round(best.value, 3),
                 zone=best.zone,
-                threshold=best.threshold,
+                **rule_log,
             )
             return {**state, "outcome": "not_door", "score": round(best.value, 3)}
         opened_ms = times[raw[span[0]][0] - 1]
@@ -502,5 +525,7 @@ def fetch_stills(
             return {**state, "outcome": "duplicate"}
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
-    log_event("door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome)
+    log_event(
+        "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
+    )
     return {**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys}
