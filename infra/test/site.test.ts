@@ -47,6 +47,9 @@ describe("app API", () => {
     expect(Object.keys(vars).sort()).toEqual([
       "ASK_AGENT",
       "ASK_AGENT_DAILY_LIMIT",
+      "DOOR_THRESHOLD",
+      "DOOR_ZONES",
+      "FACE_DETECT_PRICE",
       "NOVA_MODEL_ID",
       "NOVA_PRICE_CACHE_READ",
       "NOVA_PRICE_CACHE_WRITE",

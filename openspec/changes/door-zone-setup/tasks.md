@@ -48,12 +48,12 @@ Test commands: backend `cd backend && uv run pytest -q && uv run ruff check .`; 
 
 ## 7. Infrastructure and docs
 
-- [ ] 7.1 Write failing assertions in `infra/test`: the API Lambda has a 25 s timeout, `rekognition:DetectFaces` and `DOOR_ZONES`/`DOOR_THRESHOLD`; the fetch-stills Lambda has `STILL_INTERVAL_MS` (the value from 1.1).
-- [ ] 7.2 Update `infra/lib/fridgesense-stack.ts` and `infra/lib/door-pipeline.ts` to match. Verify that `npm test` passes in `infra/` and `cdk synth` succeeds.
-- [ ] 7.3 Update the README door-tuning section: Config → Open/close detection, Run setup, `zones_source`, `STILL_INTERVAL_MS`, and the new meaning of `duration_s`. Check that the names match the logs and the API.
-- [ ] 7.4 If any AWS, CDK or Ring step hit friction, add an entry to `docs/friction-log.md`. If there was none, add nothing.
+- [x] 7.1 Write failing assertions in `infra/test`: the API Lambda keeps its 20 s timeout (enough for a snapshot), gets `rekognition:DetectFaces` and `DOOR_ZONES`/`DOOR_THRESHOLD`/`FACE_DETECT_PRICE`, and stays read-only on secrets; the fetch-stills Lambda has `STILL_INTERVAL_MS` (1000 until 1.1 says otherwise).
+- [x] 7.2 Update `infra/lib/fridgesense-stack.ts` and `infra/lib/door-pipeline.ts` to match. Verify that `npm test` passes in `infra/` and `cdk synth` succeeds.
+- [x] 7.3 Update the README door-tuning section: Config → Open/close detection, Run setup, `zones_source`, `STILL_INTERVAL_MS`, and the new meaning of `duration_s`. Check that the names match the logs and the API.
+- [x] 7.4 If any AWS, CDK or Ring step hit friction, add an entry to `docs/friction-log.md`. If there was none, add nothing.
 
 ## 8. Integration check
 
-- [ ] 8.1 Run all suites and linters green: `cd backend && uv run pytest -q && uv run ruff check . && uv run ruff format --check .`, `cd pwa && npm test && npm run build`, `cd infra && npm test`. Report the commands and their results.
+- [x] 8.1 Run all suites and linters green: `cd backend && uv run pytest -q && uv run ruff check . && uv run ruff format --check .`, `cd pwa && npm test && npm run build`, `cd infra && npm test`. Report the commands and their results.
 - [ ] 8.2 Run `cdk diff` and ask Jayson before `cdk deploy` (this deploy also ships `door-check-color-zones`). After the deploy: add door references on the phone, run setup, open each door and drawer once, and confirm `door_event_recorded` with `zones_source = "setup"`, a plausible `duration_s` and a cropped stored still.
