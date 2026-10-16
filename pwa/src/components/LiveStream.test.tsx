@@ -4,7 +4,7 @@ import { ApiError } from "../api/client";
 import type { LiveSession } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { fakeApi } from "../test-utils";
-import { LiveStream } from "./LiveStream";
+import { LiveStream, type DecoderStats } from "./LiveStream";
 
 /** A stand-in RTCPeerConnection: records what the dialog does and lets a test fire events. */
 class FakePeer {
@@ -32,6 +32,27 @@ class FakePeer {
   close() {
     this.closed += 1;
   }
+  statsCalls = 0;
+  async getStats() {
+    this.statsCalls += 1;
+    return new Map<string, Record<string, unknown>>([
+      ["A1", { type: "inbound-rtp", kind: "audio", codecId: "C2" }],
+      [
+        "V1",
+        {
+          type: "inbound-rtp",
+          kind: "video",
+          codecId: "C1",
+          decoderImplementation: "ExternalDecoder",
+          frameWidth: 1920,
+          frameHeight: 1080,
+          framesPerSecond: 15,
+        },
+      ],
+      ["C1", { type: "codec", mimeType: "video/H264" }],
+      ["C2", { type: "codec", mimeType: "audio/opus" }],
+    ]);
+  }
   /** Video arrives. */
   track() {
     act(() => this.ontrack?.({ streams: [{ id: "stream" } as unknown as MediaStream] }));
@@ -48,12 +69,22 @@ const SESSION: LiveSession = { answer: "v=0\r\nanswer\r\n", session_id: "S1", ma
 const settle = () => act(() => vi.advanceTimersByTimeAsync(0));
 const wait = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
 
-function Harness({ createPeer }: { createPeer: () => RTCPeerConnection | null }) {
+function Harness({
+  createPeer,
+  onStats,
+}: {
+  createPeer: () => RTCPeerConnection | null;
+  onStats?: (stats: DecoderStats) => void;
+}) {
   const [open, setOpen] = useState(true);
-  return open ? <LiveStream onClose={() => setOpen(false)} createPeer={createPeer} /> : <p>closed</p>;
+  return open ? <LiveStream onClose={() => setOpen(false)} createPeer={createPeer} onStats={onStats} /> : <p>closed</p>;
 }
 
-function renderLive(overrides: Partial<Record<keyof Api, unknown>> = {}, createPeer?: () => RTCPeerConnection | null) {
+function renderLive(
+  overrides: Partial<Record<keyof Api, unknown>> = {},
+  createPeer?: () => RTCPeerConnection | null,
+  onStats?: (stats: DecoderStats) => void,
+) {
   const peers: FakePeer[] = [];
   const api = fakeApi({ startLive: vi.fn().mockResolvedValue(SESSION), ...overrides });
   const report = vi.fn();
@@ -66,7 +97,7 @@ function renderLive(overrides: Partial<Record<keyof Api, unknown>> = {}, createP
     });
   render(
     <AppContext.Provider value={{ api, role: "viewer", report, online: vi.fn(), go: vi.fn() }}>
-      <Harness createPeer={make} />
+      <Harness createPeer={make} onStats={onStats} />
     </AppContext.Provider>,
   );
   return { api, peers, report };
@@ -235,4 +266,36 @@ test("Livestream dialog is wide", async () => {
   expect(dialog).toHaveClass("sm:max-w-3xl");
   expect(dialog).not.toHaveClass("max-w-md");
   await settle();
+});
+
+// Browser decoder readout: stats are read about once a second while video plays
+test("decoder stats are reported once live", async () => {
+  const onStats = vi.fn();
+  const { peers } = renderLive({}, undefined, onStats);
+  await settle();
+  await wait(2_000);
+  expect(peers[0].statsCalls).toBe(0);
+  expect(onStats).not.toHaveBeenCalled();
+  peers[0].track();
+  await wait(1_000);
+  expect(onStats).toHaveBeenLastCalledWith({
+    codec: "video/H264",
+    decoder: "ExternalDecoder",
+    width: 1920,
+    height: 1080,
+    fps: 15,
+  });
+});
+
+test("decoder stats stop when the dialog closes", async () => {
+  const onStats = vi.fn();
+  const { peers } = renderLive({}, undefined, onStats);
+  await settle();
+  peers[0].track();
+  await wait(1_000);
+  closeDialog();
+  const calls = peers[0].statsCalls;
+  expect(calls).toBeGreaterThan(0);
+  await wait(3_000);
+  expect(peers[0].statsCalls).toBe(calls);
 });

@@ -269,6 +269,34 @@ export function mockApi(): Plugin {
           });
           return;
         }
+        // Camera tab: Ring's documented example capabilities, and a short offline spell this morning.
+        if (req.method === "GET" && url === "/camera") {
+          const now = Date.now();
+          const at = (msAgo: number) => new Date(now - msAgo).toISOString();
+          return send(200, {
+            device_id: "mock.device.D1",
+            name: "Fridge Cam",
+            image_url: null,
+            manufacturer: "Ring",
+            online: true,
+            video: { codecs: ["AVC"], ratio: "16:9", max_resolution: 1080, supported_resolutions: [1080] },
+            image_enhancements: [
+              { name: "color_night_vision", on: false },
+              { name: "hdr", on: true },
+              { name: "ir_led_night_vision", on: false },
+            ],
+            motion_detection: true,
+            e2e_encryption: false,
+            location: { country: "US", state: "WA" },
+            history: [
+              { online: true, at: at(3 * HOUR), source: "webhook" },
+              { online: false, at: at(5 * HOUR), source: "webhook" },
+              { online: true, at: at(9 * 24 * HOUR), source: "poll" },
+            ],
+            uptime: { window_days: 30, percent: Math.round((1 - 2 / (9 * 24)) * 1000) / 10, since: at(9 * 24 * HOUR) },
+            checked_at: at(0),
+          });
+        }
         // Live view needs a real camera: answer as if Ring were down, so the dialog's error path shows.
         if (req.method === "POST" && url === "/camera/live") return send(502, { error: "camera unavailable" });
         if (req.method === "DELETE" && url.startsWith("/camera/live/")) return send(200, { ok: true });

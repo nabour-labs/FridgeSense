@@ -1,5 +1,6 @@
 import type {
   AskResult,
+  CameraInfo,
   Box,
   Config,
   DoorEvent,
@@ -112,6 +113,11 @@ export class ApiClient {
 
   deleteReference(id: string): Promise<Config> {
     return this.request("DELETE", `/api/config/references/${encodeURIComponent(id)}`);
+  }
+
+  /** The connected camera's details, status and online history. */
+  camera(): Promise<CameraInfo> {
+    return this.request("GET", "/api/camera");
   }
 
   /** A face-blurred still from the camera, not stored. */

@@ -24,6 +24,7 @@ function renderConfig(
 ) {
   const api = fakeApi({ config: vi.fn().mockResolvedValue(config), ...overrides });
   const report = vi.fn();
+  if (!location.hash) location.hash = "#config/refs";
   render(
     <AppContext.Provider value={{ api, role, report, online: vi.fn(), go: vi.fn() }}>
       <Config resize={resize} />
@@ -166,15 +167,35 @@ test("Save is disabled while the text equals the saved instructions", async () =
   expect(saveInstructionsButton()).toBeDisabled();
 });
 
-// Open config: the Reference images tab is selected by default
-test("Config opens on the Reference images tab", async () => {
+// Open config: the Camera tab is selected by default
+test("Config opens on the Camera tab", async () => {
   location.hash = "#config";
   const { api } = renderConfig({ instructions: "", references: [] });
-  expect(await screen.findByRole("tab", { name: "Reference images", selected: true })).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "Open/close detection", selected: false })).toBeInTheDocument();
+  expect(await screen.findByRole("tab", { name: "Camera", selected: true })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Reference images", selected: false })).toBeInTheDocument();
+  expect(api.camera).toHaveBeenCalled();
+  expect(api.config).not.toHaveBeenCalled();
+  location.hash = "";
+});
+
+// Reference images tab
+test("tapping Reference images switches the tab and the hash", async () => {
+  location.hash = "#config";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  await userEvent.click(await screen.findByRole("tab", { name: "Reference images" }));
+  expect(location.hash).toBe("#config/refs");
   expect(api.config).toHaveBeenCalled();
-  expect(api.doorCalibration).not.toHaveBeenCalled();
+  expect(await screen.findByRole("region", { name: "Reference images" })).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Custom instructions" })).toBeInTheDocument();
+  location.hash = "";
+});
+
+// Direct link to reference images
+test("#config/refs opens on the Reference images tab", async () => {
+  location.hash = "#config/refs";
+  renderConfig({ instructions: "", references: [] });
+  expect(await screen.findByRole("tab", { name: "Reference images", selected: true })).toBeInTheDocument();
+  location.hash = "";
 });
 
 // Switch to open/close detection
@@ -187,7 +208,8 @@ test("tapping Open/close detection switches the tab and the hash", async () => {
   expect(api.doorCalibration).toHaveBeenCalled();
   expect(screen.queryByRole("region", { name: "Reference images" })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("tab", { name: "Reference images" }));
-  expect(location.hash).toBe("#config");
+  expect(location.hash).toBe("#config/refs");
+  location.hash = "";
 });
 
 // Open the detection tab by link
@@ -317,13 +339,20 @@ test("#config/debug/<id> opens one motion on the debug tab", async () => {
   location.hash = "";
 });
 
-// Four tabs fit a phone
-test("the owner gets four tabs in one row", async () => {
+// Owner's tabs
+test("the owner gets five tabs in one row", async () => {
   location.hash = "#config";
   renderConfig({ instructions: "", references: [] });
   const tabs = await screen.findAllByRole("tab");
-  expect(tabs.map((t) => t.textContent)).toEqual(["Reference images", "Open/close detection", "Fridge area", "Debug"]);
-  expect(screen.getByRole("tablist")).toHaveClass("grid-cols-4");
+  expect(tabs.map((t) => t.getAttribute("aria-label") ?? t.textContent)).toEqual([
+    "Camera",
+    "Reference images",
+    "Open/close detection",
+    "Fridge area",
+    "Debug",
+  ]);
+  expect(screen.getByRole("tablist")).toHaveClass("grid-cols-5");
+  location.hash = "";
 });
 
 // Viewer sees read-only config (no Debug tab)
@@ -331,8 +360,14 @@ test("a viewer gets no Debug tab", async () => {
   location.hash = "#config";
   renderConfig({ instructions: "", references: [] }, { role: "viewer" });
   const tabs = await screen.findAllByRole("tab");
-  expect(tabs.map((t) => t.textContent)).toEqual(["Reference images", "Open/close detection", "Fridge area"]);
-  expect(screen.getByRole("tablist")).toHaveClass("grid-cols-3");
+  expect(tabs.map((t) => t.getAttribute("aria-label") ?? t.textContent)).toEqual([
+    "Camera",
+    "Reference images",
+    "Open/close detection",
+    "Fridge area",
+  ]);
+  expect(screen.getByRole("tablist")).toHaveClass("grid-cols-4");
+  location.hash = "";
 });
 
 // Viewer opens the debug link
@@ -350,8 +385,15 @@ test("a user gets the edit controls but no Debug tab", async () => {
   location.hash = "#config";
   renderConfig({ instructions: "", references: [] }, { role: "user" });
   const tabs = await screen.findAllByRole("tab");
-  expect(tabs.map((t) => t.textContent)).toEqual(["Reference images", "Open/close detection", "Fridge area"]);
+  expect(tabs.map((t) => t.getAttribute("aria-label") ?? t.textContent)).toEqual([
+    "Camera",
+    "Reference images",
+    "Open/close detection",
+    "Fridge area",
+  ]);
+  await userEvent.click(screen.getByRole("tab", { name: "Reference images" }));
   expect(await screen.findByRole("button", { name: "Add" })).toBeInTheDocument();
+  location.hash = "";
 });
 
 // User opens the debug hash

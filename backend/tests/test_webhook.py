@@ -211,3 +211,75 @@ def test_ring_retries_after_failed_hand_over(aws, monkeypatch):
     assert resp["statusCode"] == 200
     assert json.loads(resp["body"]) == {"ok": True}
     assert len(flaky.events) == 1
+
+
+# --- device_online / device_offline ---
+
+OFFLINE = fixture_bytes("ring/webhook_device_offline.json")
+ONLINE = fixture_bytes("ring/webhook_device_online.json")
+STATUS_DEVICE = "ava1.ring.device.XXXYYY"
+
+
+def recorded_changes():
+    from fridgesense.camera_info import StatusHistory
+    from fridgesense.table import FridgeTable
+
+    return StatusHistory(FridgeTable()).since(ACCOUNT, STATUS_DEVICE, 0)
+
+
+# Scenario: Device goes offline
+def test_device_goes_offline(aws, motion):
+    from fridgesense.camera_info import StatusChange
+
+    resp = post(OFFLINE)
+    assert (resp["statusCode"], json.loads(resp["body"])) == (200, {"ok": True})
+    assert recorded_changes() == [StatusChange(False, 1771025206000, "webhook")]
+    assert motion.events == []
+
+
+# Scenario: Device comes online
+def test_device_comes_online(aws, motion):
+    from fridgesense.camera_info import StatusChange
+
+    assert post(ONLINE)["statusCode"] == 200
+    assert recorded_changes() == [StatusChange(True, 1771025206000, "webhook")]
+
+
+# Scenario: Repeated status delivery
+def test_repeated_status_delivery(aws, motion):
+    post(OFFLINE)
+    resp = post(OFFLINE)
+    assert (resp["statusCode"], json.loads(resp["body"])) == (200, {"ok": True, "duplicate": True})
+    assert len(recorded_changes()) == 1
+
+
+# Scenario: Status event without a timestamp
+def test_status_event_without_a_timestamp(aws, motion, caplog):
+    payload = json.loads(ONLINE)
+    del payload["data"]["attributes"]["timestamp"]
+    body = json.dumps(payload).encode()
+    with caplog.at_level(logging.INFO):
+        resp = post(body)
+    assert (resp["statusCode"], json.loads(resp["body"])) == (200, {"ok": True})
+    assert recorded_changes() == []
+    assert any("webhook_malformed" in r.getMessage() for r in caplog.records)
+
+
+# Scenario: Bad signature on a status event
+def test_bad_signature_on_a_status_event(aws, motion):
+    assert post(OFFLINE, "sha256=" + "0" * 64)["statusCode"] == 401
+    assert recorded_changes() == []
+
+
+def test_status_recorder_fails(aws, motion, monkeypatch):
+    class Broken:
+        def record(self, *args):
+            raise RuntimeError("table down")
+
+    monkeypatch.setattr(http, "status_recorder", lambda: Broken())
+    assert post(OFFLINE)["statusCode"] == 500
+    monkeypatch.undo()
+    monkeypatch.setattr(http, "now", lambda: NOW)
+    # The request id was forgotten, so Ring's retry is recorded.
+    assert post(OFFLINE)["statusCode"] == 200
+    assert len(recorded_changes()) == 1

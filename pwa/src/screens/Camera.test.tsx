@@ -1,0 +1,217 @@
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ApiError } from "../api/client";
+import type { CameraInfo } from "../api/types";
+import { AppContext, type Api } from "../AppContext";
+import { fakeApi } from "../test-utils";
+import { Camera } from "./Camera";
+
+const INFO: CameraInfo = {
+  device_id: "ava1.ring.device.D1",
+  name: "Fridge Cam",
+  image_url: "https://example.test/device_3x.png",
+  manufacturer: "Ring",
+  online: true,
+  video: { codecs: ["AVC"], ratio: "16:9", max_resolution: 1080, supported_resolutions: [1080] },
+  image_enhancements: [
+    { name: "color_night_vision", on: false },
+    { name: "hdr", on: true },
+    { name: "ir_led_night_vision", on: false },
+  ],
+  motion_detection: true,
+  e2e_encryption: false,
+  location: { country: "US", state: "WA" },
+  history: [],
+  uptime: { window_days: 30, percent: null, since: null },
+  checked_at: "2026-10-16T12:00:00.000Z",
+};
+
+function renderCamera(
+  camera: Api["camera"],
+  extra: Partial<Record<keyof Api, unknown>> = {},
+  createPeer?: () => RTCPeerConnection | null,
+) {
+  const api = fakeApi({ camera, ...extra });
+  const report = vi.fn();
+  render(
+    <AppContext.Provider value={{ api, role: "viewer", report, online: vi.fn(), go: vi.fn() }}>
+      <Camera createPeer={createPeer} />
+    </AppContext.Provider>,
+  );
+  return { api, report };
+}
+
+/** A peer whose video arrives on demand and whose stats describe an H.264 stream. */
+class StatsPeer {
+  iceGatheringState = "complete";
+  connectionState = "new";
+  localDescription: RTCSessionDescriptionInit | null = null;
+  ontrack: ((e: { streams: MediaStream[] }) => void) | null = null;
+  onconnectionstatechange: (() => void) | null = null;
+  addTransceiver() {}
+  async createOffer() {
+    return { type: "offer" as const, sdp: "v=0\r\n" };
+  }
+  async setLocalDescription(d: RTCSessionDescriptionInit) {
+    this.localDescription = d;
+  }
+  async setRemoteDescription() {}
+  close() {}
+  async getStats() {
+    return new Map<string, Record<string, unknown>>([
+      ["V1", { type: "inbound-rtp", kind: "video", codecId: "C1", decoderImplementation: "ExternalDecoder", frameWidth: 1920, frameHeight: 1080, framesPerSecond: 15 }],
+      ["C1", { type: "codec", mimeType: "video/H264" }],
+    ]);
+  }
+  track() {
+    act(() => this.ontrack?.({ streams: [{ id: "stream" } as unknown as MediaStream] }));
+  }
+  fail() {
+    this.connectionState = "failed";
+    act(() => this.onconnectionstatechange?.());
+  }
+}
+
+const LIVE = { startLive: vi.fn().mockResolvedValue({ answer: "v=0\r\nanswer\r\n", session_id: "S1", max_seconds: 60 }) };
+const CHECK_HINT = "Run a check to see how this browser decodes the camera's video.";
+
+async function checkDecoder() {
+  const peers: StatsPeer[] = [];
+  const createPeer = () => {
+    const p = new StatsPeer();
+    peers.push(p);
+    return p as unknown as RTCPeerConnection;
+  };
+  renderCamera(vi.fn().mockResolvedValue(INFO), LIVE, createPeer);
+  await userEvent.click(await screen.findByRole("button", { name: "Check decoder" }));
+  await waitFor(() => expect(peers[0]?.localDescription).not.toBeNull());
+  return peers;
+}
+
+function closeDialog() {
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Livestream" })).getByRole("button", { name: "Close" }));
+}
+
+/** The value shown next to a detail's label. */
+function value(label: string) {
+  return screen.getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
+}
+
+// Scenario: Camera tab shows details
+test("the camera tab shows the camera's details", async () => {
+  renderCamera(vi.fn().mockResolvedValue(INFO));
+  expect(await screen.findByRole("heading", { name: "Fridge Cam" })).toBeInTheDocument();
+  expect(screen.getByTestId("camera-status")).toHaveTextContent("Online");
+  expect(screen.getByRole("img", { name: "Fridge Cam" })).toHaveAttribute("src", INFO.image_url);
+  expect(value("Manufacturer")).toBe("Ring");
+  expect(value("Video codecs")).toBe("AVC");
+  expect(value("Aspect ratio")).toBe("16:9");
+  expect(value("Max resolution")).toBe("1080p");
+  expect(value("Supported resolutions")).toBe("1080p");
+  expect(value("HDR")).toBe("On");
+  expect(value("Color night vision")).toBe("Off");
+  expect(value("Motion detection")).toBe("On");
+  expect(value("End-to-end encryption")).toBe("Off");
+  expect(value("Location")).toBe("WA, US");
+});
+
+test("the camera tab has no edit controls for anyone", async () => {
+  renderCamera(vi.fn().mockResolvedValue(INFO));
+  await screen.findByRole("heading", { name: "Fridge Cam" });
+  expect(screen.queryByRole("button", { name: /save|delete|add/i })).not.toBeInTheDocument();
+});
+
+// Scenario: Camera offline
+test("an offline camera shows an Offline badge", async () => {
+  renderCamera(vi.fn().mockResolvedValue({ ...INFO, online: false }));
+  expect(await screen.findByTestId("camera-status")).toHaveTextContent("Offline");
+});
+
+// Scenario: Ring unreachable
+test("when Ring is unreachable the saved details show with an Unknown badge", async () => {
+  renderCamera(
+    vi.fn().mockResolvedValue({
+      ...INFO,
+      name: "Fridge",
+      image_url: null,
+      online: null,
+      video: null,
+      image_enhancements: null,
+      motion_detection: null,
+      e2e_encryption: null,
+      location: null,
+      ring: "unavailable",
+    }),
+  );
+  expect(await screen.findByTestId("camera-status")).toHaveTextContent("Unknown");
+  expect(screen.getByText("Could not reach the camera service. Showing saved details.")).toBeInTheDocument();
+  expect(value("Video codecs")).toBe("Not reported");
+  expect(value("Aspect ratio")).toBe("Not reported");
+  expect(value("Motion detection")).toBe("Not reported");
+});
+
+// Scenario: No camera linked
+test("with no camera linked the tab says so, without an error notice", async () => {
+  const { report } = renderCamera(vi.fn().mockRejectedValue(new ApiError(409, "no camera linked")));
+  expect(await screen.findByText("No camera is linked yet.")).toBeInTheDocument();
+  expect(report).not.toHaveBeenCalled();
+});
+
+// Scenario: History listed
+test("the online history shows uptime, the changes and a timeline", async () => {
+  renderCamera(
+    vi.fn().mockResolvedValue({
+      ...INFO,
+      history: [
+        { online: true, at: "2026-10-16T06:00:00.000Z", source: "webhook" },
+        { online: false, at: "2026-10-16T00:00:00.000Z", source: "webhook" },
+      ],
+      uptime: { window_days: 30, percent: 99.2, since: "2026-09-16T12:00:00.000Z" },
+    }),
+  );
+  expect(await screen.findByText("99.2% online")).toBeInTheDocument();
+  const items = within(screen.getByRole("list", { name: "Status changes" })).getAllByRole("listitem");
+  expect(items).toHaveLength(2);
+  expect(items[0]).toHaveTextContent("Online");
+  expect(items[1]).toHaveTextContent("Offline");
+  expect(screen.getAllByTestId("timeline-offline")).toHaveLength(1);
+});
+
+// Scenario: Empty history
+test("with no history the tab says none is recorded", async () => {
+  renderCamera(vi.fn().mockResolvedValue(INFO));
+  expect(await screen.findByText("No status changes recorded yet.")).toBeInTheDocument();
+});
+
+// Scenario: Before any check
+test("before a check the decoder card explains itself", async () => {
+  renderCamera(vi.fn().mockResolvedValue(INFO));
+  expect(await screen.findByText(CHECK_HINT)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Check decoder" })).toBeInTheDocument();
+});
+
+// Scenario: Decoder values after a check
+test("after a check the decoder card shows the browser's decoder", async () => {
+  const peers = await checkDecoder();
+  await waitFor(() => expect(peers[0].ontrack).not.toBeNull());
+  await waitFor(() => expect(LIVE.startLive).toHaveBeenCalled());
+  await act(() => new Promise((r) => setTimeout(r, 0)));
+  peers[0].track();
+  await act(() => new Promise((r) => setTimeout(r, 1_200)));
+  closeDialog();
+  expect(screen.queryByRole("dialog", { name: "Livestream" })).not.toBeInTheDocument();
+  expect(value("Codec")).toBe("video/H264");
+  expect(value("Decoder")).toBe("ExternalDecoder");
+  expect(value("Frame size")).toBe("1920 × 1080");
+  expect(value("Frame rate")).toBe("15 fps");
+  expect(screen.queryByText(CHECK_HINT)).not.toBeInTheDocument();
+});
+
+// Scenario: No video played
+test("a failed check leaves the decoder card unchanged", async () => {
+  const peers = await checkDecoder();
+  await act(() => new Promise((r) => setTimeout(r, 0)));
+  peers[0].fail();
+  closeDialog();
+  expect(screen.getByText(CHECK_HINT)).toBeInTheDocument();
+});

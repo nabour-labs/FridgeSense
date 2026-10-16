@@ -193,6 +193,7 @@ test.each([
 const BOX = { x: 0.38, y: 0.32, width: 0.21, height: 0.3 };
 
 test.each([
+  ["camera", (api: ApiClient) => api.camera(), "GET", "/api/camera", undefined],
   ["cameraSnapshot", (api: ApiClient) => api.cameraSnapshot(), "POST", "/api/camera/snapshot", undefined],
   ["doorCalibration", (api: ApiClient) => api.doorCalibration(), "GET", "/api/door-calibration", undefined],
   [

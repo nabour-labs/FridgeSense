@@ -217,7 +217,7 @@ The app asks for the passcode again every 24 hours, whatever the role. It notice
 
 ### Teach the camera your fridge
 
-The gear at the top right opens **Config**. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6); its **Fridge area** tab marks where the fridge is; its **Debug** tab (owner only) shows why each motion was judged the way it was.
+The gear at the top right opens **Config**. Its **Camera** tab (the default) shows the camera as Ring reports it (online now, codec, aspect ratio, resolutions, night vision and HDR, motion detection, encryption), its online/offline history and uptime over 30 days (from Ring's `device_online`/`device_offline` webhooks, plus any change seen when the tab is opened), and, after **Check decoder**, how this browser decodes the live video. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6); its **Fridge area** tab marks where the fridge is; its **Debug** tab (owner only) shows why each motion was judged the way it was.
 
 - **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
 - **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.

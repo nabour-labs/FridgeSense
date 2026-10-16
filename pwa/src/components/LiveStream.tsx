@@ -6,6 +6,7 @@ import { useDebug } from "../debug/DebugContext";
 import { Sheet } from "./Sheet";
 
 const ICE_WAIT_MS = 3_000;
+const STATS_EVERY_MS = 1_000;
 const TRACK_WAIT_MS = 15_000;
 const NO_WEBRTC = "This browser can't play live video.";
 const NO_CONNECTION = "Could not connect to the camera.";
@@ -24,6 +25,32 @@ interface Run {
   sessionId: string | null;
   stopped: boolean;
   timers: ReturnType<typeof setTimeout>[];
+}
+
+/** How this browser decodes the live video, from WebRTC stats; a field is null if the
+ * browser does not report it (Safari leaves out the decoder implementation). */
+export interface DecoderStats {
+  codec: string | null;
+  decoder: string | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+}
+
+/** The inbound video's decoder stats, or null before any video report. */
+export async function decoderStats(peer: RTCPeerConnection): Promise<DecoderStats | null> {
+  const report = (await peer.getStats()) as Map<string, Record<string, unknown>>;
+  const video = [...report.values()].find((r) => r.type === "inbound-rtp" && r.kind === "video");
+  if (!video) return null;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const num = (v: unknown) => (typeof v === "number" ? v : null);
+  return {
+    codec: str(report.get(String(video.codecId))?.mimeType),
+    decoder: str(video.decoderImplementation),
+    width: num(video.frameWidth),
+    height: num(video.frameHeight),
+    fps: num(video.framesPerSecond),
+  };
 }
 
 /** A real peer, or null when the browser has no WebRTC. */
@@ -45,8 +72,10 @@ function iceGathered(peer: RTCPeerConnection, ms: number): Promise<void> {
   });
 }
 
-function useLiveStream(createPeer: () => RTCPeerConnection | null) {
+function useLiveStream(createPeer: () => RTCPeerConnection | null, onStats?: (stats: DecoderStats) => void) {
   const { api, report } = useApp();
+  const statsListener = useRef(onStats);
+  statsListener.current = onStats;
   const [state, setState] = useState<State>({ kind: "connecting" });
   const [stream, setStream] = useState<MediaStream | null>(null);
   const current = useRef<Run | null>(null);
@@ -84,6 +113,18 @@ function useLiveStream(createPeer: () => RTCPeerConnection | null) {
       run.timers.forEach((t) => clearTimeout(t));
       setStream(e.streams[0]);
       setState({ kind: "live", left: maxSeconds });
+      const readStats = () => {
+        run.timers.push(
+          setTimeout(() => {
+            if (run.stopped) return;
+            decoderStats(peer)
+              .then((stats) => stats && !run.stopped && statsListener.current?.(stats))
+              .catch(() => {})
+              .finally(() => !run.stopped && readStats());
+          }, STATS_EVERY_MS),
+        );
+      };
+      if (statsListener.current) readStats();
       for (let s = 1; s <= maxSeconds; s++) {
         run.timers.push(
           setTimeout(() => {
@@ -126,7 +167,12 @@ function useLiveStream(createPeer: () => RTCPeerConnection | null) {
 }
 
 /** The Livestream dialog; in debug mode with Mock video on, a local clip plays instead of the camera. */
-export function LiveStream(props: { onClose: () => void; createPeer?: () => RTCPeerConnection | null }) {
+export function LiveStream(props: {
+  onClose: () => void;
+  createPeer?: () => RTCPeerConnection | null;
+  /** Called about once a second with the browser's decoder stats while video plays. */
+  onStats?: (stats: DecoderStats) => void;
+}) {
   const { mockVideo } = useDebug();
   return import.meta.env.DEV && mockVideo ? <ClipLive onClose={props.onClose} /> : <RealLiveStream {...props} />;
 }
@@ -135,11 +181,13 @@ export function LiveStream(props: { onClose: () => void; createPeer?: () => RTCP
 function RealLiveStream({
   onClose,
   createPeer = livePeer,
+  onStats,
 }: {
   onClose: () => void;
   createPeer?: () => RTCPeerConnection | null;
+  onStats?: (stats: DecoderStats) => void;
 }) {
-  const { state, stream, start } = useLiveStream(createPeer);
+  const { state, stream, start } = useLiveStream(createPeer, onStats);
   const video = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (video.current) video.current.srcObject = stream;

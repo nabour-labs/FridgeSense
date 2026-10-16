@@ -54,7 +54,7 @@ it("Production build: no Debug bar, no switch, and no clip requests", async () =
   vi.stubEnv("DEV", false);
   switchOn();
   signedIn();
-  location.hash = "#config";
+  location.hash = "#config/refs";
   const api = fakeApi({ cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) });
   render(<App api={api} />);
   await userEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -68,7 +68,7 @@ it("Production build: no Debug bar, no switch, and no clip requests", async () =
 it("Reference image from a clip: the frame is used and the camera is not asked", async () => {
   switchOn();
   signedIn();
-  location.hash = "#config";
+  location.hash = "#config/refs";
   const api = fakeApi();
   render(<App api={api} />);
   await userEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -93,7 +93,7 @@ it("Door reference from a clip: Add opens the picker and the frame is shown for 
 
 it("Switch off: the camera is asked once and no picker opens", async () => {
   signedIn();
-  location.hash = "#config";
+  location.hash = "#config/refs";
   const api = fakeApi({ cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) });
   render(<App api={api} />);
   await userEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -107,7 +107,7 @@ it("Switch off: the camera is asked once and no picker opens", async () => {
 it("Cancel: the picker closes with no snapshot, no error and no request", async () => {
   switchOn();
   signedIn();
-  location.hash = "#config";
+  location.hash = "#config/refs";
   const api = fakeApi();
   const errors = vi.spyOn(console, "error");
   render(<App api={api} />);

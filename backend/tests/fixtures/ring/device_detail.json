@@ -1,0 +1,74 @@
+{
+  "meta": {"time": "2026-10-16T12:00:00Z"},
+  "data": {
+    "type": "devices",
+    "id": "ava1.ring.device.D1",
+    "attributes": {
+      "name": "Fridge Cam",
+      "image_url": "https://app-content.ring.com/shared/images/devices/square_device_images/example/device_3x.png"
+    },
+    "relationships": {
+      "status": {
+        "data": {"type": "device-status", "id": "ava1.ring.device.status.D1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/status"}
+      },
+      "capabilities": {
+        "data": {"type": "device-capabilities", "id": "ava1.ring.device.capabilities.D1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/capabilities"}
+      },
+      "configurations": {
+        "data": {"type": "device-configurations", "id": "ava1.ring.device.configurations.D1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/configurations"}
+      },
+      "location": {
+        "data": {"type": "locations", "id": "ava1.ring.device.location.D1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/location"}
+      }
+    }
+  },
+  "included": [
+    {
+      "type": "device-status",
+      "id": "ava1.ring.device.status.D1",
+      "attributes": {"online": true}
+    },
+    {
+      "type": "device-capabilities",
+      "id": "ava1.ring.device.capabilities.D1",
+      "attributes": {
+        "video": {
+          "configurations": ["resolution_mode"],
+          "codecs": ["AVC"],
+          "ratio": "16:9",
+          "max_resolution": 1080,
+          "supported_resolutions": [1080]
+        },
+        "motion_detection": {"configurations": ["enabled", "motion_zones"]},
+        "image_enhancements": {
+          "configurations": ["color_night_vision", "hdr", "ir_led_night_vision", "privacy_zones"]
+        }
+      }
+    },
+    {
+      "type": "device-configurations",
+      "id": "ava1.ring.device.configurations.D1",
+      "attributes": {
+        "e2e_encryption": {"enabled": false},
+        "motion_detection": {"enabled": "on", "motion_zones": [], "component_id": "0"},
+        "video": {"component_id": "0"},
+        "image_enhancements": {
+          "color_night_vision": "off",
+          "hdr": "on",
+          "ir_led_night_vision": "off",
+          "auto_zoom_track": "off",
+          "privacy_zones": []
+        }
+      }
+    },
+    {
+      "type": "locations",
+      "id": "ava1.ring.device.location.D1",
+      "attributes": {"country": "US", "state": "WA"}
+    }
+  ]
+}
