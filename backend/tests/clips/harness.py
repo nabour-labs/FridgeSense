@@ -257,7 +257,7 @@ class ClipResult:
     tolerance_s: float
     best_value: float
     threshold: float
-    merged: bool = False  # several labelled openings, scored as one span
+    merged: int = 0  # how many labelled openings were scored as one span (0: one or none)
     still_offsets_s: list[float] = field(default_factory=list)
     trace: object = None  # the pipeline's DoorTrace, for dumping stills
 
@@ -316,7 +316,7 @@ def score(
         tolerance_s=tolerance,
         best_value=best_value,
         threshold=threshold,
-        merged=len(openings) > 1,
+        merged=len(openings) if len(openings) > 1 else 0,
     )
 
 

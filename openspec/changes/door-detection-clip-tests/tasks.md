@@ -31,9 +31,9 @@
 
 ## 6. Accuracy report
 
-- [ ] 6.1 Write failing tests for the scenarios Report over all clips (canned results giving `TP 1  FP 0  FN 1  TN 1`, open error 0.4 s), No clips present, and Unlabelled clips listed. Then implement the report rows and summary. Verify the tests pass.
-- [ ] 6.2 Write failing tests for the scenarios Sweep two thresholds and two intervals (four rows, each clip decoded once) and Bad sweep value (non-zero exit before decoding). Then implement the sweep. Verify the tests pass.
-- [ ] 6.3 Document usage (install the group, label, run tests, run the report or sweep) in a short section of `README.md` or `docs/`. Verify that the documented commands run as written.
+- [x] 6.1 Write failing tests for the scenarios Report over all clips (canned results giving `TP 1  FP 0  FN 1  TN 1`, open error 0.4 s), No clips present, and Unlabelled clips listed. Then implement the report rows and summary. Verify the tests pass.
+- [x] 6.2 Write failing tests for the scenarios Sweep two thresholds and two intervals (four rows, each clip decoded once) and Bad sweep value (non-zero exit before decoding). Then implement the sweep. Verify the tests pass.
+- [x] 6.3 Document usage (install the group, label, run tests, run the report or sweep) in a short section of `README.md` or `docs/`. Verify that the documented commands run as written.
 
 ## 7. Integration check
 
