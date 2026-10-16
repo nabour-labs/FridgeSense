@@ -29,14 +29,14 @@ The "Mock video" switch SHALL be off by default and SHALL keep its state in this
 - **THEN** the switch starts off, can be turned on, and no error is shown
 
 ### Requirement: Snapshots come from a clip while the switch is on
-While "Mock video" is on, every camera snapshot request in the app SHALL open the clip picker instead of calling `POST /api/camera/snapshot`. This covers "Camera snapshot" in Reference images, and "New snapshot" and the snapshot taken when the tab opens in Open/close detection and Fridge area. While it is off, snapshots call `POST /api/camera/snapshot` as before.
+While "Mock video" is on, every camera snapshot request in the app SHALL open the clip picker instead of calling `POST /api/camera/snapshot`. This covers "Camera snapshot" in Reference images, and in Open/close detection and Fridge area both the snapshot taken when the add or set-area sheet opens and "New snapshot". While it is off, snapshots call `POST /api/camera/snapshot` as before.
 
 #### Scenario: Reference image from a clip
 - **WHEN** the switch is on and the owner taps "Camera snapshot" in Reference images, picks a frame and taps "Use this frame"
 - **THEN** `POST /api/camera/snapshot` is not requested and the reference form shows that frame as its image
 
 #### Scenario: Door reference from a clip
-- **WHEN** the switch is on and the owner opens Open/close detection
+- **WHEN** the switch is on and the owner taps "Add" in Open/close detection
 - **THEN** the clip picker opens, and after "Use this frame" the frame is shown for drawing the door box
 
 #### Scenario: Switch off

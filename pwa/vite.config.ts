@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { devVideos } from "./scripts/dev-videos";
 import { mockApi } from "./scripts/mock-api";
 import { manifest, workbox } from "./src/manifest";
 
@@ -13,6 +14,7 @@ export default defineConfig({
   plugins: [
     react(),
     ...(process.env.FRIDGESENSE_MOCK ? [mockApi()] : []),
+    devVideos(),
     tailwindcss(),
     VitePWA({ registerType: "autoUpdate", manifest, workbox, includeAssets: ["icon.svg", "apple-touch-icon.png"] }),
   ],

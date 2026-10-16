@@ -2,25 +2,25 @@
 
 ## 1. Dev-server clip routes
 
-- [ ] 1.1 Write failing tests in `pwa/scripts/dev-videos.test.ts` (node environment, temp folder with `a.mp4` 10 B, `b.mp4` 20 B, `notes.txt`): "Listing", "Missing folder", "Range request", "Whole file", "Path escape refused", "Unknown clip", and `upload` true only with `FRIDGESENSE_URL`. Run `npm test -- dev-videos` and see them fail because the module is missing.
-- [ ] 1.2 Implement `pwa/scripts/dev-videos.ts` (`devVideos({dir})` plugin, `apply: "serve"`, folder from `FRIDGESENSE_VIDEOS` or `<repo>/tmp`) and register it in `vite.config.ts`. Verify the 1.1 tests pass and that `npm test` passes.
+- [x] 1.1 Write failing tests in `pwa/scripts/dev-videos.test.ts` (node environment, temp folder with `a.mp4` 10 B, `b.mp4` 20 B, `notes.txt`): "Listing", "Missing folder", "Range request", "Whole file", "Path escape refused", "Unknown clip", and `upload` true only with `FRIDGESENSE_URL`. Run `npm test -- dev-videos` and see them fail because the module is missing.
+- [x] 1.2 Implement `pwa/scripts/dev-videos.ts` (`devVideos({dir})` plugin, `apply: "serve"`, folder from `FRIDGESENSE_VIDEOS` or `<repo>/tmp`) and register it in `vite.config.ts`. Verify the 1.1 tests pass and that `npm test` passes.
 
 ## 2. Switch and clip picker
 
-- [ ] 2.1 Write failing tests in `pwa/src/debug/mockVideo.test.ts` for "Turned on, then reload" (stored round trip) and "Storage blocked" (throwing storage starts off, can be toggled, no throw). Implement the stored-switch helpers and verify.
-- [ ] 2.2 Write failing tests in `pwa/src/debug/ClipPicker.test.tsx` (stubbed `fetch`, injected frame grabber) for "Clips listed", "Frame size" (960×540 from 2560×1440), "No clips", "Clip won't load", "Deployed backend notice", "Mock API has no notice" and "Cancel" (resolves as cancelled).
-- [ ] 2.3 Implement `pwa/src/debug/ClipPicker.tsx` (`Sheet`, clip `Select`, `<video>` with range scrubber, "Use this frame", "Cancel") and the canvas frame grabber using `fitWithin(…, 960)`. Verify the 2.2 tests pass.
+- [x] 2.1 Write failing tests in `pwa/src/debug/mockVideo.test.ts` for "Turned on, then reload" (stored round trip) and "Storage blocked" (throwing storage starts off, can be toggled, no throw). Implement the stored-switch helpers and verify.
+- [x] 2.2 Write failing tests in `pwa/src/debug/ClipPicker.test.tsx` (stubbed `fetch`, injected frame grabber) for "Clips listed", "Frame size" (960×540 from 2560×1440), "No clips", "Clip won't load", "Deployed backend notice", "Mock API has no notice" and "Cancel" (resolves as cancelled).
+- [x] 2.3 Implement `pwa/src/debug/ClipPicker.tsx` (`Sheet`, clip `Select`, `<video>` with range scrubber, "Use this frame", "Cancel") and the canvas frame grabber using `fitWithin(…, 960)`. Verify the 2.2 tests pass.
 
 ## 3. Debug mode and the snapshot swap
 
-- [ ] 3.1 Write failing tests in `pwa/src/debug/DebugBar.test.tsx` and `App.test.tsx` with `vi.stubEnv("DEV", …)`:
+- [x] 3.1 Write failing tests in `pwa/src/debug/DebugBar.test.tsx` and `App.test.tsx` with `vi.stubEnv("DEV", …)`:
   - "Dev server" (the bar and an unchecked switch are shown).
   - "Production build" (no bar, no switch, `/__dev/videos` never fetched).
   - "Reference image from a clip" (fake API `cameraSnapshot` not called, the form shows the frame).
-  - "Door reference from a clip" (the picker opens on mount).
+  - "Door reference from a clip" (the picker opens on "Add").
   - "Switch off" (`cameraSnapshot` called once, no picker).
   - "Cancel" (no error text, no request, nothing passed to `report`).
-- [ ] 3.2 Implement `isDebug()`, `PickCancelled`, the `withSnapshot(api, fn)` wrapper, the Debug bar, the picker host in `App.tsx`, and `report` ignoring `PickCancelled`. Verify the 3.1 tests and all existing `App`, `Config`, `DoorDetection`, `FridgeArea` and `ReferenceImages` tests pass unchanged.
+- [x] 3.2 Implement `isDebug()`, `PickCancelled`, the `withSnapshot(api, fn)` wrapper, the Debug bar, the picker host in `App.tsx`, and `report` ignoring `PickCancelled`. Verify the 3.1 tests and all existing `App`, `Config`, `DoorDetection`, `FridgeArea` and `ReferenceImages` tests pass unchanged.
 
 ## 4. Livestream from a clip
 

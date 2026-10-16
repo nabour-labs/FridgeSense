@@ -2,6 +2,11 @@ import { ChartColumn, History, ListChecks, LogOut, Mic, Refrigerator, Settings, 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient, ApiError, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
+import type { Snapshot } from "./api/types";
+import { ClipPicker } from "./debug/ClipPicker";
+import { DebugBar } from "./debug/DebugBar";
+import { isDebug, PickCancelled, withSnapshot } from "./debug/debug";
+import { loadMockVideo, saveMockVideo } from "./debug/mockVideo";
 import { Activity } from "./screens/Activity";
 import { Ask } from "./screens/Ask";
 import { Config } from "./screens/Config";
@@ -30,6 +35,17 @@ export default function App({ api: injected }: { api?: Api }) {
   const api = useMemo<Api>(
     () => injected ?? new ApiClient(() => loadSession()?.token ?? null),
     [injected],
+  );
+  const debug = isDebug();
+  const [mockVideo, setMockVideo] = useState(() => debug && loadMockVideo());
+  const [picking, setPicking] = useState<{ resolve: (s: Snapshot) => void; reject: (e: Error) => void } | null>(null);
+  // Debug mode with Mock video on: snapshots come from a local clip the owner picks.
+  const screenApi = useMemo<Api>(
+    () =>
+      mockVideo
+        ? withSnapshot(api, () => new Promise<Snapshot>((resolve, reject) => setPicking({ resolve, reject })))
+        : api,
+    [api, mockVideo],
   );
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [offline, setOffline] = useState(false);
@@ -62,7 +78,9 @@ export default function App({ api: injected }: { api?: Api }) {
   }, [notice]);
 
   const report = useCallback((error: unknown) => {
-    if (error instanceof Unauthorized) {
+    if (error instanceof PickCancelled) {
+      // The owner closed the clip picker: nothing to report.
+    } else if (error instanceof Unauthorized) {
       clearSession();
       setSession(null);
     } else if (error instanceof Offline) {
@@ -97,7 +115,7 @@ export default function App({ api: injected }: { api?: Api }) {
 
   const title = tab === "config" ? "Config" : TABS.find((t) => t.id === tab)!.label;
   return (
-    <AppContext.Provider value={{ api, role: session.role, report, online, go }}>
+    <AppContext.Provider value={{ api: screenApi, role: session.role, report, online, go }}>
       <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-50/90 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur dark:bg-slate-950/90">
           <h1 className="text-[1.75rem] font-bold tracking-tight">{title}</h1>
@@ -132,6 +150,27 @@ export default function App({ api: injected }: { api?: Api }) {
             </button>
           </div>
         </header>
+        {debug && (
+          <DebugBar
+            mockVideo={mockVideo}
+            onChange={(on) => {
+              saveMockVideo(on);
+              setMockVideo(on);
+            }}
+          />
+        )}
+        {picking && (
+          <ClipPicker
+            onPick={(snapshot) => {
+              picking.resolve(snapshot);
+              setPicking(null);
+            }}
+            onCancel={() => {
+              picking.reject(new PickCancelled());
+              setPicking(null);
+            }}
+          />
+        )}
         {offline && (
           <p className="mx-4 mb-3 flex animate-fade-in items-center gap-2 rounded-xl bg-warm-50 px-3 py-2 text-sm text-warm-800 ring-1 ring-warm-200 dark:bg-warm-950/60 dark:text-warm-200 dark:ring-warm-900">
             <WifiOff aria-hidden className="size-4 shrink-0" />

@@ -2,7 +2,7 @@
 
 ## Context
 
-- **One snapshot seam:** all three setup screens get snapshots only through `api.cameraSnapshot()`. These are `ReferenceImages.tsx` (button), `DoorDetection.tsx` and `FridgeArea.tsx` (on mount and "New snapshot"). Each resolves to `Snapshot {image: base64 JPEG, captured_at}` and sends any error it doesn't know to `report` from `AppContext`.
+- **One snapshot seam:** all three setup screens get snapshots only through `api.cameraSnapshot()`. These are `ReferenceImages.tsx` (button), `DoorDetection.tsx` and `FridgeArea.tsx` (when their add or set-area sheet opens, and "New snapshot"). Each resolves to `Snapshot {image: base64 JPEG, captured_at}` and sends any error it doesn't know to `report` from `AppContext`.
 - **API wiring:** `App.tsx` builds `api` once, either the injected test fake or a new `ApiClient`, and provides it through `AppContext`.
 - **Dev server:** `vite.config.ts` adds the `mockApi()` plugin only when `FRIDGESENSE_MOCK` is set. It proxies `/api` to `FRIDGESENSE_URL` when that is set. `configureServer` middlewares are the existing pattern (`/mock`, `/api` in `scripts/mock-api.ts`).
 - **Clips:** `tmp/*.mp4` are 12 H.264 (`avc1`) MP4s of 3.5–25 MB, named `Ring_Fridge_<yyyymmdd>_<hhmm>.mp4`, gitignored. Browsers can play them natively.
@@ -50,7 +50,7 @@
 ## Risks / Trade-offs
 
 - [Unblurred frames uploaded when proxying to a deployed backend] → Jayson accepted this. The picker shows the notice. Nothing uploads until the owner saves a reference.
-- [Opening Open/close detection or Fridge area with the switch on pops the picker straight away] → This is expected, since those tabs take a snapshot on open. Cancel leaves the tab with no snapshot, and "New snapshot" opens the picker again.
+- [Opening the add or set-area sheet with the switch on pops the picker straight away] → This is expected, since those sheets take a snapshot when they open. Cancel leaves the sheet with no snapshot, and "New snapshot" opens the picker again.
 - [Large clips (25 MB) over the dev server] → Range streaming means only what the scrubber needs is read.
 - [Path traversal via the clip name] → Strict name pattern plus a resolved-path check, covered by tests.
 - [Debug code leaking into the build] → `apply: "serve"` for the plugin and the `import.meta.env.DEV` guard. Task 5.2 checks the built bundle for `__dev/videos`.
@@ -66,7 +66,7 @@ Dev-only. Nothing to deploy. Rollback is reverting the branch.
   - `debug/ClipPicker.test.tsx`: `fetch` is stubbed for `/__dev/videos` and the frame grabber is injected. It covers the list order and default selection, "Use this frame" resolving a 960×540 snapshot (the grabber stub returns its size, and the fit math is checked with `fitWithin`), no clips, a clip error (dispatching `error` on the `<video>`), and the upload notice on and off.
   - `debug/ClipLive.test.tsx` and `LiveStream.test.tsx`: under a `DebugContext` with `mockVideo` on, cover "Livestream from a clip" (src, muted, loop, no `startLive`), "Change clip" and "Livestream with no clips". The existing LiveStream tests (no provider) cover "Livestream switch off" unchanged, plus one explicit test with `mockVideo: false`.
   - `debug/mockVideo.test.ts`: the stored switch round trip and throwing storage.
-  - `App.test.tsx` / `DebugBar.test.tsx`: `vi.stubEnv("DEV", …)` covers the bar shown and hidden and `/__dev/videos` never fetched when not in debug mode. The switch flows through to the screens: Reference images "Camera snapshot" opens the picker and doesn't call the fake API's `cameraSnapshot`. With the switch off it calls it once. Cancel shows no error and makes no request. Open/close detection opens the picker on mount.
+  - `App.test.tsx` / `DebugBar.test.tsx`: `vi.stubEnv("DEV", …)` covers the bar shown and hidden and `/__dev/videos` never fetched when not in debug mode. The switch flows through to the screens: Reference images "Camera snapshot" opens the picker and doesn't call the fake API's `cameraSnapshot`. With the switch off it calls it once. Cancel shows no error and makes no request. Open/close detection "Add" opens the picker.
 - **Build check:** `npm run build`, then `grep -r "__dev/videos" dist` finds nothing.
 - **Browser preview:** `pwa-mock` with the real `tmp/` clips: pick a frame in each of the three screens, scrub, open Livestream and switch clips, check light and dark at 375 px.
 - **Stubbed:** `fetch`, the frame grabber, `localStorage`. No Ring, AWS or Bedrock calls; real clips are used only in the manual preview, never in tests or fixtures.
