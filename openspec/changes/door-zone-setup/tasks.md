@@ -19,8 +19,8 @@ Test commands: backend `cd backend && uv run pytest -q && uv run ruff check .`; 
 
 ## 3. Camera snapshot (backend)
 
-- [ ] 3.1 Write failing tests in `test_camera.py` for "Snapshot taken" (clock frozen at 2026-10-15T19:20:10Z, Ring timestamp 1792092007000, 960×540, ≤300,000 bytes, nothing stored), "Face blurred in the snapshot", "No recent footage" and "Camera or face detection unavailable" (Ring 500, refresh failure, Rekognition failure).
-- [ ] 3.2 Implement `backend/src/fridgesense/camera.py` (`snapshot(ring, http, blurrer, device_id, now_ms)`), reusing the still download with attempts and delays as parameters, plus `FaceBlurrer` and a downscale/encode helper. Verify that the 3.1 tests pass.
+- [x] 3.1 Write failing tests in `test_camera.py` for "Snapshot taken" (clock frozen at 2026-10-15T19:20:10Z, Ring timestamp 1792092007000, 960×540, ≤300,000 bytes, nothing stored), "Face blurred in the snapshot", "No recent footage" and "Camera or face detection unavailable" (Ring 500, refresh failure, Rekognition failure).
+- [x] 3.2 Implement `backend/src/fridgesense/camera.py` (`snapshot(ring, http, blurrer, device_id, now_ms)`), reusing the still download with attempts and delays as parameters, plus `FaceBlurrer` and a downscale/encode helper. Verify that the 3.1 tests pass.
 
 ## 4. Door references and setup (backend)
 
