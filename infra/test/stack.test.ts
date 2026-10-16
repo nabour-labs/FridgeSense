@@ -248,6 +248,14 @@ describe("Ask assistant", () => {
     expect(on.TIME_ZONE).toBe("America/Vancouver");
   });
 
+  it("turns debug traces off from context", () => {
+    const [fn] = Object.values(
+      synthTemplate({ debugTraces: "false" }).findResources("AWS::Lambda::Function"),
+    ).filter((r) => r.Properties.Handler === "fridgesense.handlers.pipeline.handler");
+    const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    expect(vars.DEBUG_TRACES).toBe("false");
+  });
+
   it("lets the API function invoke Nova through the inference profile", () => {
     const invoke = apiStatements().filter((s) =>
       [s.Action].flat().includes("bedrock:InvokeModel"),

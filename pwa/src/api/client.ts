@@ -8,6 +8,8 @@ import type {
   EventPage,
   FridgeAreaBody,
   Inventory,
+  MotionPage,
+  MotionTrace,
   Pending,
   Session,
   Snapshot,
@@ -141,6 +143,18 @@ export class ApiClient {
   /** Replaces the fridge area. `image` is a base64 JPEG; `box` is in fractions of it. */
   saveFridgeArea(image: string, box: Box): Promise<FridgeAreaBody> {
     return this.request("PUT", "/api/fridge-area", { image, box });
+  }
+
+  /** Traced motions in [from, to), newest first, `limit` at a time (owner only). */
+  debugMotions(from: Date, to: Date, limit: number, cursor?: string): Promise<MotionPage> {
+    const query = new URLSearchParams({ from: from.toISOString(), to: to.toISOString(), limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.request("GET", `/api/debug/motions?${query}`);
+  }
+
+  /** One motion's trace, by motion id or door event id (owner only). */
+  debugMotion(id: string): Promise<MotionTrace> {
+    return this.request("GET", `/api/debug/motions/${encodeURIComponent(id)}`);
   }
 
   private async request<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {

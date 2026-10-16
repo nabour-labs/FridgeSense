@@ -174,3 +174,35 @@ def test_change_rule_check():
     check = DoorCheck(rules=(ZoneRule(WHOLE, "change", "above", 0.2, baseline),))
     assert check.evaluate([color_jpeg(GREY, HALVES_DARK_LIGHT)])[0] is True
     assert check.evaluate([color_jpeg((130, 130, 130))])[0] is False
+
+
+# pipeline-debug-traces: Two zones scored
+def test_zone_values_scores_every_zone():
+    still = color_jpeg(GREY, [((0.6, 0.0, 0.2, 0.5), FRIDGE_BLUE)], size=(200, 100))
+    values = DoorCheck(zones=HALVES, threshold=0.02).zone_values(still)
+    assert [(v.zone, v.threshold, v.open) for v in values] == [(1, 0.02, False), (2, 0.02, True)]
+    assert values[0].value == 0
+    assert values[1].value == pytest.approx(0.2, abs=0.02)
+
+
+# pipeline-debug-traces: Below-direction rule
+def test_zone_values_below_direction_rule():
+    check = DoorCheck(rules=(ZoneRule(WHOLE, "brightness", "below", 0.4),))
+    [value] = check.zone_values(color_jpeg((89, 89, 89)))
+    assert value.value == pytest.approx(0.35, abs=0.01)
+    assert value.open is True
+
+
+def test_zone_values_threshold_is_inclusive():
+    check = DoorCheck(rules=(ZoneRule(WHOLE, "brightness", "above", 0.5),))
+    [value] = check.zone_values(color_jpeg((128, 128, 128)))
+    rule = ZoneRule(WHOLE, "brightness", "above", value.value)
+    assert DoorCheck(rules=(rule,)).zone_values(color_jpeg((128, 128, 128)))[0].open is True
+
+
+def test_result_matches_best_zone_value():
+    still = color_jpeg(GREY, [((0.6, 0.0, 0.2, 0.5), FRIDGE_BLUE)], size=(200, 100))
+    check = DoorCheck(zones=HALVES, threshold=0.02)
+    best = max(check.zone_values(still), key=lambda v: v.value)
+    result = check.result(still)
+    assert (result.zone, result.value, result.is_open) == (best.zone, best.value, best.open)

@@ -28,6 +28,8 @@ export type Api = Pick<
   | "runDoorSetup"
   | "fridgeArea"
   | "saveFridgeArea"
+  | "debugMotions"
+  | "debugMotion"
 >;
 
 export interface AppContextValue {

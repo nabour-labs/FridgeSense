@@ -110,6 +110,73 @@ export function mockApi(): Plugin {
     setup: doorSetup && { ...doorSetup, stale: refsChangedAt > Date.parse(doorSetup.ran_at) },
     defaults: { zones: [{ x: 0.38, y: 0.32, width: 0.21, height: 0.3 }, { x: 0.455, y: 0.6, width: 0.12, height: 0.18 }], threshold: 0.02 },
   });
+  // Two traced motions for the Debug tab: the milk opening (e0) and a walk-past.
+  function debugTraces() {
+    const zone = { x: 0.38, y: 0.32, width: 0.21, height: 0.3 };
+    const scores = (open: boolean, n: number) => [
+      { zone: 1, value: open ? 0.14 + n * 0.01 : 0.004 + n * 0.0005, threshold: 0.11, open },
+    ];
+    const opened = [3, 4, 5];
+    const doorStills = Array.from({ length: 8 }, (_, i) => {
+      const n = i + 1, open = opened.includes(n);
+      return {
+        n, at_ms: now - 2 * MIN + n * 2000, missing_status: n === 7 ? 416 : null,
+        url: n === 7 ? null : open ? `/mock/still-${n - 2}.svg` : "/mock/closed.svg",
+        zones: n === 7 ? [] : scores(open, n), best_zone: n === 7 ? null : 1, open: n === 7 ? null : open,
+      };
+    });
+    const rule = {
+      source: "setup", ran_at: iso(26 * HOUR),
+      zones: [{ zone: 1, box: zone, feature: "change", direction: "above", threshold: 0.11, margin: 0.07, baseline_url: "/mock/closed.svg" }],
+      references: [
+        { id: "r1", status: "closed", box: zone, created_at: iso(27 * HOUR), url: "/mock/closed.svg" },
+        { id: "r2", status: "open", box: zone, created_at: iso(27 * HOUR), url: "/mock/still-1.svg" },
+      ],
+    };
+    const content = (n: number) => [
+      { type: "text", text: "Reference photos of items in this fridge, with what each one is:" },
+      { type: "text", text: "Reference 1: milk bag (2 L, white with blue print)" },
+      { type: "image", role: "reference", n: 1, url: `data:image/jpeg;base64,${photo("ref-milk-bag")}` },
+      { type: "cache_point" },
+      ...[1, 2, 3].flatMap((k) => [
+        { type: "text", text: `Image ${k} of ${n}` },
+        { type: "image", role: "still", n: k, url: `/mock/still-${k}.svg` },
+      ]),
+      { type: "cache_point" },
+      { type: "text", text: "Compare the images... Current inventory: [eggs, milk]\nOwner's instructions: Count yogurt cups individually.\nCall record_fridge_changes with your answer." },
+    ];
+    const base = (attempt: number) => ({
+      attempt, run_ms: now - MIN, model_id: "us.amazon.nova-2-lite-v1:0",
+      request: { content: content(3), inferenceConfig: { maxTokens: 1024, temperature: 0 }, toolConfig: { toolChoice: { tool: { name: "record_fridge_changes" } } } },
+    });
+    const calls = [
+      { ...base(1), outcome: "invalid", response: { output: { message: { role: "assistant", content: [{ text: "Milk was added." }] } }, stopReason: "end_turn", usage: { inputTokens: 1000, outputTokens: 50 }, metrics: { latencyMs: 1900 } },
+        input_tokens: 1000, output_tokens: 50, cache_read_tokens: 0, cache_write_tokens: 1300, usd: 0.000468, latency_ms: 1900, wall_ms: 2050, error_code: null },
+      { ...base(2), outcome: "ok", response: { output: { message: { role: "assistant", content: [{ toolUse: { name: "record_fridge_changes", input: { added: [{ item: "milk", category: "dairy", quantity: 1, confidence: 0.94 }], removed: [] } } }] } }, stopReason: "tool_use", usage: { inputTokens: 1180, outputTokens: 96, cacheReadInputTokens: 2000 }, metrics: { latencyMs: 2140 } },
+        input_tokens: 1180, output_tokens: 96, cache_read_tokens: 2000, cache_write_tokens: 0, usd: 0.000818, latency_ms: 2140, wall_ms: 2310, error_code: null },
+    ];
+    const totals = (cs: typeof calls) => ({
+      calls: cs.length, input_tokens: cs.reduce((a, c) => a + c.input_tokens, 0), output_tokens: cs.reduce((a, c) => a + c.output_tokens, 0),
+      usd: Number(cs.reduce((a, c) => a + c.usd, 0).toFixed(6)), latency_ms: cs.reduce((a, c) => a + (c.latency_ms ?? 0), 0),
+    });
+    const walkStills = Array.from({ length: 5 }, (_, i) => ({
+      n: i + 1, at_ms: now - 20 * MIN + i * 2000, url: "/mock/closed.svg", missing_status: null,
+      zones: scores(false, i + 1), best_zone: 1, open: false,
+    }));
+    return [
+      { id: "t0", device_id: "mock.device.D1", at: iso(2 * MIN), outcome: "door_open",
+        best: { value: 0.19, zone: 1, feature: "change", threshold: 0.11 }, stills_downloaded: 7, door_event_id: "e0",
+        nova: totals(calls), calls,
+        door: { window: { start_ms: now - 2 * MIN, end_ms: now - 2 * MIN + 18000, ring_event_id: "evt" }, outcome: "door_open",
+          door_sk: "DOOR#…", opened_at: iso(2 * MIN - 6000), closed_at: iso(2 * MIN - 12000), rule, stills: doorStills,
+          open_span: [3, 4, 5, 6], picked: [3, 4, 6], stored_urls: [1, 2, 3].map((k) => `/mock/still-${k}.svg`) } },
+      { id: "t1", device_id: "mock.device.D1", at: iso(20 * MIN), outcome: "not_door",
+        best: { value: 0.0065, zone: 1, feature: "change", threshold: 0.11 }, stills_downloaded: 5, door_event_id: null,
+        nova: totals([]), calls: [],
+        door: { window: { start_ms: now - 20 * MIN, end_ms: now - 20 * MIN + 10000, ring_event_id: "evt2" }, outcome: "not_door",
+          door_sk: null, opened_at: null, closed_at: null, rule, stills: walkStills, open_span: [], picked: [], stored_urls: [] } },
+    ];
+  }
   const eventsSince = (days: number) => events.filter((e) => Date.parse(e.opened_at) >= now - days * 24 * HOUR);
   const inventory = () => ({ items, pending_count: pending.length });
   return {
@@ -117,6 +184,10 @@ export function mockApi(): Plugin {
     apply: "serve",
     configureServer(server) {
       server.middlewares.use("/mock", (req, res) => {
+        if (req.url === "/closed.svg") {
+          res.setHeader("content-type", "image/svg+xml");
+          return res.end(closedDoors());
+        }
         const n = Number(req.url?.match(/^\/still-(\d)\.svg$/)?.[1]);
         if (!n) {
           res.statusCode = 404;
@@ -143,6 +214,24 @@ export function mockApi(): Plugin {
           events = events.filter((e) => e.id !== id);
           pending = pending.filter((p) => p.door_event_id !== id);
           return send(200, { id });
+        }
+        if (url.startsWith("/debug/")) {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          const traces = debugTraces();
+          const one = url.match(/^\/debug\/motions\/([^?]+)$/);
+          if (one) {
+            const id = decodeURIComponent(one[1]);
+            const t = traces.find((m) => m.id === id || m.door_event_id === id);
+            if (!t) return send(404, { error: "no trace" });
+            const { nova, ...motion } = t;
+            return send(200, { ...motion, nova_totals: nova, nova: t.calls, calls: undefined });
+          }
+          const q = new URLSearchParams(url.split("?")[1]);
+          const from = Date.parse(q.get("from")!), to = Date.parse(q.get("to")!);
+          const motions = traces
+            .filter((m) => Date.parse(m.at) >= from && Date.parse(m.at) < to)
+            .map(({ door: _door, calls: _calls, ...m }) => m);
+          return send(200, { motions, next: null });
         }
         if (url.startsWith("/events")) {
           const q = new URLSearchParams(url.split("?")[1]);
@@ -318,6 +407,16 @@ export function mockApi(): Plugin {
 }
 
 /** A drawn stand-in for a camera still: fridge shelves with a few items; `n` shifts the scene a little. */
+/** Closed steel doors: what the camera sees when nobody opens the fridge. */
+function closedDoors(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">
+  <rect width="320" height="180" fill="#64748b"/>
+  <rect x="100" y="20" width="58" height="150" rx="4" fill="#cbd5e1" stroke="#94a3b8"/>
+  <rect x="162" y="20" width="58" height="150" rx="4" fill="#cbd5e1" stroke="#94a3b8"/>
+  <rect x="150" y="70" width="4" height="40" rx="2" fill="#475569"/><rect x="166" y="70" width="4" height="40" rx="2" fill="#475569"/>
+</svg>`;
+}
+
 function fakeStill(n: number): string {
   const dx = (n - 1) * 14;
   const glow = 0.35 + n * 0.08;

@@ -7,7 +7,7 @@ import httpx
 import pytest
 import respx
 
-from fridgesense.door_events import download_stills, store_blurred_stills
+from fridgesense.door_events import download_all_stills, download_stills, store_blurred_stills
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import API_BASE, RingClient
 from fridgesense.store import Tokens
@@ -175,3 +175,41 @@ def test_store_skips_stills_that_fail_detection(aws):
     stills = store(raw, FakeBlurrer(drop={2}))
     assert [k for k, _ in stills] == [f"{PREFIX}still-{n}.jpg" for n in (1, 3, 4)]
     assert s3_keys() == [k for k, _ in stills]
+
+
+# pipeline-debug-traces: every requested still with its missing status
+def run_all(clients):
+    ring, http = clients
+    return download_all_stills(ring, http, STATE, Sleeps(), interval_ms=10_000)
+
+
+@respx.mock
+def test_all_stills_report_forbidden_status(aws, clients):
+    answers = iter(
+        [httpx.Response(303, headers={"Location": location(1)})]
+        + [httpx.Response(403, json={"errors": [{"status": "403"}]})] * 3
+    )
+    respx.post(DOWNLOAD).mock(side_effect=lambda request: next(answers))
+    respx.get(url__startswith="https://download-us.example.com/").respond(200, content=jpeg(0.5))
+    stills = run_all(clients)
+    assert [(s.n, s.at_ms, s.status) for s in stills] == [
+        (1, 1786715601000, None),
+        (2, 1786715606000, 403),
+        (3, 1786715611000, 403),
+        (4, 1786715616000, 403),
+    ]
+    assert stills[0].data == jpeg(0.5)
+    assert [s.data for s in stills[1:]] == [None, None, None]
+
+
+@respx.mock
+def test_all_stills_report_not_ready_after_retries(aws, clients):
+    respx.post(DOWNLOAD).respond(416)
+    assert [s.status for s in run_all(clients)] == [416] * 4
+
+
+@respx.mock
+def test_all_stills_ring_error_has_no_status(aws, clients):
+    respx.post(DOWNLOAD).mock(side_effect=httpx.ConnectError("down"))
+    stills = run_all(clients)
+    assert [(s.data, s.status) for s in stills] == [(None, None)] * 4

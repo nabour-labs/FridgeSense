@@ -304,3 +304,20 @@ describe("still links across polls", () => {
     expect(shownSrcs()).toEqual(links("b", 4));
   });
 });
+
+// Owner follows the link
+test("the owner's Debug link opens the door opening's trace", async () => {
+  const api = renderActivity([event({ id: "xyz" })]);
+  const card = await screen.findByRole("article");
+  await userEvent.click(within(card).getByRole("link", { name: "Debug door opening at 18:02" }));
+  await waitFor(() => expect(api.debugMotion).toHaveBeenCalledWith("xyz"));
+  expect(location.hash).toBe("#config/debug/xyz");
+  location.hash = "";
+});
+
+// Viewer has no link
+test("a viewer sees no Debug link", async () => {
+  renderActivity([event()], { role: "viewer" });
+  const card = await screen.findByRole("article");
+  expect(within(card).queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
+});

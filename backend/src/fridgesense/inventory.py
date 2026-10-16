@@ -27,7 +27,9 @@ def analyze_task(
     bucket: str,
     state: dict,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    writer=None,
 ) -> dict:
+    """Ask Nova what changed. With a trace `writer`, every Converse attempt is traced."""
     account_id, door_sk = state["account_id"], state["door_sk"]
     stills = [s3.get_object(Bucket=bucket, Key=k)["Body"].read() for k in state["still_keys"]]
     context = {"account_id": account_id, "door_sk": door_sk}
@@ -41,6 +43,13 @@ def analyze_task(
         model_id=analyzer.model_id,
         clock=clock,
     )
+    on_call = None
+    if writer is not None:
+        run_ms = int(clock().timestamp() * 1000)  # one per task run: a retried step adds files
+
+        def on_call(record):
+            writer.nova(state, run_ms, record, references, state["still_keys"])
+
     result = None
     try:
         result = analyzer.analyze(
@@ -50,6 +59,7 @@ def analyze_task(
             references=references,
             instructions=config.instructions,
             on_usage=record_usage,
+            on_call=on_call,
         )
     except BedrockRejected as e:
         log_event("analysis_failed", logging.ERROR, reason=str(e), **context)

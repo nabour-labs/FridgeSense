@@ -27,6 +27,7 @@ from fridgesense import (
     fridge_area,
     inventory,
     session,
+    traces,
     voice,
 )
 from fridgesense.devices import DeviceRepository
@@ -34,7 +35,7 @@ from fridgesense.door_events import DoorCheck, iso_utc
 from fridgesense.faces import DEFAULT_PRICE, FaceBlurrer
 from fridgesense.logs import log_event
 from fridgesense.store import TokenStore, load_app_config
-from fridgesense.table import FridgeTable
+from fridgesense.table import FridgeTable, account_pk
 from fridgesense.usage import Prices, UsageRecorder
 from fridgesense.web import Request, json_response
 
@@ -58,16 +59,17 @@ class Route:
     pattern: re.Pattern
     handle: Callable[[Context], dict]
     write: bool = False
+    owner: bool = False  # owner only, even to read
 
 
 ROUTES: list[Route] = []
 
 
-def route(method: str, path: str, write: bool = False):
+def route(method: str, path: str, write: bool = False, owner: bool = False):
     pattern = re.compile("^" + re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", path) + "$")
 
     def register(fn):
-        ROUTES.append(Route(method, pattern, fn, write))
+        ROUTES.append(Route(method, pattern, fn, write, owner))
         return fn
 
     return register
@@ -90,7 +92,7 @@ def handler(event, context):
         match = r.pattern.match(req.path)
         if r.method != req.method or not match:
             continue
-        if r.write and role != "owner":
+        if (r.write or r.owner) and role != "owner":
             return json_response(403, {"error": "read-only"})
         tokens = TokenStore().load()
         if tokens is None:
@@ -167,22 +169,22 @@ def _instant_ms(value: str) -> int | None:
     return int(dt.timestamp() * 1000) if dt.tzinfo else None
 
 
-def _event_range(query: dict) -> tuple[str, str] | str:
-    """The DOOR# sort key range to list, or the 400 error text."""
+def _event_range(query: dict, prefix: str = "DOOR#") -> tuple[str, str] | str:
+    """The sort key range to list, or the 400 error text."""
     if "from" not in query:
         raw = query.get("days", "7")
         if not raw.isdigit() or not 1 <= int(raw) <= 30:
             return "days must be 1 to 30"
-        return f"DOOR#{iso_utc(int(now() * 1000) - int(raw) * DAY_MS)}", "DOOR#~"
+        return f"{prefix}{iso_utc(int(now() * 1000) - int(raw) * DAY_MS)}", f"{prefix}~"
     start, end = _instant_ms(query["from"]), _instant_ms(query.get("to", ""))
     if start is None or end is None or not 0 < end - start <= MAX_RANGE_DAYS * DAY_MS:
         return f"from and to must be times, from before to, at most {MAX_RANGE_DAYS} days apart"
-    return f"DOOR#{iso_utc(start)}", f"DOOR#{iso_utc(end)}"
+    return f"{prefix}{iso_utc(start)}", f"{prefix}{iso_utc(end)}"
 
 
-@route("GET", "/api/events")
-def get_events(ctx: Context) -> dict:
-    span = _event_range(ctx.req.query)
+def _page(ctx: Context, prefix: str) -> tuple[list[dict], bool] | dict:
+    """Items in the query's range and page, newest first, and whether more remain; or a 400."""
+    span = _event_range(ctx.req.query, prefix)
     if isinstance(span, str):
         return json_response(400, {"error": span})
     low, high = span
@@ -194,11 +196,11 @@ def get_events(ctx: Context) -> dict:
         limit = int(raw)
     cursor = None
     if "cursor" in ctx.req.query:
-        cursor = decode_id(ctx.req.query["cursor"], "DOOR#")
+        cursor = decode_id(ctx.req.query["cursor"], prefix)
         if cursor is None:
             return json_response(400, {"error": "invalid cursor"})
         high = min(high, cursor)
-    # One extra to know whether an older page exists, one more for the cursor event itself.
+    # One extra to know whether an older page exists, one more for the cursor item itself.
     found = ctx.table.query_range(
         ctx.account_id, low, high, newest_first=True, limit=limit and limit + 2
     )
@@ -206,6 +208,15 @@ def get_events(ctx: Context) -> dict:
     more = limit is not None and len(found) > limit
     if limit is not None:
         found = found[:limit]
+    return found, more
+
+
+@route("GET", "/api/events")
+def get_events(ctx: Context) -> dict:
+    page = _page(ctx, "DOOR#")
+    if isinstance(page, dict):
+        return page
+    found, more = page
     now_ms = int(now() * 1000)
     stills_since = iso_utc(now_ms - STILLS_DAYS * DAY_MS)
     s3, bucket = _s3(), os.environ.get("STILLS_BUCKET", "")
@@ -232,6 +243,70 @@ def get_events(ctx: Context) -> dict:
             }
         )
     return json_response(200, {"events": events, "next": events[-1]["id"] if more else None})
+
+
+def _motion(item: dict) -> dict:
+    """A traced motion as listed: what happened, and what its Nova calls cost and took."""
+    calls = item.get("nova_calls", [])
+    door_sk = item.get("door_sk")
+    return {
+        "id": encode_id(item["sk"]),
+        "device_id": item.get("device_id"),
+        "at": iso_utc(int(item["start_ms"])),
+        "outcome": item.get("outcome"),
+        "best": item.get("best"),
+        "stills_downloaded": item.get("stills_downloaded", 0),
+        "door_event_id": encode_id(door_sk) if door_sk else None,
+        "nova": {
+            "calls": len(calls),
+            "input_tokens": sum(c.get("input_tokens", 0) for c in calls),
+            "output_tokens": sum(c.get("output_tokens", 0) for c in calls),
+            "usd": round(sum(c.get("usd", 0) for c in calls), 6),
+            "latency_ms": sum(c["latency_ms"] for c in calls if c.get("latency_ms") is not None),
+        },
+    }
+
+
+@route("GET", "/api/debug/motions", owner=True)
+def get_motions(ctx: Context) -> dict:
+    page = _page(ctx, "TRACE#")
+    if isinstance(page, dict):
+        return page
+    found, more = page
+    motions = [_motion(i) for i in found]
+    return json_response(200, {"motions": motions, "next": motions[-1]["id"] if more else None})
+
+
+@route("GET", "/api/debug/motions/{id}", owner=True)
+def get_motion(ctx: Context) -> dict:
+    sk = decode_id(ctx.params["id"], "TRACE#") or decode_id(ctx.params["id"], "DOOR#")
+    if sk is None:
+        return json_response(400, {"error": "invalid id"})
+    sk = "TRACE#" + sk.split("#", 1)[1]  # a door event's trace shares its time and device
+    item = ctx.table.get(account_pk(ctx.account_id), sk)
+    if item is None:
+        return json_response(404, {"error": "no trace"})
+    s3, bucket = _s3(), os.environ.get("STILLS_BUCKET", "")
+    found = traces.load(s3, bucket, ctx.account_id, item)
+    if found is None:
+        return json_response(404, {"error": "no trace"})
+    door, calls = found
+
+    def sign(key: str) -> str:
+        return s3.generate_presigned_url(
+            "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=STILL_LINK_TTL_S
+        )
+
+    motion = _motion(item)
+    motion["nova_totals"] = motion.pop("nova")
+    return json_response(
+        200,
+        {
+            **motion,
+            "door": traces.with_links(door, sign),
+            "nova": [traces.with_links(c, sign) for c in calls],
+        },
+    )
 
 
 @route("DELETE", "/api/events/{id}", write=True)

@@ -298,3 +298,104 @@ def test_on_usage_not_called_when_the_call_fails(bedrock):
 def test_analyzer_prices_default(bedrock):
     client, _ = bedrock
     assert NovaAnalyzer(client).prices == Prices()
+
+
+# pipeline-debug-traces: one call record per Converse attempt
+class Clock:
+    """perf_counter stand-in: each call returns the next time in seconds."""
+
+    def __init__(self, *times: float):
+        self.times = list(times)
+
+    def __call__(self) -> float:
+        return self.times.pop(0)
+
+
+def records(client, clock, **kwargs):
+    calls = []
+    analyzer = NovaAnalyzer(client, timer=clock)
+    try:
+        result = analyzer.analyze(STILLS, ["milk"], on_call=calls.append, **kwargs)
+    except (BedrockRetryable, BedrockRejected) as e:
+        return calls, e
+    return calls, result
+
+
+# Valid answer (tokens, cost and latency)
+def test_call_record_for_a_valid_answer(bedrock):
+    client, stub = bedrock
+    stub.add_response(
+        "converse",
+        cached_response(inputTokens=1180, cacheReadInputTokens=2000, outputTokens=96),
+    )
+    [call], result = records(client, Clock(10.0, 12.31))
+    assert result.changes is not None
+    assert call.attempt == 1
+    assert call.outcome == "ok"
+    assert call.tokens == Tokens(input=1180, output=96, cache_read=2000, cache_write=0)
+    assert call.usd == 0.000818
+    assert call.latency_ms == 2140
+    assert call.wall_ms == 2310
+    assert call.error_code is None
+    assert call.request["modelId"] == "us.amazon.nova-2-lite-v1:0"
+    assert call.response["stopReason"] == "tool_use"
+    assert call.response["output"]["message"]["content"][0]["toolUse"]["input"]["added"]
+    assert "ResponseMetadata" not in call.response
+
+
+# Invalid answer then valid
+def test_call_records_for_invalid_then_valid(bedrock):
+    client, stub = bedrock
+    stub.add_response("converse", load_fixture("nova/converse_end_turn.json"))
+    stub.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    calls, _ = records(client, Clock(0.0, 1.9, 5.0, 7.2))
+    assert [(c.attempt, c.outcome) for c in calls] == [(1, "invalid"), (2, "ok")]
+    assert calls[0].response["stopReason"] == "end_turn"
+    assert [c.latency_ms for c in calls] == [1900, 2140]
+    assert [c.wall_ms for c in calls] == [1900, 2200]
+
+
+# Call that raises an error
+def test_call_record_for_a_throttled_call(bedrock):
+    client, stub = bedrock
+    stub.add_client_error("converse", "ThrottlingException", http_status_code=429)
+    [call], raised = records(client, Clock(1.0, 1.12))
+    assert isinstance(raised, BedrockRetryable)
+    assert call.outcome == "error"
+    assert call.error_code == "ThrottlingException"
+    assert call.response is None
+    assert call.tokens == Tokens()
+    assert call.usd == 0
+    assert call.latency_ms is None
+    assert call.wall_ms == 120
+
+
+def test_call_record_for_a_rejected_call(bedrock):
+    client, stub = bedrock
+    stub.add_client_error("converse", "ValidationException", http_status_code=400)
+    [call], raised = records(client, Clock(1.0, 1.05))
+    assert isinstance(raised, BedrockRejected)
+    assert (call.outcome, call.error_code, call.wall_ms) == ("error", "ValidationException", 50)
+
+
+def test_call_record_for_a_read_timeout():
+    class TimingOut:
+        def converse(self, **_):
+            raise ReadTimeoutError(endpoint_url="https://bedrock")
+
+    [call], raised = records(TimingOut(), Clock(0.0, 30.0))
+    assert isinstance(raised, BedrockRetryable)
+    assert (call.outcome, call.error_code, call.wall_ms) == ("error", "ReadTimeout", 30000)
+
+
+def test_call_record_without_metrics():
+    resp = copy.deepcopy(load_fixture("nova/converse_tool_use.json"))
+    del resp["metrics"]  # required in the API shape, so only a fake client can omit it
+
+    class NoMetrics:
+        def converse(self, **_):
+            return resp
+
+    [call], _ = records(NoMetrics(), Clock(0.0, 1.0))
+    assert call.latency_ms is None
+    assert call.wall_ms == 1000
