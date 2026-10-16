@@ -44,7 +44,7 @@ Test commands: backend `cd backend && uv run pytest -q && uv run ruff check .`; 
 - [x] 6.3 Write failing tests in `ImageMarkup.test.tsx` (draw a box, draw a line, `single` redraw replaces, tiny drag ignored, read-only ignores drags) with a mocked 400×225 rect, then implement `ImageMarkup.tsx`. Verify that they pass.
 - [x] 6.4 Write failing tests for the Config tabs: "Open config", "Switch to open/close detection", "Open the detection tab by link" and "Viewer sees read-only config". Split `Config.tsx` into a tab shell plus `ReferenceImages.tsx`, and map `#config/doors` in `App.tsx`. Verify that the new tests pass and that all existing Config tests pass unchanged against `ReferenceImages`.
 - [x] 6.5 Write failing tests for "Add a camera snapshot", "Snapshot with no recent footage", "Draw on the image", "Undo a shape" and "Add a reference" (with the injected `flatten`), then add the two sources, the drawing tools and `flatten` in `image.ts`. Verify that the tests pass along with "Annotation required", "Limit reached", "Delete a reference" and "Upload refused".
-- [ ] 6.6 Write failing tests in `DoorDetection.test.tsx` for every scenario of "Open/close detection tab", then implement `DoorDetection.tsx`. Verify that `npm test` passes in `pwa/`.
+- [x] 6.6 Write failing tests in `DoorDetection.test.tsx` for every scenario of "Open/close detection tab", then implement `DoorDetection.tsx`. Verify that `npm test` passes in `pwa/`.
 
 ## 7. Infrastructure and docs
 

@@ -40,7 +40,7 @@ export function Config({ resize = toJpeg }: { resize?: Resize }) {
               history.replaceState(null, "", s.hash);
               setSection(s.id);
             }}
-            className={`h-10 rounded-xl px-2 text-sm font-semibold transition ${
+            className={`h-10 whitespace-nowrap rounded-xl px-1 text-[13px] font-semibold tracking-tight transition sm:text-sm ${
               section === s.id
                 ? "bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-white"
                 : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
