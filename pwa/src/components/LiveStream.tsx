@@ -155,7 +155,7 @@ function RealLiveStream({
   );
 
   return (
-    <Sheet title="Livestream" onClose={onClose}>
+    <Sheet title="Livestream" size="wide" onClose={onClose}>
       <div className="relative grid aspect-video place-items-center overflow-hidden rounded-2xl bg-black text-sm text-slate-300">
         {stream && (
           <video

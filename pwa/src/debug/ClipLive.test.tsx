@@ -83,3 +83,12 @@ it("Livestream switch off: the live view starts as before, with no clip dropdown
   expect(screen.queryByRole("combobox", { name: "Clip" })).not.toBeInTheDocument();
   expect(screen.getByText("Connecting…")).toBeInTheDocument();
 });
+
+it("Mock video Livestream is wide", async () => {
+  serve(CLIPS);
+  renderLive(true);
+  const dialog = await screen.findByRole("dialog", { name: "Livestream" });
+  expect(dialog).toHaveClass("sm:max-w-3xl");
+  expect(dialog).not.toHaveClass("max-w-md");
+  await screen.findByRole("combobox", { name: "Clip" });
+});
