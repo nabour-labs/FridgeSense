@@ -79,7 +79,8 @@ class RingClient:
         return new
 
     def _send(self, method: str, path: str, tokens: Tokens, **kwargs: Any) -> httpx.Response:
-        headers = {"Authorization": f"Bearer {tokens.access_token}"}
+        extra = {k: v for k, v in kwargs.pop("headers", {}).items() if k.lower() != "authorization"}
+        headers = {**extra, "Authorization": f"Bearer {tokens.access_token}"}
         return self.http.request(
             method, API_BASE + path, headers=headers, timeout=TIMEOUT_S, **kwargs
         )

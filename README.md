@@ -211,6 +211,10 @@ set -a; source .env; set +a; read -rs "ADMIN?Admin passcode: "; echo; read -rs "
 
 The app asks for the passcode again every 24 hours, whatever the role. It notices the expiry on its own, even offline. Changing a passcode signs out every device that used it.
 
+### Live view
+
+**Activity → Livestream** plays the camera live for up to 60 seconds (Ring's limit per session on plug-in cameras), then offers **Watch again**. The video goes from Ring straight to the browser over WebRTC; the app API only passes the connection offer and answer (`POST /api/camera/live`, `DELETE /api/camera/live/{session_id}`), so the Ring token stays on the server and nothing is recorded or stored. **Faces are not blurred in live video**, unlike stills, and every signed-in passcode can open it, the demo passcode included.
+
 ### Teach the camera your fridge
 
 The gear at the top right opens **Config**. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6); its **Fridge area** tab marks where the fridge is; its **Debug** tab (owner only) shows why each motion was judged the way it was.

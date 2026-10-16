@@ -100,6 +100,14 @@ export interface Box {
   height: number;
 }
 
+export interface LiveSession {
+  /** SDP answer from the camera. */
+  answer: string;
+  session_id: string;
+  /** The camera ends the session after this many seconds. */
+  max_seconds: number;
+}
+
 export interface Snapshot {
   /** Base64 JPEG, faces blurred. */
   image: string;
