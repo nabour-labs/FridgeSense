@@ -34,7 +34,7 @@ Each motion event is judged from only 4 stills, and `opened_at`/`closed_at` come
 
 - **Backend:** new `backend/src/fridgesense/door_calibration.py` (references, validation, setup run) and `camera.py` (snapshot: download, blur, downscale), new routes in `handlers/api.py`, and in `door_events.py` the sampling, parallel download, open-span selection and per-device setup lookup. `handlers/pipeline.py` reads `STILL_INTERVAL_MS`.
 - **PWA:** `screens/Config.tsx` split into tabs (`#config` and `#config/doors`). New `DoorDetection.tsx`, a shared drawing component `ImageMarkup.tsx`, and pure geometry in `pwa/src/shapes.ts`. Updates to `AddReference`, `api/client.ts` and `api/types.ts`.
-- **Infra:** `STILL_INTERVAL_MS` on the fetch-stills Lambda. The API Lambda gets Rekognition `DetectFaces`, its timeout goes from 10 s to 25 s for the snapshot, and it gets `DOOR_ZONES`/`DOOR_THRESHOLD` for the defaults it reports.
+- **Infra:** `STILL_INTERVAL_MS` on the fetch-stills Lambda. The API Lambda gets Rekognition `DetectFaces` and `DOOR_ZONES`/`DOOR_THRESHOLD` for the defaults it reports; its 20 s timeout already covers a snapshot.
 - **Ring:** up to 30 still requests per motion event instead of 4, well under the 100 requests-per-second limit. Whether stills 1 s apart are distinct frames is unverified; see design.md.
 - **Cost:** unchanged per opening. Each snapshot costs one face-detection call (about $0.001).
 - **Deploy:** this change's final deploy also covers `door-check-color-zones`, which is merged into `local` but not deployed yet.

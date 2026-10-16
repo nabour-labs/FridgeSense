@@ -39,6 +39,10 @@ export interface AppSiteProps {
   /** The Ask assistant (Nova over MCP): "on" or "off", and its questions per day. */
   askAgent: string;
   askAgentDailyLimit: string;
+  /** The door check's defaults, shown on the setup tab until the owner runs setup. */
+  doorZones: string;
+  doorThreshold: string;
+  faceDetectPrice: string;
   novaModelId: string;
   novaPriceIn: string;
   novaPriceOut: string;
@@ -66,7 +70,7 @@ export class AppSite extends Construct {
       // cuts integrations off at 30 s.
       timeout: Duration.seconds(20),
       logGroup: props.logGroup("ApiFunction"),
-      description: "App API: sign-in, inventory, door events, pending changes, questions",
+      description: "App API: sign-in, inventory, door events, pending changes, questions, door setup",
       environment: {
         ...props.baseEnvironment,
         STILLS_BUCKET: props.stillsBucket.bucketName,
@@ -78,6 +82,9 @@ export class AppSite extends Construct {
         NOVA_PRICE_OUT: props.novaPriceOut,
         NOVA_PRICE_CACHE_READ: props.novaPriceCacheRead,
         NOVA_PRICE_CACHE_WRITE: props.novaPriceCacheWrite,
+        DOOR_ZONES: props.doorZones,
+        DOOR_THRESHOLD: props.doorThreshold,
+        FACE_DETECT_PRICE: props.faceDetectPrice,
       },
     });
     fn.addToRolePolicy(
@@ -90,8 +97,12 @@ export class AppSite extends Construct {
     fn.addToRolePolicy(
       new PolicyStatement({ actions: ["polly:SynthesizeSpeech"], resources: ["*"] }),
     );
+    // Camera snapshots for setup: faces are blurred before the image leaves the Lambda.
+    // DetectFaces has no resource-level permissions.
+    fn.addToRolePolicy(new PolicyStatement({ actions: ["rekognition:DetectFaces"], resources: ["*"] }));
     props.table.grantReadWriteData(fn);
     props.appSecret.grantRead(fn);
+    // Read-only: the token-refresh Lambda keeps the Ring token fresh for snapshots.
     props.tokenSecret.grantRead(fn);
     props.stillsBucket.grantRead(fn);
 

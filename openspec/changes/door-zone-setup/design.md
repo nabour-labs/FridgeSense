@@ -6,7 +6,7 @@
 
 Facts that shape the approach:
 - The camera records only on motion, and Ring's image download returns existing footage only (the nearest frame within ±10 s). So a snapshot can fail when nothing moved recently.
-- The API Lambda (`handlers/api.py`, 10 s timeout) has the Ring token store and the table, but no Rekognition permission.
+- The API Lambda (`handlers/api.py`, 20 s timeout) reads the Ring token store (read-only: the token-refresh Lambda keeps it fresh) and the table, but has no Rekognition permission.
 - Analysis references (`REF#…`) store base64 JPEGs of up to 200 KB in DynamoDB. The PWA shrinks photos with `image.ts::toJpeg` (768 px), injected as `resize` so tests avoid canvas.
 
 ## Goals / Non-Goals
@@ -81,7 +81,7 @@ In code, `DoorCheck` gains per-zone rules `ZoneRule(box, feature, direction, thr
   - `DoorDetection.test.tsx`: every scenario of the new requirement.
   - `Config.test.tsx`: tabs and the hash.
   - `client.test.ts`: the new methods.
-- **Infra:** the API Lambda has a 25 s timeout, `rekognition:DetectFaces` and `DOOR_ZONES`/`DOOR_THRESHOLD`; the pipeline Lambda has `STILL_INTERVAL_MS`.
+- **Infra:** the API Lambda keeps 20 s, gets `rekognition:DetectFaces` and `DOOR_ZONES`/`DOOR_THRESHOLD`, and stays read-only on secrets; the pipeline Lambda has `STILL_INTERVAL_MS`.
 - **Fixtures:** only synthetic JPEGs from `conftest` helpers. No real-camera images are committed. Nothing calls live Ring, AWS or Bedrock.
 
 ## Risks / Trade-offs
@@ -90,11 +90,11 @@ In code, `DoorCheck` gains per-zone rules `ZoneRule(box, feature, direction, thr
 - [The owner adds only daytime references, and night openings score differently] → Setup reflects the references given. The UI shows the margin. Night mode stays out of scope.
 - [Snapshot fails because nothing moved recently] → A clear 409 message. The owner is usually at the fridge while adding references, which triggers motion.
 - [A mislabeled reference produces a bad setup] → A run fails on overlap, so a mislabeled reference usually shows up as "open and closed references overlap" with its score. A new run with corrected references replaces the setup.
-- [The API Lambda runs up to about 12 s for a snapshot] → The timeout is 25 s, under the HTTP API's 30 s maximum. Other routes are unaffected.
+- [The API Lambda runs up to about 12 s for a snapshot] → Its existing 20 s timeout covers it. The API stays read-only on secrets, so a snapshot that would need to save a refreshed Ring token answers 502; the token-refresh Lambda (every 3 h, 4 h tokens) keeps that rare.
 - [Stored door events change meaning (`duration_s` shorter)] → Stats mixes old and new events for up to 28 days. Accepted for a demo.
 
 ## Migration Plan
 
-1. Tests green on `feat/door-zone-setup`, then merge into `local`, then `cdk diff` (API Lambda timeout, IAM and env; pipeline env; plus `door-check-color-zones`' env changes), then `cdk deploy` with Jayson's OK.
+1. Tests green on `feat/door-zone-setup`, then merge into `local`, then `cdk diff` (API Lambda IAM and env; pipeline env; plus `door-check-color-zones`' env changes), then `cdk deploy` with Jayson's OK.
 2. On the phone: Config, then Open/close detection, then add references (doors open and closed, each drawer open), then Run setup. Open each door once and check that `door_event_recorded` has `zones_source = "setup"` and plausible `duration_s`, and that a stored still is cropped.
 3. Rollback: redeploy the previous commit. The old code ignores the `DOORREF#`/`DOORSETUP#` items, so no cleanup is needed.

@@ -13,7 +13,7 @@ from PIL import Image, ImageStat
 
 from fridgesense.camera import NoFootage, SnapshotFailed, snapshot
 from fridgesense.faces import FaceBlurrer, enlarge_box
-from fridgesense.oauth import OAuthClient, OAuthUnavailable
+from fridgesense.oauth import OAUTH_URL, OAuthClient, OAuthUnavailable
 from fridgesense.ring import API_BASE, RingClient
 from fridgesense.store import Tokens
 from tests.conftest import MemoryTokenStore, checkerboard_jpeg, color_jpeg, load_fixture
@@ -190,3 +190,20 @@ def test_snapshot_is_base64_safe():
     # The API sends the bytes as base64; make sure a snapshot round-trips.
     data = color_jpeg(size=(960, 540))
     assert base64.b64decode(base64.b64encode(data)) == data
+
+
+# Camera unavailable: the refreshed Ring token can't be saved (the API may only read secrets)
+@respx.mock
+def test_token_save_denied_is_unavailable(aws, rekognition, monkeypatch):
+    from botocore.exceptions import ClientError
+
+    from tests.conftest import MemoryTokenStore
+
+    def denied(self, tokens):
+        raise ClientError({"Error": {"Code": "AccessDeniedException"}}, "PutSecretValue")
+
+    monkeypatch.setattr(MemoryTokenStore, "save", denied)
+    respx.post(OAUTH_URL).respond(200, json=load_fixture("ring/oauth_refresh.json"))
+    respx.post(DOWNLOAD).respond(303, headers={"Location": LINK})
+    with pytest.raises(SnapshotFailed):
+        take(rekognition, expires_in=-10)

@@ -1,14 +1,17 @@
 """Camera snapshots for setup: one still from the fridge camera, faces blurred, never stored."""
 
 import io
+import logging
 import time
 from collections.abc import Callable
 
 import httpx
+from botocore.exceptions import BotoCoreError, ClientError
 from PIL import Image
 
 from fridgesense.door_events import NOT_READY, fetch_still
 from fridgesense.faces import FaceBlurrer
+from fridgesense.logs import log_event
 from fridgesense.ring import RingClient
 
 SNAPSHOT_LAG_MS = 3000  # the newest seconds of footage are often not indexed yet
@@ -57,7 +60,11 @@ def snapshot(
 ) -> tuple[bytes, int]:
     """(blurred JPEG, its timestamp ms) for the camera at now − 3 s."""
     ts = now_ms - SNAPSHOT_LAG_MS
-    data, status = fetch_still(ring, http, device_id, ts, sleep, SNAPSHOT_RETRY_DELAYS_S)
+    try:
+        data, status = fetch_still(ring, http, device_id, ts, sleep, SNAPSHOT_RETRY_DELAYS_S)
+    except (ClientError, BotoCoreError) as e:  # e.g. a refreshed token the API may not save
+        log_event("snapshot_failed", logging.WARNING, device_id=device_id, error=type(e).__name__)
+        raise SnapshotFailed() from e
     if data is None:
         raise NoFootage() if status in NOT_READY else SnapshotFailed()
     blurred = blurrer.blur(shrink(data), {"device_id": device_id, "still": "snapshot"})

@@ -138,6 +138,7 @@ describe("pipeline Lambda", () => {
       "RING_TOKENS_SECRET_ID",
       "STILLS_BUCKET",
       "STILL_CROP",
+      "STILL_INTERVAL_MS",
       "TABLE_NAME",
       "TIME_ZONE",
     ]);
@@ -149,6 +150,7 @@ describe("pipeline Lambda", () => {
     expect(vars.DOOR_ZONES).toBe("0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18");
     expect(vars.DOOR_THRESHOLD).toBe("0.02");
     expect(vars.STILL_CROP).toBe("0.30,0.0,0.34,1.0");
+    expect(vars.STILL_INTERVAL_MS).toBe("1000");
     expect(vars).not.toHaveProperty("DOOR_BOX");
     expect(vars.FACE_DETECT_PRICE).toBe("0.001");
   });
