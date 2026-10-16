@@ -197,13 +197,26 @@ The app asks for the passcode again every 24 hours, owner and demo alike. It not
 
 ### Teach the camera your fridge
 
-The gear at the top right opens **Config**. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6); its **Fridge area** tab marks where the fridge is.
+The gear at the top right opens **Config**. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6); its **Fridge area** tab marks where the fridge is; its **Debug** tab (owner only) shows why each motion was judged the way it was.
 
 - **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
 - **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
 - **Fridge area:** tap **Set area**, drag one box around the whole fridge on a camera snapshot, and save. It is stored per camera (`GET`/`PUT /api/fridge-area`) along with the snapshot. Nothing uses it yet; a later change will crop stills to it before analysis.
 
 Changes apply from the next door opening. Each reference adds roughly 1–2K input tokens per analysis, which shows up in the `nova_cost` log. The demo passcode sees Config read-only.
+
+### Debug traces
+
+Every motion the camera reports leaves a trace for 7 days. **Config → Debug** lists them by day; tap one, or the bug icon on an Activity card, to see:
+
+- **Door check:** every still downloaded for the motion, with each zone's score against its threshold, the open/closed verdict, which stills went to analysis, and the rule that decided (setup zones with their baselines and door references, or the default zones). The door check is a pixel rule, so its scores are its reasoning; there is no prompt.
+- **Nova calls:** for each Converse attempt of a door opening, the request in order (text, reference images, stills, cache points), the raw response and stop reason, input/output/cache tokens, cost, Bedrock's `latencyMs` and the measured wall time. Failed and invalid attempts are included.
+
+Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). **The raw stills are stored unblurred**, so only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the demo passcode gets 403 and sees no Debug tab. Turn traces off, for example before recording a demo with people in frame:
+
+```bash
+cdk deploy -c debugTraces=false
+```
 
 ### Demo access
 

@@ -125,6 +125,7 @@ describe("pipeline Lambda", () => {
     expect(fn.Properties.Timeout).toBe(90);
     const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
     expect(Object.keys(vars).sort()).toEqual([
+      "DEBUG_TRACES",
       "DOOR_THRESHOLD",
       "DOOR_ZONES",
       "FACE_DETECT_PRICE",
@@ -153,6 +154,7 @@ describe("pipeline Lambda", () => {
     expect(vars.STILL_INTERVAL_MS).toBe("1000");
     expect(vars).not.toHaveProperty("DOOR_BOX");
     expect(vars.FACE_DETECT_PRICE).toBe("0.001");
+    expect(vars.DEBUG_TRACES).toBe("true");
   });
 
   it("may call only rekognition:DetectFaces, on *", () => {

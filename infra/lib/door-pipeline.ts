@@ -44,6 +44,8 @@ export interface DoorPipelineProps {
   novaPriceCacheWrite: string;
   /** "true" adds Bedrock cache points to the analysis request. */
   novaCacheAnalysis: string;
+  /** "false" stops debug traces (raw stills, scores, Nova requests) under each event's debug/. */
+  debugTraces: string;
   /** IANA zone for the household day in usage totals. */
   timeZone: string;
   faceDetectPrice: string;
@@ -106,6 +108,7 @@ export class DoorPipeline extends Construct {
         NOVA_CACHE_ANALYSIS: props.novaCacheAnalysis,
         TIME_ZONE: props.timeZone,
         FACE_DETECT_PRICE: props.faceDetectPrice,
+        DEBUG_TRACES: props.debugTraces,
       },
     });
     this.bucket.grantReadWrite(fn);

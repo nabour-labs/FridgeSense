@@ -107,13 +107,13 @@
 
 ## 8. Infra, docs and checks
 
-- [ ] 8.1 Write a failing test in `infra/test/pipeline.test.ts` that asserts the pipeline Lambda has `DEBUG_TRACES` (from a `debugTraces` context value, default `"true"`). Add it in `door-pipeline.ts` and `fridgesense-stack.ts`, then verify that `npm test` passes in `infra/`.
-- [ ] 8.2 Add a short "Debug traces" section to the README covering:
+- [x] 8.1 Write a failing test in `infra/test/pipeline.test.ts` that asserts the pipeline Lambda has `DEBUG_TRACES` (from a `debugTraces` context value, default `"true"`). Add it in `door-pipeline.ts` and `fridgesense-stack.ts`, then verify that `npm test` passes in `infra/`.
+- [x] 8.2 Add a short "Debug traces" section to the README covering:
   - what is kept and for how long;
   - that the raw stills are unblurred and owner-only;
   - how to turn traces off with `DEBUG_TRACES=false` / `-c debugTraces=false`.
   - If any AWS step hit friction, add a `docs/friction-log.md` entry; otherwise add nothing.
-- [ ] 8.3 Run all suites and linters green, then report the commands and their results:
+- [x] 8.3 Run all suites and linters green, then report the commands and their results:
   - `cd backend && uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
   - `cd pwa && npm test && npm run build`
   - `cd infra && npm test`
