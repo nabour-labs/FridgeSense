@@ -16,7 +16,9 @@ export function loadSession(now = Date.now()): StoredSession | null {
   try {
     const token = localStorage.getItem(TOKEN);
     if (!token) return null;
-    const role = localStorage.getItem(ROLE) === "viewer" ? "viewer" : "owner";
+    const stored = localStorage.getItem(ROLE);
+    // Sessions from before roles were stored belong to the owner.
+    const role: Role = stored === "viewer" || stored === "user" ? stored : "owner";
     const expiresAt = Number(localStorage.getItem(EXPIRES));
     if (!expiresAt || now > expiresAt) {
       clearSession();

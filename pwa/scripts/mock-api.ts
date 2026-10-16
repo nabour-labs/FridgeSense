@@ -203,7 +203,7 @@ export function mockApi(): Plugin {
           res.end(JSON.stringify(body));
         };
         const url = req.url ?? "";
-        if (req.method === "POST" && url === "/session") return send(200, { token: "mock", expires_at: iso(-24 * HOUR), role: process.env.FRIDGESENSE_MOCK === "viewer" ? "viewer" : "owner" });
+        if (req.method === "POST" && url === "/session") return send(200, { token: "mock", expires_at: iso(-24 * HOUR), role: ["viewer", "user"].includes(process.env.FRIDGESENSE_MOCK ?? "") ? process.env.FRIDGESENSE_MOCK : "owner" });
         // FRIDGESENSE_MOCK=nocamera: signed in, but no Ring account linked yet.
         if (process.env.FRIDGESENSE_MOCK === "nocamera") return send(409, { error: "no camera linked" });
         if (url === "/inventory") return send(200, inventory());
@@ -217,6 +217,7 @@ export function mockApi(): Plugin {
         }
         if (url.startsWith("/debug/")) {
           if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          if (process.env.FRIDGESENSE_MOCK === "user") return send(403, { error: "admin only" });
           const traces = debugTraces();
           const one = url.match(/^\/debug\/motions\/([^?]+)$/);
           if (one) {

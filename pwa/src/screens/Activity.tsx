@@ -1,7 +1,7 @@
 import { ArrowDownRight, ArrowUpRight, Bug, ChevronLeft, ChevronRight, Clock, DoorClosed, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Change, DoorEvent } from "../api/types";
-import { useApp } from "../AppContext";
+import { canEdit, isAdmin, useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
@@ -160,8 +160,8 @@ function EventPage({
                 <EventCard
                   event={e}
                   onStill={(index) => setViewing({ stills: e.stills, index })}
-                  onDelete={role === "owner" ? () => setDeleting(e) : undefined}
-                  debug={role === "owner"}
+                  onDelete={canEdit(role) ? () => setDeleting(e) : undefined}
+                  debug={isAdmin(role)}
                 />
               </li>
             ))}

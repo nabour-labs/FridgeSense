@@ -3,7 +3,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import type { Item } from "../api/types";
 import { CATEGORIES } from "../categories";
-import { useApp } from "../AppContext";
+import { canEdit, useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
 import { NoData } from "../components/NoData";
 import { Select } from "../components/Select";
@@ -14,7 +14,7 @@ import { useLoad } from "../useLoad";
 
 export function Fridge() {
   const { api, report, go, role } = useApp();
-  const canEdit = role === "owner";
+  const editable = canEdit(role);
   const { data: inventory, setData: setInventory, failed } = useLoad(
     useCallback(() => api.inventory(), [api]),
     10_000,
@@ -38,7 +38,7 @@ export function Fridge() {
         onReview={() => go("review")}
       />
 
-      {canEdit && <AddButton onClick={() => setAdding(true)} />}
+      {editable && <AddButton onClick={() => setAdding(true)} />}
 
       {inStock.length === 0 && outOf.length === 0 && (
         <EmptyState
@@ -46,7 +46,7 @@ export function Fridge() {
           title="Your fridge looks empty."
           hint="Items appear here after the next door opening or can be added by hand."
         >
-          {canEdit && <AddButton onClick={() => setAdding(true)} />}
+          {editable && <AddButton onClick={() => setAdding(true)} />}
         </EmptyState>
       )}
 
@@ -61,7 +61,7 @@ export function Fridge() {
           <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white shadow-sm shadow-slate-900/5 ring-1 ring-slate-200 dark:divide-slate-800 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800">
             {items.map((item) => (
               <li key={item.key}>
-                <ItemRow item={item} onEdit={canEdit ? () => setEditing(item) : undefined} />
+                <ItemRow item={item} onEdit={editable ? () => setEditing(item) : undefined} />
               </li>
             ))}
           </ul>
@@ -81,7 +81,7 @@ export function Fridge() {
           <ul className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
             {outOf.map((item) => (
               <li key={item.key}>
-                <ItemRow item={item} onEdit={canEdit ? () => setEditing(item) : undefined} />
+                <ItemRow item={item} onEdit={editable ? () => setEditing(item) : undefined} />
               </li>
             ))}
           </ul>

@@ -1,4 +1,4 @@
-import { ChartColumn, History, ListChecks, Mic, Refrigerator, Settings, WifiOff } from "lucide-react";
+import { ChartColumn, History, ListChecks, LogOut, Mic, Refrigerator, Settings, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient, ApiError, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
@@ -118,6 +118,18 @@ export default function App({ api: injected }: { api?: Api }) {
             >
               <Settings aria-hidden className="size-5" />
             </a>
+            <button
+              type="button"
+              onClick={() => {
+                clearSession();
+                setSession(null);
+              }}
+              aria-label="Sign out"
+              title="Sign out"
+              className="grid size-11 place-items-center rounded-full text-slate-500 transition hover:bg-slate-200/70 dark:text-slate-400 dark:hover:bg-slate-800"
+            >
+              <LogOut aria-hidden className="size-5" />
+            </button>
           </div>
         </header>
         {offline && (

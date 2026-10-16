@@ -92,8 +92,10 @@ def handler(event, context):
         match = r.pattern.match(req.path)
         if r.method != req.method or not match:
             continue
-        if (r.write or r.owner) and role != "owner":
+        if (r.write or r.owner) and role == "viewer":
             return json_response(403, {"error": "read-only"})
+        if r.owner and role != "owner":
+            return json_response(403, {"error": "admin only"})
         tokens = TokenStore().load()
         if tokens is None:
             return json_response(409, {"error": "no camera linked"})

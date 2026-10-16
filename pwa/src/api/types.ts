@@ -1,4 +1,5 @@
-export type Role = "owner" | "viewer";
+/** `owner` is the admin (Debug too), `user` has full access without Debug, `viewer` is read-only. */
+export type Role = "owner" | "user" | "viewer";
 
 export interface Session {
   token: string;

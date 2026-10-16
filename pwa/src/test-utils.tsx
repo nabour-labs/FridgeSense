@@ -1,6 +1,6 @@
 import { fireEvent, screen } from "@testing-library/react";
 import type { Api } from "./AppContext";
-import type { Inventory } from "./api/types";
+import type { Inventory, Role } from "./api/types";
 
 const DAY = 24 * 3600_000;
 
@@ -44,7 +44,7 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
   } as Api;
 }
 
-export function signedIn(role: "owner" | "viewer" = "owner", expiresAt = Date.now() + DAY) {
+export function signedIn(role: Role = "owner", expiresAt = Date.now() + DAY) {
   localStorage.setItem("fridgesense.token", "tok");
   localStorage.setItem("fridgesense.role", role);
   localStorage.setItem("fridgesense.expires", String(expiresAt));

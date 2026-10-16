@@ -12,7 +12,8 @@ from typing import Literal
 from fridgesense.store import AppConfig
 
 TTL_S = 24 * 3600  # sign in again once a day
-Role = Literal["owner", "viewer"]
+Role = Literal["owner", "user", "viewer"]
+ROLES: tuple[Role, ...] = ("owner", "user", "viewer")  # sign-in order when passcodes match
 
 
 def _key(passcode: str) -> bytes:
@@ -21,7 +22,8 @@ def _key(passcode: str) -> bytes:
 
 
 def _passcode_for(cfg: AppConfig, role: str) -> str:
-    return {"owner": cfg.passcode, "viewer": cfg.demo_passcode}.get(role, "")
+    passcodes = {"owner": cfg.passcode, "user": cfg.user_passcode, "viewer": cfg.demo_passcode}
+    return passcodes.get(role, "")
 
 
 def _b64(data: bytes) -> str:
@@ -40,8 +42,8 @@ def issue(cfg: AppConfig, role: Role, now: int) -> tuple[str, int]:
 
 
 def sign_in(cfg: AppConfig, passcode: str, now: int) -> tuple[str, int, Role] | None:
-    """(token, expires_at, role) for a matching passcode; the owner passcode is checked first."""
-    for role in ("owner", "viewer"):
+    """(token, expires_at, role) for a matching passcode, checked in ROLES order."""
+    for role in ROLES:
         expected = _passcode_for(cfg, role)
         if expected and hmac.compare_digest(passcode.encode(), expected.encode()):
             token, exp = issue(cfg, role, now)

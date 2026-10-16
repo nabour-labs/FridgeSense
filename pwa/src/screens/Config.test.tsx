@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { Mock } from "vitest";
 import { ApiError } from "../api/client";
 import type { Resize } from "../image";
-import type { Config as ConfigData, Reference } from "../api/types";
+import type { Config as ConfigData, Reference, Role } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { drag, fakeApi } from "../test-utils";
 import { Config } from "./Config";
@@ -17,7 +17,7 @@ const MILK = ref("r1", "milk bag");
 function renderConfig(
   config: ConfigData,
   { role = "owner", api: overrides = {}, resize = vi.fn().mockResolvedValue("/9j/RESIZED") } = {} as {
-    role?: "owner" | "viewer";
+    role?: Role;
     api?: Partial<Record<keyof Api, unknown>>;
     resize?: Mock<Resize>;
   },
@@ -339,6 +339,25 @@ test("a viewer gets no Debug tab", async () => {
 test("a viewer opening #config/debug sees reference images instead", async () => {
   location.hash = "#config/debug";
   const { api } = renderConfig({ instructions: "", references: [] }, { role: "viewer" });
+  expect(await screen.findByRole("tab", { name: "Reference images", selected: true })).toBeInTheDocument();
+  expect(api.debugMotions).not.toHaveBeenCalled();
+  expect(api.debugMotion).not.toHaveBeenCalled();
+  location.hash = "";
+});
+
+// User sees no Debug tab
+test("a user gets the edit controls but no Debug tab", async () => {
+  location.hash = "#config";
+  renderConfig({ instructions: "", references: [] }, { role: "user" });
+  const tabs = await screen.findAllByRole("tab");
+  expect(tabs.map((t) => t.textContent)).toEqual(["Reference images", "Open/close detection", "Fridge area"]);
+  expect(await screen.findByRole("button", { name: "Add" })).toBeInTheDocument();
+});
+
+// User opens the debug hash
+test("a user opening #config/debug sees reference images instead", async () => {
+  location.hash = "#config/debug";
+  const { api } = renderConfig({ instructions: "", references: [] }, { role: "user" });
   expect(await screen.findByRole("tab", { name: "Reference images", selected: true })).toBeInTheDocument();
   expect(api.debugMotions).not.toHaveBeenCalled();
   expect(api.debugMotion).not.toHaveBeenCalled();

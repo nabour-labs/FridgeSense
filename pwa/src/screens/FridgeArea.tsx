@@ -2,7 +2,7 @@ import { Camera, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import type { FridgeAreaBody, Snapshot } from "../api/types";
-import { useApp } from "../AppContext";
+import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
@@ -17,7 +17,7 @@ const AREA_COLOR = "#0ea5e9";
 /** The owner's box around the fridge, drawn on a camera snapshot; used later to crop stills. */
 export function FridgeArea() {
   const { api, role } = useApp();
-  const canEdit = role === "owner";
+  const editable = canEdit(role);
   const { data, setData, failed } = useLoad(
     useCallback(() => api.fridgeArea(), [api]),
     60_000,
@@ -55,7 +55,7 @@ export function FridgeArea() {
       ) : (
         <p className={`${CARD} p-4 text-sm`}>No fridge area yet.</p>
       )}
-      {canEdit && (
+      {editable && (
         <button type="button" onClick={() => setEditing(true)} className={`${PRIMARY} inline-flex items-center justify-center gap-2`}>
           <Camera aria-hidden className="size-5" />
           {area ? "Change area" : "Set area"}

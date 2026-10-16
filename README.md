@@ -193,7 +193,23 @@ set -a; source .env; set +a; aws cloudformation describe-stacks --stack-name Fri
 
 Sign in with the link passcode from step 3. To install it, open the URL on the phone, then use **Share → Add to Home Screen** (iPhone, Safari) or **⋮ → Install app** (Android, Chrome).
 
-The app asks for the passcode again every 24 hours, owner and demo alike. It notices the expiry on its own, even offline. Changing a passcode signs out every device that used it.
+**Sign out** is the arrow button next to the gear at the top right.
+
+Three passcodes, all optional except the first, live in the `fridgesense/ring-app` secret (never in the repo):
+
+| Secret field | Role | Can do |
+|---|---|---|
+| `passcode` | owner (admin) | everything, including **Config → Debug** |
+| `user_passcode` | user | everything except Debug (the debug API answers 403 `admin only`) |
+| `demo_passcode` | viewer | read only (see [Demo access](#demo-access)) |
+
+Set the owner and user passcodes (typed without echo):
+
+```bash
+set -a; source .env; set +a; read -rs "ADMIN?Admin passcode: "; echo; read -rs "USER?User passcode: "; echo; aws secretsmanager get-secret-value --secret-id fridgesense/ring-app --query SecretString --output text | jq --arg a "$ADMIN" --arg u "$USER" '.passcode=$a | .user_passcode=$u' | aws secretsmanager put-secret-value --secret-id fridgesense/ring-app --secret-string file:///dev/stdin
+```
+
+The app asks for the passcode again every 24 hours, whatever the role. It notices the expiry on its own, even offline. Changing a passcode signs out every device that used it.
 
 ### Teach the camera your fridge
 
@@ -212,7 +228,7 @@ Every motion the camera reports leaves a trace for 7 days. **Config → Debug** 
 - **Door check:** every still downloaded for the motion, with each zone's score against its threshold, the open/closed verdict, which stills went to analysis, and the rule that decided (setup zones with their baselines and door references, or the default zones). The door check is a pixel rule, so its scores are its reasoning; there is no prompt.
 - **Nova calls:** for each Converse attempt of a door opening, the request in order (text, reference images, stills, cache points), the raw response and stop reason, input/output/cache tokens, cost, Bedrock's `latencyMs` and the measured wall time. Failed and invalid attempts are included.
 
-Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). **The raw stills are stored unblurred**, so only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the demo passcode gets 403 and sees no Debug tab. Turn traces off, for example before recording a demo with people in frame:
+Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). **The raw stills are stored unblurred**, so only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the user and demo passcodes get 403 and see no Debug tab or links. Turn traces off, for example before recording a demo with people in frame:
 
 ```bash
 cdk deploy -c debugTraces=false
@@ -242,7 +258,7 @@ Against the deployed backend (the dev server proxies `/api` to it):
 cd pwa && FRIDGESENSE_URL=https://<your-distribution>.cloudfront.net npm run dev
 ```
 
-Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in as the read-only demo):
+Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in as the read-only demo, `FRIDGESENSE_MOCK=user` as a user without Debug):
 
 ```bash
 cd pwa && FRIDGESENSE_MOCK=1 npm run dev
