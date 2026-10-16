@@ -189,3 +189,41 @@ test.each([
   expect(init.method).toBe(method);
   expect(init.body === undefined ? undefined : JSON.parse(init.body)).toEqual(body);
 });
+
+const BOX = { x: 0.38, y: 0.32, width: 0.21, height: 0.3 };
+
+test.each([
+  ["cameraSnapshot", (api: ApiClient) => api.cameraSnapshot(), "POST", "/api/camera/snapshot", undefined],
+  ["doorCalibration", (api: ApiClient) => api.doorCalibration(), "GET", "/api/door-calibration", undefined],
+  [
+    "addDoorReference",
+    (api: ApiClient) => api.addDoorReference("/9j/SNAP", BOX, "open"),
+    "POST",
+    "/api/door-calibration/references",
+    { image: "/9j/SNAP", box: BOX, status: "open" },
+  ],
+  [
+    "deleteDoorReference",
+    (api: ApiClient) => api.deleteDoorReference("RE9PUlJFRiM/a"),
+    "DELETE",
+    "/api/door-calibration/references/RE9PUlJFRiM%2Fa",
+    undefined,
+  ],
+  ["runDoorSetup", (api: ApiClient) => api.runDoorSetup(), "POST", "/api/door-calibration/run", undefined],
+])("%s sends the right request", async (_, callApi, method, path, body) => {
+  const fetch = respond(200, { ok: true });
+  await expect(callApi(new ApiClient(() => "t", fetch))).resolves.toEqual({ ok: true });
+  const [url, init] = fetch.mock.calls[0];
+  expect(url).toBe(path);
+  expect(init.method).toBe(method);
+  expect(init.body === undefined ? undefined : JSON.parse(init.body)).toEqual(body);
+});
+
+test("an API error keeps the response body", async () => {
+  const body = { error: "zone 1: open and closed references overlap", references: [{ id: "a", score: 0.05 }] };
+  const err = await new ApiClient(() => "t", respond(422, body)).runDoorSetup().catch((e) => e);
+  expect(err).toBeInstanceOf(ApiError);
+  expect(err.status).toBe(422);
+  expect(err.message).toBe("zone 1: open and closed references overlap");
+  expect(err.body).toEqual(body);
+});

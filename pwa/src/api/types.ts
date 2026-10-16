@@ -90,3 +90,46 @@ export interface Config {
   instructions: string;
   references: Reference[];
 }
+
+/** A box in fractions of an image. */
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Snapshot {
+  /** Base64 JPEG, faces blurred. */
+  image: string;
+  captured_at: string;
+}
+
+export type DoorStatus = "open" | "closed";
+export type DoorFeature = "color" | "brightness" | "change";
+
+/** A camera snapshot with one box around a door or drawer, labeled open or closed. */
+export interface DoorReference {
+  id: string;
+  /** Base64 JPEG. */
+  image: string;
+  box: Box;
+  status: DoorStatus;
+  /** The value of its zone's chosen feature, or null before setup. */
+  score: number | null;
+  created_at: string;
+}
+
+export interface SetupZone extends Box {
+  feature: DoorFeature;
+  direction: "above" | "below";
+  threshold: number;
+  margin: number;
+}
+
+export interface DoorSetup {
+  device_id: string;
+  references: DoorReference[];
+  setup: { zones: SetupZone[]; ran_at: string; stale: boolean } | null;
+  defaults: { zones: Box[]; threshold: number };
+}
