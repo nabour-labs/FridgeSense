@@ -85,9 +85,10 @@ Box = tuple[float, float, float, float]
 
 # Measured on the fridge camera (2026-10-15 clip): French doors, then the two drawers.
 DEFAULT_ZONES: tuple[Box, ...] = ((0.38, 0.32, 0.21, 0.30), (0.455, 0.60, 0.12, 0.18))
-DEFAULT_THRESHOLD = 0.02
+DEFAULT_THRESHOLD = 0.01
 MIN_CHROMA = 60  # max(R,G,B) - min(R,G,B): grey steel, white and wood stay below this
 MIN_PEAK = 100  # brightest channel: keeps dark saturated clothing (navy) out
+MIN_BLUE_LEAD = 20  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
 
 
 def still_times(start_ms: int, end_ms: int, count: int = STILL_COUNT) -> list[int]:
@@ -148,16 +149,27 @@ def _crop_box(img: Image.Image, box: Box) -> Image.Image:
     return img.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
 
 
-def _colorful(zone: Image.Image) -> float:
+def _colorful_mask(zone: Image.Image) -> Image.Image:
     r, g, b = zone.split()
     peak = ImageChops.lighter(ImageChops.lighter(r, g), b)
     low = ImageChops.darker(ImageChops.darker(r, g), b)
     chroma = ImageChops.subtract(peak, low)
-    colourful = ImageChops.multiply(
+    return ImageChops.multiply(
         chroma.point(lambda v: 255 if v > MIN_CHROMA else 0),
         peak.point(lambda v: 255 if v > MIN_PEAK else 0),
     )
-    return ImageStat.Stat(colourful).mean[0] / 255
+
+
+def _colorful(zone: Image.Image) -> float:
+    return ImageStat.Stat(_colorful_mask(zone)).mean[0] / 255
+
+
+def _blue_lit(zone: Image.Image) -> float:
+    """Share of colourful pixels whose blue leads red and green: the lit fridge interior."""
+    r, g, b = zone.split()
+    lead = ImageChops.subtract(b, ImageChops.lighter(r, g))
+    blue = lead.point(lambda v: 255 if v > MIN_BLUE_LEAD else 0)
+    return ImageStat.Stat(ImageChops.multiply(_colorful_mask(zone), blue)).mean[0] / 255
 
 
 def _open_rgb(still: bytes | Image.Image) -> Image.Image:
@@ -175,7 +187,7 @@ def colorful_fraction(jpeg_bytes: bytes, box: Box) -> float:
     return _colorful(_crop_box(_open_rgb(jpeg_bytes), box))
 
 
-FEATURES = ("color", "change", "brightness")  # also the tie order when setup picks one
+FEATURES = ("blue", "color", "change", "brightness")  # also the tie order when setup picks one
 BASELINE_SIZE = (32, 32)
 
 
@@ -192,10 +204,13 @@ def baseline_of(stills: list[bytes], box: Box) -> bytes:
 def measure(
     still: bytes | Image.Image, box: Box, feature: str, baseline: bytes | None = None
 ) -> float:
-    """One feature (0-1) of a zone: colorful fraction, mean luminance, or change from a baseline."""
+    """One feature (0-1) of a zone: colorful or blue-lit fraction, mean luminance, or change
+    from a baseline."""
     zone = _crop_box(_open_rgb(still), box)
     if feature == "color":
         return _colorful(zone)
+    if feature == "blue":
+        return _blue_lit(zone)
     if feature == "brightness":
         return ImageStat.Stat(zone.convert("L")).mean[0] / 255
     if feature == "change":
@@ -273,13 +288,13 @@ def crop_still(jpeg_bytes: bytes, box: Box | None) -> bytes:
 class DoorCheck:
     zones: tuple[Box, ...] = DEFAULT_ZONES
     threshold: float = DEFAULT_THRESHOLD
-    rules: tuple[ZoneRule, ...] = ()  # from setup; without them, colour rules from zones/threshold
+    rules: tuple[ZoneRule, ...] = ()  # from setup; without them, blue rules from zones/threshold
     source: str = "default"
     ran_at: str | None = None  # when setup ran
 
     def __post_init__(self):
         if not self.rules:
-            rules = tuple(ZoneRule(z, "color", "above", self.threshold) for z in self.zones)
+            rules = tuple(ZoneRule(z, "blue", "above", self.threshold) for z in self.zones)
             object.__setattr__(self, "rules", rules)
 
     @classmethod

@@ -6,7 +6,6 @@ from fridgesense.door_events import (
     DoorCheck,
     ZoneRule,
     baseline_of,
-    colorful_fraction,
     measure,
     still_times,
 )
@@ -40,7 +39,7 @@ def test_fridge_light_visible():
 # Drawer opening seen only in the drawers zone
 def test_drawer_opening_seen_only_in_drawers_zone():
     # 5% of the right zone: a 10x50 px block
-    still = color_jpeg(GREY, [((0.7, 0.25, 0.05, 0.5), (200, 60, 40))], size=(200, 100))
+    still = color_jpeg(GREY, [((0.7, 0.25, 0.05, 0.5), FRIDGE_BLUE)], size=(200, 100))
     open_, score, zone = DoorCheck(zones=HALVES, threshold=0.02).evaluate([still])
     assert open_ is True
     assert score == pytest.approx(0.05, abs=0.01)
@@ -66,7 +65,7 @@ def test_dark_colored_clothing_does_not_count():
 # Threshold is inclusive
 def test_threshold_is_inclusive():
     still = color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), FRIDGE_BLUE)], size=(200, 100))
-    level = colorful_fraction(still, HALVES[0])
+    level = measure(still, HALVES[0], "blue")
     assert DoorCheck(zones=HALVES, threshold=level).evaluate([still])[0] is True
 
 
@@ -88,7 +87,7 @@ def test_several_zones_from_config():
 def test_config_defaults():
     default = DoorCheck.from_config(None, None)
     assert default.zones == ((0.38, 0.32, 0.21, 0.30), (0.455, 0.60, 0.12, 0.18))
-    assert default.threshold == 0.02
+    assert default.threshold == 0.01
 
 
 # Invalid zone config
@@ -106,6 +105,29 @@ HALVES_DARK_LIGHT = [((0.0, 0.0, 0.5, 1.0), (40, 40, 40)), ((0.5, 0.0, 0.5, 1.0)
 def test_measure_color():
     still = color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), FRIDGE_BLUE)], size=(200, 100))
     assert measure(still, (0.0, 0.0, 0.5, 1.0), "color") == pytest.approx(0.10, abs=0.01)
+
+
+# Blue-lit colour: the fridge's LED-lit interior, not warm food held in front of it
+PLATE, PACKET, NAVY = (220, 170, 40), (200, 40, 40), (20, 25, 60)
+
+
+def test_measure_blue_counts_the_lit_interior():
+    still = color_jpeg(GREY, [((0.0, 0.0, 0.1, 1.0), FRIDGE_BLUE)])
+    assert measure(still, WHOLE, "blue") == pytest.approx(0.10, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    "fill, block",
+    [(GREY, PLATE), (GREY, PACKET), (GREY, NAVY), ((230, 230, 230), None), ((30, 30, 30), None)],
+)
+def test_measure_blue_ignores_warm_dark_and_grey(fill, block):
+    still = color_jpeg(fill, [((0.0, 0.0, 0.1, 1.0), block)] if block else [])
+    assert measure(still, WHOLE, "blue") == pytest.approx(0.0, abs=0.002)
+
+
+def test_measure_color_still_counts_warm_food():
+    still = color_jpeg(GREY, [((0.0, 0.0, 0.1, 1.0), PLATE)])
+    assert measure(still, WHOLE, "color") == pytest.approx(0.10, abs=0.01)
 
 
 def test_measure_brightness():
@@ -140,11 +162,11 @@ def test_rule_below_is_inclusive():
     assert rule.is_open(0.5) and rule.is_open(0.1) and not rule.is_open(0.51)
 
 
-def test_config_builds_color_rules():
+def test_config_builds_blue_rules():
     check = DoorCheck.from_config("0,0,0.5,1;0.5,0,0.5,1", "0.03")
     assert [(r.box, r.feature, r.direction, r.threshold) for r in check.rules] == [
-        ((0.0, 0.0, 0.5, 1.0), "color", "above", 0.03),
-        ((0.5, 0.0, 0.5, 1.0), "color", "above", 0.03),
+        ((0.0, 0.0, 0.5, 1.0), "blue", "above", 0.03),
+        ((0.5, 0.0, 0.5, 1.0), "blue", "above", 0.03),
     ]
 
 
@@ -154,7 +176,7 @@ def test_per_still_results():
     results = check.results([color_jpeg(GREY), open_still])
     assert [r.is_open for r in results] == [False, True]
     assert results[1].zone == 2
-    assert results[1].feature == "color"
+    assert results[1].feature == "blue"
     assert results[1].value == pytest.approx(0.8, abs=0.02)
 
 
@@ -206,3 +228,21 @@ def test_result_matches_best_zone_value():
     best = max(check.zone_values(still), key=lambda v: v.value)
     result = check.result(still)
     assert (result.zone, result.value, result.is_open) == (best.zone, best.value, best.open)
+
+
+# Food in front of closed doors
+@pytest.mark.parametrize("food", [PLATE, PACKET])
+def test_food_in_front_of_closed_doors(food):
+    still = color_jpeg(GREY, [((0.2, 0.2, 0.2, 0.5), food)])
+    open_, score, _ = DoorCheck.from_config("0,0,1,1", None).evaluate([still])
+    assert open_ is False
+    assert score == pytest.approx(0.0, abs=0.002)
+
+
+# Faint fridge light counts at the default threshold
+def test_faint_fridge_light_counts_at_the_default_threshold():
+    # 1.5% of a 400x200 still: a 6 px wide, full-height block
+    still = color_jpeg(GREY, [((0.5, 0.0, 0.015, 1.0), FRIDGE_BLUE)], size=(400, 200))
+    open_, score, _ = DoorCheck.from_config("0,0,1,1", None).evaluate([still])
+    assert score == pytest.approx(0.015, abs=0.003)
+    assert open_ is True

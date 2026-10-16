@@ -152,7 +152,7 @@ def test_summary_written(aws):
     assert item["stills_requested"] == 4
     assert item["stills_downloaded"] == 4
     assert item["best"]["zone"] == 2
-    assert item["best"]["feature"] == "color"
+    assert item["best"]["feature"] == "blue"
     assert item["best"]["threshold"] == 0.02
     assert item["best"]["value"] == pytest.approx(0.2, abs=0.02)
 
@@ -206,7 +206,7 @@ def test_setup_rule(aws):
     assert rule["ran_at"] == "2026-10-15T19:21:00.000Z"
     [zone] = rule["zones"]
     assert zone["box"] == {"x": 0.0, "y": 0.0, "width": 0.5, "height": 1.0}
-    assert (zone["feature"], zone["direction"]) == ("color", "above")
+    assert (zone["feature"], zone["direction"]) == ("blue", "above")
     assert zone["threshold"] == pytest.approx(0.05, abs=0.005)
     assert zone["margin"] == pytest.approx(0.1, abs=0.005)
     assert zone["baseline_key"] == PREFIX + "baseline-1.png"
@@ -248,7 +248,7 @@ def test_default_rule(aws):
             {
                 "zone": 1,
                 "box": {"x": 0.6, "y": 0.0, "width": 0.4, "height": 1.0},
-                "feature": "color",
+                "feature": "blue",
                 "direction": "above",
                 "threshold": 0.03,
                 "margin": None,

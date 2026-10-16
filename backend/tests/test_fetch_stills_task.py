@@ -498,4 +498,25 @@ def test_door_stayed_closed_logs_source_and_feature(aws, ring_http, caplog):
     assert run(ring_http)["outcome"] == "not_door"
     line = logged(caplog, "motion_not_door")
     assert line["zones_source"] == "default"
-    assert line["feature"] == "color"
+    assert line["feature"] == "blue"
+
+
+PLATE = (220, 170, 40)
+
+
+# Food in front of closed doors
+@respx.mock
+def test_food_in_front_of_closed_doors(aws, ring_http):
+    ring_serves([color_jpeg(GREY, [((0.2, 0.2, 0.3, 0.33), PLATE)])])
+    out = run(ring_http, check=DoorCheck.from_config("0,0,1,1", None))
+    assert out["outcome"] == "not_door"
+    assert out["score"] == 0
+    assert door_events() == []
+
+
+# Stored color setup still works
+@respx.mock
+def test_stored_color_setup_still_works(aws, ring_http):
+    ring_serves([color_jpeg(GREY, [((0.2, 0.2, 0.3, 0.33), PLATE)])])
+    out = run(ring_http, setup_for=setup(ZoneRule(WHOLE, "color", "above", 0.05)))
+    assert out["outcome"] == "door_open"
