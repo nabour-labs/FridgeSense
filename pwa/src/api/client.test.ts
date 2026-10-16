@@ -210,6 +210,8 @@ test.each([
     undefined,
   ],
   ["runDoorSetup", (api: ApiClient) => api.runDoorSetup(), "POST", "/api/door-calibration/run", undefined],
+  ["startLive", (api: ApiClient) => api.startLive("v=0\r\n"), "POST", "/api/camera/live", { offer: "v=0\r\n" }],
+  ["stopLive", (api: ApiClient) => api.stopLive("S/1"), "DELETE", "/api/camera/live/S%2F1", undefined],
   ["fridgeArea", (api: ApiClient) => api.fridgeArea(), "GET", "/api/fridge-area", undefined],
   [
     "saveFridgeArea",

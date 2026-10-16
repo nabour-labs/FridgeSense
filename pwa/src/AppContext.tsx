@@ -22,6 +22,8 @@ export type Api = Pick<
   | "addReference"
   | "deleteReference"
   | "cameraSnapshot"
+  | "startLive"
+  | "stopLive"
   | "doorCalibration"
   | "addDoorReference"
   | "deleteDoorReference"

@@ -268,6 +268,9 @@ export function mockApi(): Plugin {
           });
           return;
         }
+        // Live view needs a real camera: answer as if Ring were down, so the dialog's error path shows.
+        if (req.method === "POST" && url === "/camera/live") return send(502, { error: "camera unavailable" });
+        if (req.method === "DELETE" && url.startsWith("/camera/live/")) return send(200, { ok: true });
         // Door setup: snapshots alternate shut/open so both kinds of reference are easy to add.
         if (req.method === "POST" && url === "/camera/snapshot") {
           if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });

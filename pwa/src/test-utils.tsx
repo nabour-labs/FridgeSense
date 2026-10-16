@@ -27,6 +27,8 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     addReference: vi.fn(),
     deleteReference: vi.fn(),
     cameraSnapshot: vi.fn(),
+    startLive: vi.fn().mockReturnValue(new Promise(() => {})),
+    stopLive: vi.fn().mockResolvedValue({ ok: true }),
     doorCalibration: vi.fn().mockResolvedValue({
       device_id: "ava1.ring.device.D1",
       references: [],

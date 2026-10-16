@@ -8,6 +8,7 @@ import type {
   EventPage,
   FridgeAreaBody,
   Inventory,
+  LiveSession,
   MotionPage,
   MotionTrace,
   Pending,
@@ -116,6 +117,14 @@ export class ApiClient {
   /** A face-blurred still from the camera, not stored. */
   cameraSnapshot(): Promise<Snapshot> {
     return this.request("POST", "/api/camera/snapshot");
+  }
+
+  /** Opens a live view: the browser's SDP offer in, the camera's SDP answer out. */
+  startLive(offer: string): Promise<LiveSession> {
+    return this.request("POST", "/api/camera/live", { offer });
+  }
+  stopLive(sessionId: string): Promise<{ ok: true }> {
+    return this.request("DELETE", `/api/camera/live/${encodeURIComponent(sessionId)}`);
   }
 
   doorCalibration(): Promise<DoorSetup> {

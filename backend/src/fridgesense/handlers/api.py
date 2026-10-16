@@ -26,6 +26,7 @@ from fridgesense import (
     door_calibration,
     fridge_area,
     inventory,
+    live,
     session,
     traces,
     voice,
@@ -550,6 +551,38 @@ def post_snapshot(ctx: Context, device_id: str) -> dict:
     return json_response(
         200, {"image": base64.b64encode(image).decode(), "captured_at": iso_utc(ts)}
     )
+
+
+MAX_OFFER_CHARS = 20_000
+SESSION_ID = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
+
+
+@route("POST", "/api/camera/live")
+@with_device
+def post_live(ctx: Context, device_id: str) -> dict:
+    offer = (_json_body(ctx.req) or {}).get("offer")
+    if not isinstance(offer, str) or not offer.startswith("v=0") or len(offer) > MAX_OFFER_CHARS:
+        return json_response(400, {"error": "bad offer"})
+    try:
+        answer, session_id = live.start(deps.ring_client(now=now), device_id, offer)
+    except live.LiveFailed:
+        return json_response(502, {"error": "camera unavailable"})
+    return json_response(
+        200, {"answer": answer, "session_id": session_id, "max_seconds": live.MAX_SECONDS}
+    )
+
+
+@route("DELETE", "/api/camera/live/{session_id}")
+@with_device
+def delete_live(ctx: Context, device_id: str) -> dict:
+    session_id = ctx.params["session_id"]
+    if not SESSION_ID.match(session_id):
+        return json_response(404, {"error": "not found"})
+    try:
+        live.stop(deps.ring_client(now=now), device_id, session_id)
+    except live.LiveFailed:
+        return json_response(502, {"error": "camera unavailable"})
+    return json_response(200, {"ok": True})
 
 
 def door_setup_body(
