@@ -33,9 +33,9 @@ Test commands: backend `cd backend && uv run pytest -q && uv run ruff check .`; 
 
 ## 5. API routes (backend)
 
-- [ ] 5.1 Write failing API tests for `POST /api/camera/snapshot` (200, 409 no recent footage, 502), "No device discovered" on every route, "Nothing set up yet", "No token" and "Viewer cannot change the setup" (no Ring request).
-- [ ] 5.2 Write failing API tests for the reference and run routes end to end: add (200, 400s, 409 limit), delete (200, 404), run (200, the three 422s with `references` in the body).
-- [ ] 5.3 Implement the five routes in `handlers/api.py`, with defaults from `DOOR_ZONES`/`DOOR_THRESHOLD`. Verify that the 5.1 and 5.2 tests pass, then refactor with tests green.
+- [x] 5.1 Write failing API tests for `POST /api/camera/snapshot` (200, 409 no recent footage, 502), "No device discovered" on every route, "Nothing set up yet", "No token" and "Viewer cannot change the setup" (no Ring request).
+- [x] 5.2 Write failing API tests for the reference and run routes end to end: add (200, 400s, 409 limit), delete (200, 404), run (200, the three 422s with `references` in the body).
+- [x] 5.3 Implement the five routes in `handlers/api.py`, with defaults from `DOOR_ZONES`/`DOOR_THRESHOLD`. Verify that the 5.1 and 5.2 tests pass, then refactor with tests green.
 
 ## 6. PWA
 
