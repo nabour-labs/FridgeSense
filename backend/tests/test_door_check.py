@@ -2,7 +2,14 @@
 
 import pytest
 
-from fridgesense.door_events import DoorCheck, colorful_fraction, still_times
+from fridgesense.door_events import (
+    DoorCheck,
+    ZoneRule,
+    baseline_of,
+    colorful_fraction,
+    measure,
+    still_times,
+)
 from tests.conftest import color_jpeg
 
 HALVES = ((0.0, 0.0, 0.5, 1.0), (0.5, 0.0, 0.5, 1.0))
@@ -90,3 +97,80 @@ def test_invalid_zone_config(zones):
     with pytest.raises(ValueError, match="DOOR_ZONES"):
         DoorCheck.from_config(zones, "0.02")
 
+
+# Features measured in a zone: color, brightness and change (shared by setup and the check)
+WHOLE = (0.0, 0.0, 1.0, 1.0)
+HALVES_DARK_LIGHT = [((0.0, 0.0, 0.5, 1.0), (40, 40, 40)), ((0.5, 0.0, 0.5, 1.0), (216, 216, 216))]
+
+
+def test_measure_color():
+    still = color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), FRIDGE_BLUE)], size=(200, 100))
+    assert measure(still, (0.0, 0.0, 0.5, 1.0), "color") == pytest.approx(0.10, abs=0.01)
+
+
+def test_measure_brightness():
+    assert measure(color_jpeg((200, 200, 200)), WHOLE, "brightness") == pytest.approx(
+        200 / 255, abs=0.01
+    )
+    assert measure(color_jpeg((0, 0, 0)), WHOLE, "brightness") == pytest.approx(0.0, abs=0.01)
+
+
+def test_measure_change_against_baseline():
+    baseline = baseline_of([color_jpeg(GREY)], WHOLE)
+    assert len(baseline) == 32 * 32 * 3
+    assert measure(color_jpeg(GREY), WHOLE, "change", baseline) == pytest.approx(0.0, abs=0.01)
+    halves = color_jpeg(GREY, HALVES_DARK_LIGHT)
+    assert measure(halves, WHOLE, "change", baseline) == pytest.approx(88 / 255, abs=0.02)
+
+
+def test_baseline_is_the_mean_of_closed_references():
+    baseline = baseline_of([color_jpeg((100, 100, 100)), color_jpeg((200, 200, 200))], WHOLE)
+    assert measure(color_jpeg((150, 150, 150)), WHOLE, "change", baseline) == pytest.approx(
+        0.0, abs=0.01
+    )
+
+
+def test_rule_above_is_inclusive():
+    rule = ZoneRule(WHOLE, "brightness", "above", 0.6)
+    assert rule.is_open(0.6) and rule.is_open(0.9) and not rule.is_open(0.59)
+
+
+def test_rule_below_is_inclusive():
+    rule = ZoneRule(WHOLE, "brightness", "below", 0.5)
+    assert rule.is_open(0.5) and rule.is_open(0.1) and not rule.is_open(0.51)
+
+
+def test_config_builds_color_rules():
+    check = DoorCheck.from_config("0,0,0.5,1;0.5,0,0.5,1", "0.03")
+    assert [(r.box, r.feature, r.direction, r.threshold) for r in check.rules] == [
+        ((0.0, 0.0, 0.5, 1.0), "color", "above", 0.03),
+        ((0.5, 0.0, 0.5, 1.0), "color", "above", 0.03),
+    ]
+
+
+def test_per_still_results():
+    open_still = color_jpeg(GREY, [((0.6, 0.0, 0.4, 1.0), FRIDGE_BLUE)])
+    check = DoorCheck(zones=HALVES, threshold=0.02)
+    results = check.results([color_jpeg(GREY), open_still])
+    assert [r.is_open for r in results] == [False, True]
+    assert results[1].zone == 2
+    assert results[1].feature == "color"
+    assert results[1].value == pytest.approx(0.8, abs=0.02)
+
+
+def test_brightness_rule_check():
+    check = DoorCheck(rules=(ZoneRule(WHOLE, "brightness", "above", 0.6),))
+    assert check.evaluate([color_jpeg((200, 200, 200))])[0] is True
+    assert check.evaluate([color_jpeg((100, 100, 100))])[0] is False
+
+
+def test_darker_rule_check():
+    check = DoorCheck(rules=(ZoneRule(WHOLE, "brightness", "below", 0.5),))
+    assert check.evaluate([color_jpeg((90, 90, 90))])[0] is True
+
+
+def test_change_rule_check():
+    baseline = baseline_of([color_jpeg(GREY)], WHOLE)
+    check = DoorCheck(rules=(ZoneRule(WHOLE, "change", "above", 0.2, baseline),))
+    assert check.evaluate([color_jpeg(GREY, HALVES_DARK_LIGHT)])[0] is True
+    assert check.evaluate([color_jpeg((130, 130, 130))])[0] is False

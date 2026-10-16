@@ -16,8 +16,21 @@ from zoneinfo import ZoneInfo
 import boto3
 from botocore.config import Config
 
-from fridgesense import analysis, analysis_config, ask, assistant, inventory, session, voice
-from fridgesense.door_events import iso_utc
+from fridgesense import (
+    analysis,
+    analysis_config,
+    ask,
+    assistant,
+    camera,
+    deps,
+    door_calibration,
+    inventory,
+    session,
+    voice,
+)
+from fridgesense.devices import DeviceRepository
+from fridgesense.door_events import DoorCheck, iso_utc
+from fridgesense.faces import DEFAULT_PRICE, FaceBlurrer
 from fridgesense.logs import log_event
 from fridgesense.store import TokenStore, load_app_config
 from fridgesense.table import FridgeTable
@@ -25,6 +38,7 @@ from fridgesense.usage import Prices, UsageRecorder
 from fridgesense.web import Request, json_response
 
 now = time.time
+sleep = time.sleep
 DAY_MS = 24 * 3600 * 1000
 
 
@@ -415,6 +429,144 @@ def delete_reference(ctx: Context) -> dict:
     if sk is None or not analysis_config.delete_reference(ctx.table, ctx.account_id, sk):
         return json_response(404, {"error": "not found"})
     return json_response(200, config_body(ctx.table, ctx.account_id))
+
+
+def rekognition_client():
+    return boto3.client(
+        "rekognition",
+        config=Config(retries={"max_attempts": 2}, connect_timeout=5, read_timeout=10),
+    )
+
+
+def _device_id(ctx: Context) -> str | None:
+    """The account's first discovered camera (the setup UI handles one camera)."""
+    devices = sorted(DeviceRepository().list(ctx.account_id), key=lambda d: d.device_id)
+    return devices[0].device_id if devices else None
+
+
+def with_device(fn: Callable[[Context, str], dict]) -> Callable[[Context], dict]:
+    def handle(ctx: Context) -> dict:
+        device_id = _device_id(ctx)
+        if device_id is None:
+            return json_response(409, {"error": "no camera found"})
+        return fn(ctx, device_id)
+
+    return handle
+
+
+@route("POST", "/api/camera/snapshot", write=True)
+@with_device
+def post_snapshot(ctx: Context, device_id: str) -> dict:
+    price = float(os.environ.get("FACE_DETECT_PRICE") or DEFAULT_PRICE)
+    try:
+        image, ts = camera.snapshot(
+            deps.ring_client(now=now),
+            deps.http_client(),
+            FaceBlurrer(rekognition_client(), price),
+            device_id,
+            int(now() * 1000),
+            sleep,
+        )
+    except camera.NoFootage:
+        return json_response(409, {"error": "no recent footage"})
+    except camera.SnapshotFailed:
+        return json_response(502, {"error": "camera unavailable"})
+    return json_response(
+        200, {"image": base64.b64encode(image).decode(), "captured_at": iso_utc(ts)}
+    )
+
+
+def door_setup_body(
+    table: FridgeTable, account_id: str, device_id: str, scores: dict | None = None
+) -> dict:
+    refs = door_calibration.list_references(table, account_id, device_id)
+    setup = door_calibration.load_setup(table, account_id, device_id)
+    if scores is None:
+        scores = door_calibration.reference_scores(refs, setup)
+    defaults = DoorCheck.from_config(os.environ.get("DOOR_ZONES"), os.environ.get("DOOR_THRESHOLD"))
+    return {
+        "device_id": device_id,
+        "references": [
+            {
+                "id": encode_id(r.sk),
+                "image": base64.b64encode(r.image).decode(),
+                "box": door_calibration.box_json(r.box),
+                "status": r.status,
+                "score": None if scores.get(r.sk) is None else round(scores[r.sk], 3),
+                "created_at": r.created_at,
+            }
+            for r in refs
+        ],
+        "setup": None
+        if setup is None
+        else {
+            "zones": [
+                {
+                    **door_calibration.box_json(z.box),
+                    "feature": z.feature,
+                    "direction": z.direction,
+                    "threshold": z.threshold,
+                    "margin": z.margin,
+                }
+                for z in setup.zones
+            ],
+            "ran_at": setup.ran_at,
+            "stale": setup.stale,
+        },
+        "defaults": {
+            "zones": [door_calibration.box_json(z) for z in defaults.zones],
+            "threshold": defaults.threshold,
+        },
+    }
+
+
+@route("GET", "/api/door-calibration")
+@with_device
+def get_door_setup(ctx: Context, device_id: str) -> dict:
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("POST", "/api/door-calibration/references", write=True)
+@with_device
+def post_door_reference(ctx: Context, device_id: str) -> dict:
+    body = _json_body(ctx.req) or {}
+    try:
+        image = door_calibration.decode_image(body.get("image"))
+        box = door_calibration.validate_box(body.get("box"))
+        status = door_calibration.validate_status(body.get("status"))
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    try:
+        door_calibration.add_reference(
+            ctx.table, ctx.account_id, device_id, image, box, status, now_ms=int(now() * 1000)
+        )
+    except door_calibration.TooMany:
+        limit = door_calibration.MAX_REFERENCES
+        return json_response(409, {"error": f"at most {limit} door references"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("DELETE", "/api/door-calibration/references/{id}", write=True)
+@with_device
+def delete_door_reference(ctx: Context, device_id: str) -> dict:
+    sk = decode_id(ctx.params["id"], door_calibration.ref_prefix(device_id))
+    if sk is None or not door_calibration.delete_reference(
+        ctx.table, ctx.account_id, device_id, sk, now_ms=int(now() * 1000)
+    ):
+        return json_response(404, {"error": "not found"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("POST", "/api/door-calibration/run", write=True)
+@with_device
+def post_door_setup_run(ctx: Context, device_id: str) -> dict:
+    try:
+        door_calibration.run(ctx.table, ctx.account_id, device_id, now_ms=int(now() * 1000))
+    except door_calibration.SetupFailed as e:
+        body = door_setup_body(ctx.table, ctx.account_id, device_id, scores=e.scores)
+        return json_response(422, {"error": e.message, "references": body["references"]})
+    log_event("door_setup_ran", account_id=ctx.account_id, device_id=device_id)
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
 
 
 MAX_QUESTION = 200

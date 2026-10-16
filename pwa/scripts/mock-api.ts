@@ -98,6 +98,17 @@ export function mockApi(): Plugin {
     }
     return out;
   }
+  type DoorRef = { id: string; image: string; box: { x: number; y: number; width: number; height: number }; status: "open" | "closed"; created_at: string };
+  let doorRefs: DoorRef[] = [];
+  let doorSetup: { zones: Record<string, unknown>[]; ran_at: string } | null = null;
+  let refsChangedAt = 0;
+  let snapshots = 0;
+  const doorBody = (scored = false) => ({
+    device_id: "mock.device.D1",
+    references: doorRefs.map((r) => ({ ...r, score: doorSetup || scored ? (r.status === "open" ? 0.12 : 0.003) : null })),
+    setup: doorSetup && { ...doorSetup, stale: refsChangedAt > Date.parse(doorSetup.ran_at) },
+    defaults: { zones: [{ x: 0.38, y: 0.32, width: 0.21, height: 0.3 }, { x: 0.455, y: 0.6, width: 0.12, height: 0.18 }], threshold: 0.02 },
+  });
   const eventsSince = (days: number) => events.filter((e) => Date.parse(e.opened_at) >= now - days * 24 * HOUR);
   const inventory = () => ({ items, pending_count: pending.length });
   return {
@@ -166,6 +177,44 @@ export function mockApi(): Plugin {
             });
           });
           return;
+        }
+        // Door setup: snapshots alternate shut/open so both kinds of reference are easy to add.
+        if (req.method === "POST" && url === "/camera/snapshot") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          snapshots += 1;
+          return send(200, { image: photo(snapshots % 2 ? "snapshot-closed" : "snapshot-open"), captured_at: new Date().toISOString() });
+        }
+        if (url === "/door-calibration" && req.method === "GET") return send(200, doorBody());
+        if (url.startsWith("/door-calibration/") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+        if (req.method === "POST" && url === "/door-calibration/references") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { image, box, status } = JSON.parse(body);
+            if (doorRefs.length >= 12) return send(409, { error: "at most 12 door references" });
+            doorRefs = [...doorRefs, { id: `door${Date.now()}`, image, box, status, created_at: new Date().toISOString() }];
+            refsChangedAt = Date.now();
+            send(200, doorBody());
+          });
+          return;
+        }
+        const doorRef = url.match(/^\/door-calibration\/references\/(.+)$/);
+        if (req.method === "DELETE" && doorRef) {
+          const before = doorRefs.length;
+          doorRefs = doorRefs.filter((r) => r.id !== decodeURIComponent(doorRef[1]));
+          refsChangedAt = Date.now();
+          return doorRefs.length < before ? send(200, doorBody()) : send(404, { error: "not found" });
+        }
+        if (req.method === "POST" && url === "/door-calibration/run") {
+          const statuses = new Set(doorRefs.map((r) => r.status));
+          if (statuses.size < 2) {
+            return send(422, { error: "zone 1 needs an open and a closed reference", references: doorBody(true).references });
+          }
+          doorSetup = {
+            zones: [{ ...doorRefs[0].box, feature: "color", direction: "above", threshold: 0.061, margin: 0.118 }],
+            ran_at: new Date().toISOString(),
+          };
+          return send(200, doorBody());
         }
         if (url === "/config" && req.method === "GET") return send(200, config);
         if (url.startsWith("/config/") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });

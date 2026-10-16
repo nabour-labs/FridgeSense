@@ -111,3 +111,15 @@ test("the header gear opens Config and loads it", async () => {
   expect(await screen.findByRole("region", { name: "Reference images" })).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Custom instructions" })).toBeInTheDocument();
 });
+
+// Open the detection tab by link
+test("#config/doors opens Config on the detection tab", async () => {
+  signedIn();
+  location.hash = "#config/doors";
+  const api = fakeApi();
+  render(<App api={api} />);
+  expect(await screen.findByRole("heading", { level: 1, name: "Config" })).toBeInTheDocument();
+  expect(await screen.findByRole("tab", { name: "Open/close detection", selected: true })).toBeInTheDocument();
+  expect(api.doorCalibration).toHaveBeenCalled();
+  location.hash = "";
+});

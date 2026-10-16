@@ -1,3 +1,4 @@
+import { fireEvent, screen } from "@testing-library/react";
 import type { Api } from "./AppContext";
 import type { Inventory } from "./api/types";
 
@@ -25,6 +26,16 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     saveInstructions: vi.fn(),
     addReference: vi.fn(),
     deleteReference: vi.fn(),
+    cameraSnapshot: vi.fn(),
+    doorCalibration: vi.fn().mockResolvedValue({
+      device_id: "ava1.ring.device.D1",
+      references: [],
+      setup: null,
+      defaults: { zones: [], threshold: 0.02 },
+    }),
+    addDoorReference: vi.fn(),
+    deleteDoorReference: vi.fn(),
+    runDoorSetup: vi.fn(),
     ...overrides,
   } as Api;
 }
@@ -33,4 +44,18 @@ export function signedIn(role: "owner" | "viewer" = "owner", expiresAt = Date.no
   localStorage.setItem("fridgesense.token", "tok");
   localStorage.setItem("fridgesense.role", role);
   localStorage.setItem("fridgesense.expires", String(expiresAt));
+}
+
+/**
+ * Drag across the (first) drawing surface, which is mocked as 400x225 px at (0, 0);
+ * `from` and `to` are percent of it.
+ */
+export function drag(from: [number, number], to: [number, number], index = 0) {
+  const el = screen.getAllByTestId("markup-surface")[index];
+  el.getBoundingClientRect = () =>
+    ({ left: 0, top: 0, width: 400, height: 225, right: 400, bottom: 225, x: 0, y: 0, toJSON() {} }) as DOMRect;
+  const at = ([px, py]: [number, number]) => ({ clientX: (px / 100) * 400, clientY: (py / 100) * 225, pointerId: 1 });
+  fireEvent.pointerDown(el, at(from));
+  fireEvent.pointerMove(el, at(to));
+  fireEvent.pointerUp(el, at(to));
 }

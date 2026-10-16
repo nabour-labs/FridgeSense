@@ -35,6 +35,8 @@ export interface DoorPipelineProps {
   doorThreshold: string;
   /** Crop for stored and analyzed stills (`x,y,w,h`); empty keeps the full frame. */
   stillCrop: string;
+  /** Milliseconds between stills across a motion window (4 to 30 stills per event). */
+  stillIntervalMs: string;
   novaModelId: string;
   novaPriceIn: string;
   novaPriceOut: string;
@@ -95,6 +97,7 @@ export class DoorPipeline extends Construct {
         DOOR_ZONES: props.doorZones,
         DOOR_THRESHOLD: props.doorThreshold,
         STILL_CROP: props.stillCrop,
+        STILL_INTERVAL_MS: props.stillIntervalMs,
         NOVA_MODEL_ID: props.novaModelId,
         NOVA_PRICE_IN: props.novaPriceIn,
         NOVA_PRICE_OUT: props.novaPriceOut,

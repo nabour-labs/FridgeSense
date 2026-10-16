@@ -21,7 +21,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Refrigerator }[] = [
 
 function tabFromHash(): Tab {
   const id = location.hash.replace("#", "");
-  if (id === "config") return "config"; // opened from the header gear, not a bottom tab
+  if (id === "config" || id.startsWith("config/")) return "config"; // the header gear, not a bottom tab
   return TABS.some((t) => t.id === id) ? (id as Tab) : "fridge";
 }
 

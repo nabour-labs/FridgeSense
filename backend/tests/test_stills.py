@@ -53,8 +53,11 @@ class Sleeps(list):
 
 
 def run(clients, sleep=None):
+    """The 4-still path (a 10 s interval on a 25 s window), as before dense sampling."""
     ring, http = clients
-    return download_stills(ring, http, STATE, Sleeps() if sleep is None else sleep)
+    return download_stills(
+        ring, http, STATE, Sleeps() if sleep is None else sleep, interval_ms=10_000
+    )
 
 
 def store(raw, blurrer=None):
@@ -77,9 +80,9 @@ def redirect_for_each_request(request):
     return httpx.Response(303, headers={"Location": location(ts)})
 
 
-# Four stills saved
+# Four stills when the interval is longer than a quarter of the window
 @respx.mock
-def test_four_stills_saved(aws, clients):
+def test_four_evenly_spaced_stills(aws, clients):
     post = respx.post(DOWNLOAD).mock(side_effect=redirect_for_each_request)
     respx.get(url__startswith="https://download-us.example.com/").respond(
         200, content=jpeg(0.5), headers={"content-type": "image/jpeg"}

@@ -132,29 +132,36 @@ Ring tokens are refreshed every 3 hours. If a refresh is ever rejected, the logs
 
 1. Ring sends a motion webhook. FridgeSense starts one Step Functions run (`fridgesense-door-events`) for it.
 2. The run waits for Ring to finish the recording, then finds the event's start and end in Ring's history.
-3. It downloads 4 stills from across the opening and checks them for the lit fridge interior: colourful pixels where the grey doors and drawers are. Motion without an opening stops here, so no face detection or Nova call is made.
-4. Each still of an opening is cropped to the strip the camera's privacy mask leaves visible. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
+3. It downloads about one still per second across the recording (4 to 30 of them) and checks each one in the door zones. The first open still and the first closed still after it give the door event's `opened_at` and `closed_at`, so `duration_s` is how long the door was really open, not how long someone stood in view. Motion without an opening stops here, so no face detection or Nova call is made.
+4. Up to 4 stills from the open stretch go on. Each is cropped to the strip the camera's privacy mask leaves visible. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
 5. Amazon Nova 2 Lite compares the stills and lists items added and removed. Changes with confidence 0.7 or more update the inventory; the rest wait for confirmation.
 
 Nova 2 Lite runs through the `us.` cross-region inference profile, so a still may be processed in us-east-1, us-east-2 or us-west-2. To use Nova Lite v1 in us-east-1 only, deploy with `-c novaModelId=amazon.nova-lite-v1:0 -c novaPriceIn=0.00006 -c novaPriceOut=0.00024`.
 
-### 6. Tune the door check
+### 6. Set up the door check
 
-The door check counts the share of colourful pixels in each zone (fractions `x,y,width,height` of the full camera frame, separated by `;`). Closed stainless doors are grey in any light; the lit interior and the food behind it are not. The defaults were measured on a 2560×1440 frame: one zone over the French doors, one over the two drawers, and a threshold of 0.02 (closed fridge ≤ 0.005, weakest opening ≈ 0.05).
+Teach FridgeSense what your fridge looks like open and closed, from the app: **Config → Open/close detection**.
 
-Open each door and drawer, walk past the closed fridge, then read the scores of the motion the pipeline rejected:
+1. Tap **Add**. The app takes a snapshot from the camera (faces blurred). If it says there is no recent footage, walk past the camera and try again: the camera only records when something moves.
+2. Drag a box around one door or drawer, mark the snapshot **Open** or **Closed**, and save.
+3. Add each door and drawer both ways, ideally in daylight and with the kitchen lights on, and once with someone standing in front of the closed fridge.
+4. Tap **Run setup**. For each box, setup measures three signals on your references: **Color** (the lit interior and food are colourful, steel is grey), **Brightness** and **Change** (how different it looks from your closed snapshots). It keeps the one that best separates open from closed and puts the threshold halfway between them. Each zone shows its rule and margin; a bigger margin is safer.
+
+If setup reports that open and closed overlap, a reference is probably mislabeled or its box misses the door. Delete it and add a new one. After adding or deleting references, run setup again.
+
+Until setup has run, the check uses colourful pixels in the `doorZones` from CDK context (fractions `x,y,width,height` of the camera frame, separated by `;`) with `doorThreshold` 0.02. To see the scores of motion the pipeline rejected:
 
 ```bash
 set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 1h --filter-pattern '"motion_not_door"'
 ```
 
-Each line shows `score`, the `zone` that scored it and `threshold`. Pick a threshold between the closed-fridge scores and the openings, move a zone if an opening scores low, and deploy. `stillCrop` is the visible strip kept for storage and Nova; `-c stillCrop=` keeps the full frame.
+Each line shows `score`, the `zone` and `feature` that scored it, `threshold`, and `zones_source` (`setup` or `default`). `stillCrop` is the visible strip kept for storage and Nova (`-c stillCrop=` keeps the full frame), and `stillIntervalMs` sets the time between stills:
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c "doorZones=0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18" -c doorThreshold=0.02 -c stillCrop=0.30,0.0,0.34,1.0
+set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c "doorZones=0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18" -c doorThreshold=0.02 -c stillCrop=0.30,0.0,0.34,1.0 -c stillIntervalMs=1000
 ```
 
-The camera's night vision records in black and white, so with the kitchen lights off the check sees no colour and misses openings.
+The camera's night vision records in black and white, so colour sees nothing with the kitchen lights off. Add closed and open references taken in the dark and setup can pick brightness or change instead.
 
 ### Nova cost per opening
 
@@ -168,7 +175,7 @@ Each door event also stores its total as `nova_usd`. Expect about $0.0014 per op
 
 ### Face detection cost
 
-Every face-detection call (one per still, so four per motion event) logs its cost:
+Every face-detection call (one per stored still, so at most four per door opening, plus one per camera snapshot taken in Config) logs its cost:
 
 ```bash
 set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"face_detect_cost"'
@@ -190,9 +197,9 @@ The app asks for the passcode again every 24 hours, owner and demo alike. It not
 
 ### Teach the camera your fridge
 
-The gear at the top right opens **Config**:
+The gear at the top right opens **Config**. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6).
 
-- **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). The app shrinks each photo to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
+- **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
 - **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
 
 Changes apply from the next door opening. Each reference adds roughly 1–2K input tokens per analysis, which shows up in the `nova_cost` log. The demo passcode sees Config read-only.

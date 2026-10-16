@@ -1,4 +1,16 @@
-import type { AskResult, Config, DoorEvent, EventPage, Inventory, Pending, Session } from "./types";
+import type {
+  AskResult,
+  Box,
+  Config,
+  DoorEvent,
+  DoorSetup,
+  DoorStatus,
+  EventPage,
+  Inventory,
+  Pending,
+  Session,
+  Snapshot,
+} from "./types";
 
 /** The session is missing, expired or no longer valid: sign in again. */
 export class Unauthorized extends Error {}
@@ -7,10 +19,11 @@ export class ReadOnly extends Error {}
 /** FridgeSense could not be reached. */
 export class Offline extends Error {}
 export class ApiError extends Error {
-  /** `message` is the server's `error` text when it sent one. */
+  /** `message` is the server's `error` text when it sent one; `body` is the parsed response. */
   constructor(
     readonly status: number,
     message?: string,
+    readonly body: unknown = null,
   ) {
     super(message || `HTTP ${status}`);
   }
@@ -97,6 +110,29 @@ export class ApiClient {
     return this.request("DELETE", `/api/config/references/${encodeURIComponent(id)}`);
   }
 
+  /** A face-blurred still from the camera, not stored. */
+  cameraSnapshot(): Promise<Snapshot> {
+    return this.request("POST", "/api/camera/snapshot");
+  }
+
+  doorCalibration(): Promise<DoorSetup> {
+    return this.request("GET", "/api/door-calibration");
+  }
+
+  /** `image` is a base64 JPEG; `box` is in fractions of it. */
+  addDoorReference(image: string, box: Box, status: DoorStatus): Promise<DoorSetup> {
+    return this.request("POST", "/api/door-calibration/references", { image, box, status });
+  }
+
+  deleteDoorReference(id: string): Promise<DoorSetup> {
+    return this.request("DELETE", `/api/door-calibration/references/${encodeURIComponent(id)}`);
+  }
+
+  /** Works out each zone's rule; a 422 ApiError carries `references` with scores in `body`. */
+  runDoorSetup(): Promise<DoorSetup> {
+    return this.request("POST", "/api/door-calibration/run");
+  }
+
   private async request<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
     const headers = new Headers();
     if (body !== undefined) headers.set("content-type", "application/json");
@@ -116,7 +152,7 @@ export class ApiClient {
     if (resp.status === 403) throw new ReadOnly();
     if (!resp.ok) {
       const body = await resp.json().catch(() => null);
-      throw new ApiError(resp.status, typeof body?.error === "string" ? body.error : undefined);
+      throw new ApiError(resp.status, typeof body?.error === "string" ? body.error : undefined, body);
     }
     return (await resp.json()) as T;
   }

@@ -10,7 +10,15 @@ import pytest
 import respx
 from PIL import Image
 
-from fridgesense.door_events import DoorCheck, fetch_stills, iso_utc
+from fridgesense.door_events import (
+    DoorCheck,
+    ZoneRule,
+    baseline_of,
+    fetch_stills,
+    iso_utc,
+    still_count,
+    still_times,
+)
 from fridgesense.faces import blur_regions
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import API_BASE, RingClient
@@ -59,25 +67,44 @@ def ring_http():
         yield ring, http
 
 
-def ring_serves(images: list[bytes] | None, status: int = 200):
-    """Mock Ring so the n-th still request returns images[n]; None means 403 for all."""
+def window_times(state=STATE) -> list[int]:
+    w = state["window"]
+    return still_times(w["start_ms"], w["end_ms"], still_count(w["end_ms"] - w["start_ms"]))
+
+
+def ring_serves(images: list[bytes] | None, status: int = 200, state=STATE):
+    """Mock Ring so still n (by its timestamp) gets images[(n - 1) % len]; None: 403 for all."""
     if images is None:
         respx.post(DOWNLOAD).respond(403)
         return
-    counter = iter(range(100))
+    times = window_times(state)
     respx.post(DOWNLOAD).mock(
         side_effect=lambda request: httpx.Response(
-            303, headers={"Location": f"https://dl.example.com/{next(counter)}"}
+            303,
+            headers={
+                "Location": f"https://dl.example.com/{json.loads(request.content)['timestamp']}"
+            },
         )
     )
     respx.get(url__regex=r"https://dl\.example\.com/(\d+)").mock(
         side_effect=lambda request: httpx.Response(
-            status, content=images[int(request.url.path.strip("/")) % len(images)]
+            status,
+            content=images[times.index(int(request.url.path.strip("/"))) % len(images)],
         )
     )
 
 
-def run(ring_http, state=STATE, blurrer=None, check=CHECK, crop=None):
+def stills_open_at(numbers: set[int], count: int = 25) -> list[bytes]:
+    """`count` distinguishable stills (fill level n); the given numbers show the lit fridge."""
+    return [
+        color_jpeg((100 + n, 100 + n, 100 + n), [((0.2, 0.2, 0.4, 0.5), (40, 90, 200))])
+        if n in numbers
+        else color_jpeg((100 + n, 100 + n, 100 + n))
+        for n in range(1, count + 1)
+    ]
+
+
+def run(ring_http, state=STATE, blurrer=None, check=CHECK, crop=None, setup_for=None):
     ring, http = ring_http
     return fetch_stills(
         ring,
@@ -90,6 +117,7 @@ def run(ring_http, state=STATE, blurrer=None, check=CHECK, crop=None):
         state,
         sleep=lambda s: None,
         crop=crop,
+        setup_for=setup_for,
     )
 
 
@@ -107,10 +135,10 @@ def test_iso_utc():
     assert iso_utc(1786715596787) == "2026-08-14T13:53:16.787Z"
 
 
-# Door event saved
+# Door event saved (25 stills, stills 6-15 open)
 @respx.mock
 def test_door_event_saved(aws, ring_http):
-    ring_serves([closed(30), OPEN, OPEN, closed(60)])
+    ring_serves(stills_open_at(set(range(6, 16))))
     out = run(ring_http)
     assert out["outcome"] == "door_open"
     assert out["door_sk"] == DOOR_SK
@@ -119,11 +147,52 @@ def test_door_event_saved(aws, ring_http):
     assert event["sk"] == DOOR_SK
     assert event["device_id"] == "ava1.ring.device.D1"
     assert event["ring_event_id"] == "evt_1786715596000"
-    assert event["opened_at"] == "2026-08-14T13:53:16.000Z"
-    assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
-    assert event["duration_s"] == 25
+    assert event["opened_at"] == "2026-08-14T13:53:21.769Z"
+    assert event["closed_at"] == "2026-08-14T13:53:31.384Z"
+    assert event["duration_s"] == 10
     assert event["status"] == "analyzing"
     assert event["still_keys"] == out["still_keys"]
+
+
+# Four stills saved (from the open span: stills 6, 9, 13, 16)
+@respx.mock
+def test_four_stills_saved_from_the_open_span(aws, ring_http):
+    images = stills_open_at(set(range(6, 16)))
+    ring_serves(images)
+    seen = []
+    out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: seen.append(data) or data))
+    assert out["outcome"] == "door_open"
+    assert seen == [images[n - 1] for n in (6, 9, 13, 16)]
+    assert stored_keys() == [f"{PREFIX}still-{n}.jpg" for n in range(1, 5)]
+    bodies = [
+        boto3.client("s3").get_object(Bucket=BUCKET, Key=k)["Body"].read()
+        for k in out["still_keys"]
+    ]
+    assert bodies == seen
+
+
+# Short open span (only still 10 open: stills 10 and 11 go on)
+@respx.mock
+def test_short_open_span(aws, ring_http):
+    images = stills_open_at({10})
+    ring_serves(images)
+    seen = []
+    out = run(ring_http, blurrer=FakeBlurrer(blurred=lambda data: seen.append(data) or data))
+    assert out["outcome"] == "door_open"
+    assert seen == [images[9], images[10]]
+    assert stored_keys() == [f"{PREFIX}still-1.jpg", f"{PREFIX}still-2.jpg"]
+
+
+# Door still open at the end of the window
+@respx.mock
+def test_door_still_open_at_the_end_of_the_window(aws, ring_http):
+    ring_serves(stills_open_at({23, 24, 25}))
+    run(ring_http)
+    [event] = door_events()
+    times = window_times()
+    assert event["opened_at"] == iso_utc(times[22])
+    assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
+    assert event["duration_s"] == round((1786715621000 - times[22]) / 1000)
 
 
 # Same Ring event in two runs
@@ -194,6 +263,10 @@ def test_one_still_is_too_few(aws, ring_http):
     [event] = door_events()
     assert event["status"] == "no_media"
     assert event["still_keys"] == []
+    # Too few stills keep the window times
+    assert event["opened_at"] == "2026-08-14T13:53:16.000Z"
+    assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
+    assert event["duration_s"] == 25
 
 
 # Detection fails for one still
@@ -243,12 +316,13 @@ def test_fridge_light_visible(aws, ring_http):
     assert len(stored_keys()) == 4
 
 
-# Closed door costs no face detection
+# Closed door costs no face detection (25 stills downloaded)
 @respx.mock
 def test_closed_door_costs_no_face_detection(aws, ring_http):
     ring_serves([closed(30), closed(60), closed(230), closed(30)])
     blurrer = FakeBlurrer()
     out = run(ring_http, blurrer=blurrer)
+    assert len(respx.calls) == 2 * 25
     assert out["outcome"] == "not_door"
     assert blurrer.contexts == []
     assert stored_keys() == []
@@ -311,3 +385,117 @@ def test_closed_fridge_is_not_cropped(aws, ring_http):
     assert run(ring_http, blurrer=blurrer, crop=(0.25, 0.0, 0.5, 1.0))["outcome"] == "not_door"
     assert blurrer.contexts == []
     assert stored_keys() == []
+
+
+def logged(caplog, event: str) -> dict:
+    [line] = [r.getMessage() for r in caplog.records if event in r.getMessage()]
+    return json.loads(line[line.index("{") :])
+
+
+def setup(*rules: ZoneRule):
+    check = DoorCheck(rules=rules, source="setup")
+    return lambda account_id, device_id: check
+
+
+RIGHT = (0.6, 0.0, 0.4, 1.0)
+RIGHT_LIT = color_jpeg(GREY, [(RIGHT, (40, 90, 200))])
+
+
+# Setup result used for the device
+@respx.mock
+def test_setup_result_used_for_the_device(aws, ring_http, caplog):
+    caplog.set_level(logging.INFO)
+    ring_serves([RIGHT_LIT])
+    env_check = DoorCheck(zones=((0.0, 0.0, 0.4, 1.0),), threshold=0.02)
+    out = run(ring_http, check=env_check, setup_for=setup(ZoneRule(RIGHT, "color", "above", 0.3)))
+    assert out["outcome"] == "door_open"
+    line = logged(caplog, "door_event_recorded")
+    assert line["zones_source"] == "setup"
+    assert line["feature"] == "color"
+
+
+# Setup threshold applied
+@respx.mock
+def test_setup_threshold_applied(aws, ring_http, caplog):
+    caplog.set_level(logging.INFO)
+    # 20% of the right zone is colourful: above DOOR_THRESHOLD (0.02), below the setup's 0.3
+    ring_serves([color_jpeg(GREY, [((0.6, 0.0, 0.4, 0.2), (40, 90, 200))])])
+    out = run(ring_http, setup_for=setup(ZoneRule(RIGHT, "color", "above", 0.3)))
+    assert out["outcome"] == "not_door"
+    line = logged(caplog, "motion_not_door")
+    assert line["zones_source"] == "setup"
+    assert line["feature"] == "color"
+    assert line["threshold"] == 0.3
+    assert line["score"] == pytest.approx(0.2, abs=0.01)
+
+
+WHOLE = (0.0, 0.0, 1.0, 1.0)
+
+
+# Brightness rule applied
+@respx.mock
+@pytest.mark.parametrize("level, outcome", [(200, "door_open"), (100, "not_door")])
+def test_brightness_rule_applied(aws, ring_http, level, outcome):
+    ring_serves([closed(level)])
+    rule = ZoneRule(WHOLE, "brightness", "above", 0.6)
+    assert run(ring_http, setup_for=setup(rule))["outcome"] == outcome
+
+
+# Darker rule applied
+@respx.mock
+def test_darker_rule_applied(aws, ring_http):
+    ring_serves([closed(90)])
+    rule = ZoneRule(WHOLE, "brightness", "below", 0.5)
+    assert run(ring_http, setup_for=setup(rule))["outcome"] == "door_open"
+
+
+# Change rule applied
+@respx.mock
+@pytest.mark.parametrize(
+    "still, outcome",
+    [
+        (color_jpeg((40, 40, 40), [((0.5, 0.0, 0.5, 1.0), (216, 216, 216))]), "door_open"),
+        (closed(130), "not_door"),
+    ],
+)
+def test_change_rule_applied(aws, ring_http, still, outcome):
+    ring_serves([still])
+    rule = ZoneRule(WHOLE, "change", "above", 0.2, baseline_of([closed(128)], WHOLE))
+    assert run(ring_http, setup_for=setup(rule))["outcome"] == outcome
+
+
+# Fallback when setup never ran
+@respx.mock
+def test_fallback_when_setup_never_ran(aws, ring_http, caplog):
+    caplog.set_level(logging.INFO)
+    ring_serves([RIGHT_LIT])
+    env_check = DoorCheck(zones=(RIGHT,), threshold=0.02)
+    out = run(ring_http, check=env_check, setup_for=lambda a, d: None)
+    assert out["outcome"] == "door_open"
+    assert logged(caplog, "door_event_recorded")["zones_source"] == "default"
+
+
+# Setup lookup fails
+@respx.mock
+def test_setup_lookup_fails(aws, ring_http, caplog):
+    caplog.set_level(logging.INFO)
+    ring_serves([OPEN])
+
+    def broken(account_id, device_id):
+        raise RuntimeError("table down")
+
+    out = run(ring_http, setup_for=broken)
+    assert out["outcome"] == "door_open"
+    assert logged(caplog, "door_setup_unavailable")["error"] == "RuntimeError"
+    assert logged(caplog, "door_event_recorded")["zones_source"] == "default"
+
+
+# Door stayed closed (logs the source and feature)
+@respx.mock
+def test_door_stayed_closed_logs_source_and_feature(aws, ring_http, caplog):
+    caplog.set_level(logging.INFO)
+    ring_serves([closed(30)])
+    assert run(ring_http)["outcome"] == "not_door"
+    line = logged(caplog, "motion_not_door")
+    assert line["zones_source"] == "default"
+    assert line["feature"] == "color"

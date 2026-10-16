@@ -1,9 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { Mock } from "vitest";
 import { ApiError } from "../api/client";
+import type { Resize } from "../image";
 import type { Config as ConfigData, Reference } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
-import { fakeApi } from "../test-utils";
+import { drag, fakeApi } from "../test-utils";
 import { Config } from "./Config";
 
 function ref(id: string, annotation: string): Reference {
@@ -17,7 +19,7 @@ function renderConfig(
   { role = "owner", api: overrides = {}, resize = vi.fn().mockResolvedValue("/9j/RESIZED") } = {} as {
     role?: "owner" | "viewer";
     api?: Partial<Record<keyof Api, unknown>>;
-    resize?: (file: Blob) => Promise<string>;
+    resize?: Mock<Resize>;
   },
 ) {
   const api = fakeApi({ config: vi.fn().mockResolvedValue(config), ...overrides });
@@ -45,7 +47,7 @@ const PHOTO = new File([new Uint8Array([1, 2, 3])], "IMG_0001.jpg", { type: "ima
 
 async function openAdd(annotation?: string) {
   await userEvent.click(await screen.findByRole("button", { name: "Add" }));
-  await userEvent.upload(screen.getByLabelText("Photo"), PHOTO);
+  await userEvent.upload(screen.getByLabelText("Choose photo"), PHOTO);
   if (annotation) await userEvent.type(screen.getByLabelText("Annotation"), annotation);
 }
 
@@ -62,7 +64,7 @@ test("adding a reference resizes the photo, uploads it and lists it", async () =
   expect(api.addReference).toHaveBeenCalledWith("soda can", "/9j/RESIZED");
   const refs = screen.getByRole("region", { name: "Reference images" });
   expect(await within(refs).findByText("soda can")).toBeInTheDocument();
-  expect(screen.queryByLabelText("Photo")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Choose photo")).not.toBeInTheDocument();
 });
 
 // Annotation required
@@ -162,4 +164,116 @@ test("Save is disabled while the text equals the saved instructions", async () =
   renderConfig({ instructions: "Count yogurt cups individually.", references: [] });
   expect(await instructionsBox()).toHaveValue("Count yogurt cups individually.");
   expect(saveInstructionsButton()).toBeDisabled();
+});
+
+// Open config: the Reference images tab is selected by default
+test("Config opens on the Reference images tab", async () => {
+  location.hash = "#config";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  expect(await screen.findByRole("tab", { name: "Reference images", selected: true })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Open/close detection", selected: false })).toBeInTheDocument();
+  expect(api.config).toHaveBeenCalled();
+  expect(api.doorCalibration).not.toHaveBeenCalled();
+  expect(screen.getByRole("region", { name: "Custom instructions" })).toBeInTheDocument();
+});
+
+// Switch to open/close detection
+test("tapping Open/close detection switches the tab and the hash", async () => {
+  location.hash = "#config";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  await userEvent.click(await screen.findByRole("tab", { name: "Open/close detection" }));
+  expect(location.hash).toBe("#config/doors");
+  expect(screen.getByRole("tab", { name: "Open/close detection", selected: true })).toBeInTheDocument();
+  expect(api.doorCalibration).toHaveBeenCalled();
+  expect(screen.queryByRole("region", { name: "Reference images" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("tab", { name: "Reference images" }));
+  expect(location.hash).toBe("#config");
+});
+
+// Open the detection tab by link
+test("#config/doors opens on the detection tab", async () => {
+  location.hash = "#config/doors";
+  const { api } = renderConfig({ instructions: "", references: [] });
+  expect(await screen.findByRole("tab", { name: "Open/close detection", selected: true })).toBeInTheDocument();
+  expect(api.doorCalibration).toHaveBeenCalled();
+  location.hash = "";
+});
+
+const SNAPSHOT = { image: "/9j/SNAP", captured_at: "2026-10-15T19:20:07.000Z" };
+
+async function openSnapshot(api: Api) {
+  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await userEvent.click(screen.getByRole("button", { name: "Camera snapshot" }));
+  expect(api.cameraSnapshot).toHaveBeenCalledTimes(1);
+  return within(screen.getByRole("dialog")).findByRole("img", { name: "Reference to draw on" });
+}
+
+// Add a camera snapshot
+test("a camera snapshot can be added as a reference", async () => {
+  const added = { instructions: "", references: [ref("r2", "milk bag")] };
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT), addReference: vi.fn().mockResolvedValue(added) } },
+  );
+  const img = await openSnapshot(api);
+  expect(img).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
+  await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+  expect(resize).toHaveBeenCalledTimes(1);
+  const [blob, shapes] = resize.mock.calls[0];
+  expect(blob).toBeInstanceOf(Blob);
+  expect((blob as Blob).type).toBe("image/jpeg");
+  expect(shapes).toBeUndefined();
+  expect(api.addReference).toHaveBeenCalledWith("milk bag", "/9j/RESIZED");
+});
+
+// Snapshot with no recent footage
+test("a snapshot with no recent footage says so and keeps Choose photo", async () => {
+  const { api } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { cameraSnapshot: vi.fn().mockRejectedValue(new ApiError(409, "no recent footage")) } },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await userEvent.click(screen.getByRole("button", { name: "Camera snapshot" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("No recent footage. Walk past the camera, then try again.");
+  expect(screen.getByLabelText("Choose photo")).toBeInTheDocument();
+  expect(api.addReference).not.toHaveBeenCalled();
+});
+
+// Draw on the image
+test("boxes and lines drawn on the image go into the upload", async () => {
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT), addReference: vi.fn().mockResolvedValue({ instructions: "", references: [] }) } },
+  );
+  await openSnapshot(api);
+  await userEvent.click(screen.getByRole("button", { name: "Box" }));
+  drag([10, 10], [40, 50]);
+  await userEvent.click(screen.getByRole("button", { name: "Line" }));
+  drag([50, 50], [90, 90]);
+  await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+  expect(resize.mock.calls[0][1]).toEqual([
+    { kind: "box", x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.5 },
+    { kind: "line", x1: 0.5, y1: 0.5, x2: 0.9, y2: 0.9 },
+  ]);
+});
+
+// Undo a shape
+test("Undo removes the last shape and is disabled with none left", async () => {
+  const { api } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) } },
+  );
+  await openSnapshot(api);
+  const undo = screen.getByRole("button", { name: "Undo" });
+  expect(undo).toBeDisabled();
+  drag([10, 10], [40, 50]);
+  drag([60, 60], [90, 90]);
+  expect(screen.getAllByTestId("markup-shape")).toHaveLength(2);
+  await userEvent.click(undo);
+  expect(screen.getAllByTestId("markup-shape")).toHaveLength(1);
+  await userEvent.click(undo);
+  expect(screen.queryAllByTestId("markup-shape")).toHaveLength(0);
+  expect(undo).toBeDisabled();
 });
