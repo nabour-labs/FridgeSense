@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, Clock, DoorClosed, Trash2 } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Bug, ChevronLeft, ChevronRight, Clock, DoorClosed, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Change, DoorEvent } from "../api/types";
 import { useApp } from "../AppContext";
@@ -161,6 +161,7 @@ function EventPage({
                   event={e}
                   onStill={(index) => setViewing({ stills: e.stills, index })}
                   onDelete={role === "owner" ? () => setDeleting(e) : undefined}
+                  debug={role === "owner"}
                 />
               </li>
             ))}
@@ -225,11 +226,14 @@ function EventCard({
   event,
   onStill,
   onDelete,
+  debug = false,
 }: {
   event: DoorEvent;
   onStill: (index: number) => void;
   /** Absent for viewers. */
   onDelete?: () => void;
+  /** Link to the opening's debug trace (owner only: traces hold unblurred stills). */
+  debug?: boolean;
 }) {
   const shown = event.changes.filter((c) => !c.rejected);
   const quiet = "text-sm text-slate-500 dark:text-slate-400";
@@ -242,6 +246,16 @@ function EventCard({
             <Clock aria-hidden className="size-3.5" />
             <span>{event.duration_s} s</span>
           </span>
+          {debug && (
+            <a
+              href={`#config/debug/${encodeURIComponent(event.id)}`}
+              aria-label={`Debug door opening at ${clock(event.opened_at)}`}
+              title="Debug"
+              className="grid size-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            >
+              <Bug aria-hidden className="size-4" />
+            </a>
+          )}
           {onDelete && (
             <button
               type="button"
