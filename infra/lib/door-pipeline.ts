@@ -29,8 +29,12 @@ export interface DoorPipelineProps {
   appSecret: ISecret;
   tokenSecret: ISecret;
   logGroup: (id: string) => LogGroup;
-  doorBox: string;
+  /** Door-check zones, `x,y,w,h;x,y,w,h` fractions of the uncropped still. */
+  doorZones: string;
+  /** Share of colourful pixels in a zone that counts as an opening. */
   doorThreshold: string;
+  /** Crop for stored and analyzed stills (`x,y,w,h`); empty keeps the full frame. */
+  stillCrop: string;
   novaModelId: string;
   novaPriceIn: string;
   novaPriceOut: string;
@@ -88,8 +92,9 @@ export class DoorPipeline extends Construct {
       environment: {
         ...props.baseEnvironment,
         STILLS_BUCKET: this.bucket.bucketName,
-        DOOR_BOX: props.doorBox,
+        DOOR_ZONES: props.doorZones,
         DOOR_THRESHOLD: props.doorThreshold,
+        STILL_CROP: props.stillCrop,
         NOVA_MODEL_ID: props.novaModelId,
         NOVA_PRICE_IN: props.novaPriceIn,
         NOVA_PRICE_OUT: props.novaPriceOut,
