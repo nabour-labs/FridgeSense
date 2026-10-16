@@ -115,7 +115,7 @@ export interface Snapshot {
 }
 
 export type DoorStatus = "open" | "closed";
-export type DoorFeature = "color" | "brightness" | "change";
+export type DoorFeature = "blue" | "color" | "brightness" | "change";
 
 /** A camera snapshot with one box around a door or drawer, labeled open or closed. */
 export interface DoorReference {

@@ -54,3 +54,12 @@
 - **PWA (Vitest):** "Blue light feature named" on the Open/close detection tab, with the fake API.
 - **Infra (Jest/Vitest):** stack and pipeline tests expect `DOOR_THRESHOLD = "0.01"`.
 - **Integration (local only, `-m clips`):** the per-clip tests and the report on the 12 clips, before and after. Stubbed as in `door-detection-clip-tests`: Ring through the clip camera, S3 and DynamoDB through moto, and faces through `FakeBlurrer`. No live Ring, AWS or Bedrock.
+
+## Provisional results (draft labels)
+
+Measured on the unconfirmed draft labels, with `pytest -m clips` (the report command from `door-detection-clip-tests` is not built yet). Tasks 1.1 and 7.1 repeat this on confirmed labels with the full report.
+
+| Check | Clips passing | Failing clips |
+|---|---|---|
+| Before: `color` ≥ 0.02 | 10 of 12 | 1932 (opening starts 2.1 s early, from a snack), 2023 (false opening, from a plate) |
+| After: `blue` ≥ 0.01 | 12 of 12 | none |

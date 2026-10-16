@@ -13,7 +13,12 @@ import { NO_FOOTAGE } from "./ReferenceImages";
 
 const MAX_DOOR_REFERENCES = 12;
 const ZONE_COLOR = "#14b8a6";
-const FEATURE_LABEL: Record<DoorFeature, string> = { color: "Color", brightness: "Brightness", change: "Change" };
+const FEATURE_LABEL: Record<DoorFeature, string> = {
+  blue: "Blue light",
+  color: "Color",
+  brightness: "Brightness",
+  change: "Change",
+};
 
 const percent = (v: number) => `${(v * 100).toFixed(1)}%`;
 

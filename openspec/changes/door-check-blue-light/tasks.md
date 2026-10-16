@@ -25,8 +25,8 @@
 
 ## 6. PWA and infra
 
-- [ ] 6.1 Write a failing test in `pwa/src/screens/DoorDetection.test.tsx` for Blue light feature named. Then add `"blue"` to `DoorFeature` in `pwa/src/api/types.ts` and the "Blue light" label in `DoorDetection.tsx`. Verify that `npm test` passes in `pwa/`.
-- [ ] 6.2 Update `infra/test/stack.test.ts` and `infra/test/pipeline.test.ts` to expect `DOOR_THRESHOLD = "0.01"`, and see them fail. Change the `doorThreshold` context default and its comment in `infra/lib/fridgesense-stack.ts`. Verify that `npm test` passes in `infra/` and that `cdk synth` shows `DOOR_THRESHOLD = 0.01` on both Lambdas.
+- [x] 6.1 Write a failing test in `pwa/src/screens/DoorDetection.test.tsx` for Blue light feature named. Then add `"blue"` to `DoorFeature` in `pwa/src/api/types.ts` and the "Blue light" label in `DoorDetection.tsx`. Verify that `npm test` passes in `pwa/`.
+- [x] 6.2 Update `infra/test/stack.test.ts` and `infra/test/pipeline.test.ts` to expect `DOOR_THRESHOLD = "0.01"`, and see them fail. Change the `doorThreshold` context default and its comment in `infra/lib/fridgesense-stack.ts`. Verify that `npm test` passes in `infra/` and that `cdk synth` shows `DOOR_THRESHOLD = 0.01` on both Lambdas.
 
 ## 7. Measure and check
 

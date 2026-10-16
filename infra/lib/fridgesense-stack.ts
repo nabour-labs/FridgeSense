@@ -167,9 +167,9 @@ export class FridgeSenseStack extends Stack {
     // cdk deploy -c timeZone=America/Vancouver
     const timeZone = context("timeZone", "America/Toronto");
     // Used until the owner runs setup on the app's Open/close detection tab.
-    // Re-tune with -c doorZones=x,y,w,h;x,y,w,h -c doorThreshold=0.02
+    // Re-tune with -c doorZones=x,y,w,h;x,y,w,h -c doorThreshold=0.01 (blue-lit share of a zone)
     const doorZones = context("doorZones", "0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18");
-    const doorThreshold = context("doorThreshold", "0.02");
+    const doorThreshold = context("doorThreshold", "0.01");
     const doors = new DoorPipeline(this, "Doors", {
       code,
       baseEnvironment: common.environment,
