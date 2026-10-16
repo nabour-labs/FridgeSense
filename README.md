@@ -132,25 +132,29 @@ Ring tokens are refreshed every 3 hours. If a refresh is ever rejected, the logs
 
 1. Ring sends a motion webhook. FridgeSense starts one Step Functions run (`fridgesense-door-events`) for it.
 2. The run waits for Ring to finish the recording, then finds the event's start and end in Ring's history.
-3. It downloads 4 stills from across the opening. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
-4. It checks the brightness of the area where the fridge light shows. Motion without the door opening stops here, so no Nova call is made.
+3. It downloads 4 stills from across the opening and checks them for the lit fridge interior: colourful pixels where the grey doors and drawers are. Motion without an opening stops here, so no face detection or Nova call is made.
+4. Each still of an opening is cropped to the strip the camera's privacy mask leaves visible. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
 5. Amazon Nova 2 Lite compares the stills and lists items added and removed. Changes with confidence 0.7 or more update the inventory; the rest wait for confirmation.
 
 Nova 2 Lite runs through the `us.` cross-region inference profile, so a still may be processed in us-east-1, us-east-2 or us-west-2. To use Nova Lite v1 in us-east-1 only, deploy with `-c novaModelId=amazon.nova-lite-v1:0 -c novaPriceIn=0.00006 -c novaPriceOut=0.00024`.
 
 ### 6. Tune the door check
 
-The door box (fractions `x,y,width,height` of the image) and the brightness threshold are guesses until the camera is mounted. Open and close the fridge a few times, wave at the camera with the door shut, then read the brightest values the pipeline saw:
+The door check counts the share of colourful pixels in each zone (fractions `x,y,width,height` of the full camera frame, separated by `;`). Closed stainless doors are grey in any light; the lit interior and the food behind it are not. The defaults were measured on a 2560×1440 frame: one zone over the French doors, one over the two drawers, and a threshold of 0.02 (closed fridge ≤ 0.005, weakest opening ≈ 0.05).
+
+Open each door and drawer, walk past the closed fridge, then read the scores of the motion the pipeline rejected:
 
 ```bash
 set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 1h --filter-pattern '"motion_not_door"'
 ```
 
-Each line shows `brightest` and `threshold`. Pick a threshold between the closed-door values and the open-door ones, adjust the box if needed, and deploy:
+Each line shows `score`, the `zone` that scored it and `threshold`. Pick a threshold between the closed-fridge scores and the openings, move a zone if an opening scores low, and deploy. `stillCrop` is the visible strip kept for storage and Nova; `-c stillCrop=` keeps the full frame.
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c doorBox=0.25,0.1,0.5,0.8 -c doorThreshold=0.5
+set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c "doorZones=0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18" -c doorThreshold=0.02 -c stillCrop=0.30,0.0,0.34,1.0
 ```
+
+The camera's night vision records in black and white, so with the kitchen lights off the check sees no colour and misses openings.
 
 ### Nova cost per opening
 

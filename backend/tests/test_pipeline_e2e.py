@@ -1,5 +1,6 @@
 """The pipeline Lambda driven in state-machine order, end to end (all external calls stubbed)."""
 
+import io
 import time
 
 import boto3
@@ -7,13 +8,15 @@ import httpx
 import pytest
 import respx
 from botocore.stub import Stubber
+from PIL import Image
 
+from fridgesense.door_events import crop_still
 from fridgesense.faces import blur_regions
 from fridgesense.handlers import pipeline
 from fridgesense.ring import API_BASE
 from fridgesense.store import Tokens, TokenStore
 from fridgesense.table import FridgeTable, account_pk
-from tests.conftest import BUCKET, checkerboard_jpeg, jpeg, load_fixture
+from tests.conftest import BUCKET, checkerboard_jpeg, color_jpeg, load_fixture
 
 ACCOUNT = "ava1.ring.account.A1"
 DEVICE = "ava1.ring.device.D1"
@@ -44,8 +47,9 @@ def no_faces(faces, count: int = 4) -> None:
 
 @pytest.fixture
 def env(aws, monkeypatch, faces):
-    monkeypatch.setenv("DOOR_BOX", "0,0,1,1")
-    monkeypatch.setenv("DOOR_THRESHOLD", "0.5")
+    monkeypatch.setenv("DOOR_ZONES", "0,0,1,1")
+    monkeypatch.setenv("DOOR_THRESHOLD", "0.02")
+    monkeypatch.delenv("STILL_CROP", raising=False)
     monkeypatch.setattr(pipeline, "sleep", lambda s: None)
     TokenStore().save(
         Tokens(
@@ -62,12 +66,16 @@ def env(aws, monkeypatch, faces):
         yield stub
 
 
-def ring_serves(brightness: float):
+OPEN = color_jpeg((128, 128, 128), [((0.2, 0.2, 0.4, 0.5), (40, 90, 200))])  # lit fridge
+CLOSED = color_jpeg((128, 128, 128))  # grey steel doors
+
+
+def ring_serves(still: bytes):
     respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
     respx.post(DOWNLOAD).mock(
         side_effect=lambda r: httpx.Response(303, headers={"Location": "https://dl.example.com/x"})
     )
-    respx.get("https://dl.example.com/x").respond(200, content=jpeg(brightness))
+    respx.get("https://dl.example.com/x").respond(200, content=still)
 
 
 def step(task: str, state: dict) -> dict:
@@ -78,7 +86,7 @@ def step(task: str, state: dict) -> dict:
 def test_door_opening_updates_inventory(env, faces):
     env.add_response("converse", load_fixture("nova/converse_tool_use.json"))
     no_faces(faces)
-    ring_serves(0.8)
+    ring_serves(OPEN)
     state = step("find_window", RUN_INPUT)
     assert state["window"]["status"] == "ready"
     state = step("fetch_stills", state)
@@ -100,7 +108,7 @@ def test_door_opening_updates_inventory(env, faces):
 
 @respx.mock
 def test_closed_door_stops_before_nova(env, faces):
-    ring_serves(0.1)  # no DetectFaces responses queued: a call would fail the stubber
+    ring_serves(CLOSED)  # no DetectFaces responses queued: a call would fail the stubber
     state = step("fetch_stills", step("find_window", RUN_INPUT))
     assert state["outcome"] == "not_door"
     assert FridgeTable().query(ACCOUNT, "DOOR#") == []
@@ -124,7 +132,7 @@ def test_state_machine_payload_shape(env):
 # Analysis receives blurred bytes
 @respx.mock
 def test_analysis_receives_blurred_bytes(env, faces, monkeypatch):
-    monkeypatch.setenv("DOOR_THRESHOLD", "0.3")  # the checkerboard's mean brightness is ~0.5
+    monkeypatch.setenv("DOOR_THRESHOLD", "0")  # the checkerboard has no colour; 0 lets it through
     downloaded = checkerboard_jpeg()
     respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
     respx.post(DOWNLOAD).mock(
@@ -158,3 +166,68 @@ def test_analysis_receives_blurred_bytes(env, faces, monkeypatch):
     )
     assert images[0] == still_1
     assert images[0] != downloaded
+
+
+def capture_converse(env) -> list[dict]:
+    sent: list[dict] = []
+    pipeline.bedrock_client().meta.events.register(
+        "provide-client-params.bedrock-runtime.Converse", lambda params, **kw: sent.append(params)
+    )
+    env.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    return sent
+
+
+# Analysis sees the cropped still
+@respx.mock
+def test_analysis_sees_the_cropped_still(env, faces, monkeypatch):
+    monkeypatch.setenv("STILL_CROP", "0.25,0.0,0.5,1.0")
+    ring_serves(OPEN)  # 320x180
+    cropped = crop_still(OPEN, (0.25, 0.0, 0.5, 1.0))
+    for _ in range(4):  # detection gets the crop, not the download
+        faces.add_response(
+            "detect_faces",
+            {"FaceDetails": []},
+            {"Image": {"Bytes": cropped}, "Attributes": ["DEFAULT"]},
+        )
+    sent = capture_converse(env)
+
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+    step("analyze", state)
+
+    [request] = sent
+    images = [
+        c["image"]["source"]["bytes"] for c in request["messages"][0]["content"] if "image" in c
+    ]
+    s3 = boto3.client("s3")
+    stored = [s3.get_object(Bucket=BUCKET, Key=k)["Body"].read() for k in state["still_keys"]]
+    assert images == stored
+    assert all(Image.open(io.BytesIO(i)).size == (160, 180) for i in images)
+
+
+# Invalid crop config
+@respx.mock
+def test_invalid_crop_config_fails_before_ring(env, monkeypatch):
+    monkeypatch.setenv("STILL_CROP", "0.8,0,0.5,1")
+    download = respx.post(DOWNLOAD).respond(303, headers={"Location": "https://dl.example.com/x"})
+    state = {
+        **RUN_INPUT,
+        "window": {"status": "ready", "start_ms": 1, "end_ms": 2, "ring_event_id": None},
+    }
+    with pytest.raises(ValueError, match="STILL_CROP"):
+        step("fetch_stills", state)
+    assert not download.called
+
+
+# Invalid zone config
+@respx.mock
+def test_invalid_zone_config_fails_before_ring(env, monkeypatch):
+    monkeypatch.setenv("DOOR_ZONES", "0,0,1")
+    download = respx.post(DOWNLOAD).respond(303, headers={"Location": "https://dl.example.com/x"})
+    state = {
+        **RUN_INPUT,
+        "window": {"status": "ready", "start_ms": 1, "end_ms": 2, "ring_event_id": None},
+    }
+    with pytest.raises(ValueError, match="DOOR_ZONES"):
+        step("fetch_stills", state)
+    assert not download.called
