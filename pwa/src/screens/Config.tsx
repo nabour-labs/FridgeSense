@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Resize } from "../image";
 import { toJpeg } from "../image";
-import { useApp } from "../AppContext";
+import { isAdmin, useApp } from "../AppContext";
 import { Debug } from "./Debug";
 import { DoorDetection } from "./DoorDetection";
 import { FridgeArea } from "./FridgeArea";
@@ -27,7 +27,7 @@ function sectionFromHash(owner: boolean): Section {
 
 /** Config: what guides the item analysis, and how door openings are detected. */
 export function Config({ resize = toJpeg }: { resize?: Resize }) {
-  const owner = useApp().role === "owner";
+  const owner = isAdmin(useApp().role);
   const sections = SECTIONS.filter((s) => owner || !OWNER_ONLY.includes(s.id));
   const [section, setSection] = useState<Section>(() => sectionFromHash(owner));
 

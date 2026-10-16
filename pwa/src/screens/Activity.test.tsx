@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
-import type { DoorEvent } from "../api/types";
+import type { DoorEvent, Role } from "../api/types";
 import { ApiError } from "../api/client";
 import type { Api } from "../AppContext";
 import { fakeApi, signedIn } from "../test-utils";
@@ -28,7 +28,7 @@ function event(overrides: Partial<DoorEvent> = {}): DoorEvent {
 
 function renderActivity(
   events: DoorEvent[],
-  { role = "owner", ...overrides }: { role?: "owner" | "viewer" } & Partial<Record<keyof Api, unknown>> = {},
+  { role = "owner", ...overrides }: { role?: Role } & Partial<Record<keyof Api, unknown>> = {},
 ) {
   signedIn(role);
   location.hash = "#activity";
@@ -319,5 +319,13 @@ test("the owner's Debug link opens the door opening's trace", async () => {
 test("a viewer sees no Debug link", async () => {
   renderActivity([event()], { role: "viewer" });
   const card = await screen.findByRole("article");
+  expect(within(card).queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
+});
+
+// No Debug link for users
+test("a user can delete an opening but sees no Debug link", async () => {
+  renderActivity([event()], { role: "user" });
+  const card = await screen.findByRole("article");
+  expect(within(card).getByRole("button", { name: /Delete/ })).toBeInTheDocument();
   expect(within(card).queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
 });

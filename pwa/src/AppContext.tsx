@@ -44,6 +44,12 @@ export interface AppContextValue {
 
 export type Tab = "fridge" | "activity" | "review" | "stats" | "ask" | "config";
 
+/** Everyone but the read-only demo viewer may change things. */
+export const canEdit = (role: Role) => role !== "viewer";
+
+/** Only the owner (admin) sees Debug: traces hold unblurred stills. */
+export const isAdmin = (role: Role) => role === "owner";
+
 export const AppContext = createContext<AppContextValue | null>(null);
 
 export function useApp(): AppContextValue {

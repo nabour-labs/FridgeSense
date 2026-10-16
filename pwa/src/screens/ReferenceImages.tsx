@@ -2,7 +2,7 @@ import { Camera, ImagePlus, Trash2, Undo2 } from "lucide-react";
 import { useCallback, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import type { Config as ConfigData } from "../api/types";
-import { useApp } from "../AppContext";
+import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
@@ -17,7 +17,7 @@ const MAX_INSTRUCTIONS = 1000;
 /** The owner's reference images and custom instructions for the analysis. */
 export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
   const { api, report, role } = useApp();
-  const canEdit = role === "owner";
+  const editable = canEdit(role);
   const {
     data: config,
     setData: setConfig,
@@ -63,7 +63,7 @@ export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
               <img src={`data:image/jpeg;base64,${r.image}`} alt={r.annotation} className="aspect-square w-full object-cover" />
               <div className="flex items-start gap-1 py-2 pl-3 pr-1">
                 <p className="min-w-0 flex-1 break-words py-1.5 text-sm font-medium">{r.annotation}</p>
-                {canEdit && (
+                {editable && (
                   <button
                     type="button"
                     aria-label={`Delete ${r.annotation}`}
@@ -76,7 +76,7 @@ export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
               </div>
             </li>
           ))}
-          {canEdit && (
+          {editable && (
             <li>
               <button
                 type="button"
@@ -95,7 +95,7 @@ export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
         <h2 id="cfg-instructions" className={`${HEADING} mb-2`}>
           Custom instructions
         </h2>
-        {canEdit ? (
+        {editable ? (
           <Instructions saved={config.instructions} onSaved={setConfig} />
         ) : (
           <p className={`${CARD} whitespace-pre-wrap p-4 text-sm`}>{config.instructions || "None yet."}</p>
