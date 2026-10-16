@@ -228,3 +228,11 @@ test("Browser without WebRTC", async () => {
   expect(screen.getByText("This browser can't play live video.")).toBeInTheDocument();
   expect(api.startLive).not.toHaveBeenCalled();
 });
+
+test("Livestream dialog is wide", async () => {
+  renderLive();
+  const dialog = screen.getByRole("dialog", { name: "Livestream" });
+  expect(dialog).toHaveClass("sm:max-w-3xl");
+  expect(dialog).not.toHaveClass("max-w-md");
+  await settle();
+});
