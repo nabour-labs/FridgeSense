@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, Unauthorized } from "../api/client";
 import { useApp } from "../AppContext";
+import { ClipLive } from "../debug/ClipLive";
+import { useDebug } from "../debug/DebugContext";
 import { Sheet } from "./Sheet";
 
 const ICE_WAIT_MS = 3_000;
@@ -123,8 +125,14 @@ function useLiveStream(createPeer: () => RTCPeerConnection | null) {
   return { state, stream, start };
 }
 
-/** The Livestream dialog: the camera's live video for up to its session limit. */
-export function LiveStream({
+/** The Livestream dialog; in debug mode with Mock video on, a local clip plays instead of the camera. */
+export function LiveStream(props: { onClose: () => void; createPeer?: () => RTCPeerConnection | null }) {
+  const { mockVideo } = useDebug();
+  return import.meta.env.DEV && mockVideo ? <ClipLive onClose={props.onClose} /> : <RealLiveStream {...props} />;
+}
+
+/** The camera's live video for up to its session limit. */
+function RealLiveStream({
   onClose,
   createPeer = livePeer,
 }: {

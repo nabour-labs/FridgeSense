@@ -1,8 +1,5 @@
 import type { Api } from "../AppContext";
 
-/** Debug mode: on whenever the app runs on the Vite dev server, never in the production build. */
-export const isDebug = (): boolean => import.meta.env.DEV;
-
 /** The owner closed the clip picker without picking a frame: not an error. */
 export class PickCancelled extends Error {
   constructor() {

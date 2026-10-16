@@ -50,7 +50,8 @@
 ## Risks / Trade-offs
 
 - [Unblurred frames uploaded when proxying to a deployed backend] → Jayson accepted this. The picker shows the notice. Nothing uploads until the owner saves a reference.
-- [Opening the add or set-area sheet with the switch on pops the picker straight away] → This is expected, since those sheets take a snapshot when they open. Cancel leaves the sheet with no snapshot, and "New snapshot" opens the picker again.
+- [Opening the add or set-area sheet with the switch on pops the picker straight away] → This is expected, since those sheets take a snapshot when they open. Cancel leaves the sheet with no snapshot and no retry button ("New snapshot" only shows once a snapshot exists), so close the sheet and tap "Add" / "Set area" again. Acceptable for a dev-only tool; the screens are not changed for it.
+- [Escape closes both the picker and the sheet under it] → Each `Sheet` listens for Escape on the window. It is harmless (nothing is saved), and a dev-only annoyance.
 - [Large clips (25 MB) over the dev server] → Range streaming means only what the scrubber needs is read.
 - [Path traversal via the clip name] → Strict name pattern plus a resolved-path check, covered by tests.
 - [Debug code leaking into the build] → `apply: "serve"` for the plugin and the `import.meta.env.DEV` guard. Task 5.2 checks the built bundle for `__dev/videos`.
