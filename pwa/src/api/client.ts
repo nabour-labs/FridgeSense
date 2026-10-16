@@ -6,6 +6,7 @@ import type {
   DoorSetup,
   DoorStatus,
   EventPage,
+  FridgeAreaBody,
   Inventory,
   Pending,
   Session,
@@ -131,6 +132,15 @@ export class ApiClient {
   /** Works out each zone's rule; a 422 ApiError carries `references` with scores in `body`. */
   runDoorSetup(): Promise<DoorSetup> {
     return this.request("POST", "/api/door-calibration/run");
+  }
+
+  fridgeArea(): Promise<FridgeAreaBody> {
+    return this.request("GET", "/api/fridge-area");
+  }
+
+  /** Replaces the fridge area. `image` is a base64 JPEG; `box` is in fractions of it. */
+  saveFridgeArea(image: string, box: Box): Promise<FridgeAreaBody> {
+    return this.request("PUT", "/api/fridge-area", { image, box });
   }
 
   private async request<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {

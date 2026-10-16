@@ -24,6 +24,7 @@ from fridgesense import (
     camera,
     deps,
     door_calibration,
+    fridge_area,
     inventory,
     session,
     voice,
@@ -567,6 +568,40 @@ def post_door_setup_run(ctx: Context, device_id: str) -> dict:
         return json_response(422, {"error": e.message, "references": body["references"]})
     log_event("door_setup_ran", account_id=ctx.account_id, device_id=device_id)
     return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+def fridge_area_body(table: FridgeTable, account_id: str, device_id: str) -> dict:
+    area = fridge_area.load(table, account_id, device_id)
+    return {
+        "device_id": device_id,
+        "area": None
+        if area is None
+        else {
+            "image": base64.b64encode(area.image).decode(),
+            "box": door_calibration.box_json(area.box),
+            "updated_at": area.updated_at,
+        },
+    }
+
+
+@route("GET", "/api/fridge-area")
+@with_device
+def get_fridge_area(ctx: Context, device_id: str) -> dict:
+    return json_response(200, fridge_area_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("PUT", "/api/fridge-area", write=True)
+@with_device
+def put_fridge_area(ctx: Context, device_id: str) -> dict:
+    body = _json_body(ctx.req) or {}
+    try:
+        image = door_calibration.decode_image(body.get("image"))
+        fridge_area.save(
+            ctx.table, ctx.account_id, device_id, image, body.get("box"), int(now() * 1000)
+        )
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    return json_response(200, fridge_area_body(ctx.table, ctx.account_id, device_id))
 
 
 MAX_QUESTION = 200

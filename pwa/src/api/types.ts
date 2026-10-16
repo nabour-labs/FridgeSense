@@ -133,3 +133,10 @@ export interface DoorSetup {
   setup: { zones: SetupZone[]; ran_at: string; stale: boolean } | null;
   defaults: { zones: Box[]; threshold: number };
 }
+
+/** The owner's box around the fridge, drawn on a camera snapshot. */
+export interface FridgeAreaBody {
+  device_id: string;
+  /** `image` is a base64 JPEG; `box` is in fractions of it. */
+  area: { image: string; box: Box; updated_at: string } | null;
+}

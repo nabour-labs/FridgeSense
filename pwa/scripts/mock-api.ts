@@ -103,6 +103,7 @@ export function mockApi(): Plugin {
   let doorSetup: { zones: Record<string, unknown>[]; ran_at: string } | null = null;
   let refsChangedAt = 0;
   let snapshots = 0;
+  let fridgeArea: { image: string; box: unknown; updated_at: string } | null = null;
   const doorBody = (scored = false) => ({
     device_id: "mock.device.D1",
     references: doorRefs.map((r) => ({ ...r, score: doorSetup || scored ? (r.status === "open" ? 0.12 : 0.003) : null })),
@@ -215,6 +216,18 @@ export function mockApi(): Plugin {
             ran_at: new Date().toISOString(),
           };
           return send(200, doorBody());
+        }
+        if (url === "/fridge-area" && req.method === "GET") return send(200, { device_id: "mock.device.D1", area: fridgeArea });
+        if (req.method === "PUT" && url === "/fridge-area") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { image, box } = JSON.parse(body);
+            fridgeArea = { image, box, updated_at: new Date().toISOString() };
+            send(200, { device_id: "mock.device.D1", area: fridgeArea });
+          });
+          return;
         }
         if (url === "/config" && req.method === "GET") return send(200, config);
         if (url.startsWith("/config/") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });

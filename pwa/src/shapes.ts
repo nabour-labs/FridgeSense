@@ -47,3 +47,8 @@ export function shapeToBox(shape: Shape): Box {
   const height = Math.min(round3(Math.abs(shape.y2 - shape.y1)), round3(1 - y));
   return { x, y, width, height };
 }
+
+/** The box shape for a box in fractions of an image. */
+export function boxShape(b: Box): Shape {
+  return { kind: "box", x1: b.x, y1: b.y, x2: b.x + b.width, y2: b.y + b.height };
+}
