@@ -29,7 +29,7 @@
 
 ## 3. Wire door traces into fetch-stills
 
-- [ ] 3.1 Write failing tests in `backend/tests/test_fetch_stills_task.py`, using the existing Ring fixtures, fake clients, moto and the Rekognition stub:
+- [x] 3.1 Write failing tests in `backend/tests/test_fetch_stills_task.py`, using the existing Ring fixtures, fake clients, moto and the Rekognition stub:
   - "Motion that is not the door": the trace is written and no door event is saved.
   - "Door opening": `stored_keys` equals `still_keys`.
   - "Raw stills are the downloaded bytes": a face fixture, raw bytes equal the download, and `still-<k>.jpg` is blurred.
@@ -39,7 +39,7 @@
   - "Debug copy is not an event still": face detection fails for still 2, so `raw-2.jpg` exists but `still_keys` doesn't list it.
   - "S3 put fails during door trace": the door event is still saved as `analyzing`.
   - "Off": `DEBUG_TRACES=false` (`NullTraceWriter`) writes no `debug/` objects and no `TRACE#` items.
-- [ ] 3.2 Add an optional `writer` argument to `fetch_stills`:
+- [x] 3.2 Add an optional `writer` argument to `fetch_stills`:
   - Build the per-still entries from `zone_values` and the download variant.
   - Call `writer.door(...)` before each return.
   - Build the writer in `handlers/pipeline.py` from `DEBUG_TRACES`.

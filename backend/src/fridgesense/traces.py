@@ -7,6 +7,7 @@ one TRACE# summary item per motion makes them listable. Writing a trace never ra
 import io
 import json
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -75,6 +76,13 @@ def baseline_png(baseline: bytes) -> bytes:
 
 def _zone_json(v: ZoneValue) -> dict:
     return {"zone": v.zone, "value": round(v.value, 4), "threshold": v.threshold, "open": v.open}
+
+
+def writer_from_env(s3, table: FridgeTable, bucket: str) -> "TraceWriter | NullTraceWriter":
+    """Tracing is on unless DEBUG_TRACES is `false`."""
+    if (os.environ.get("DEBUG_TRACES") or "").strip().lower() == "false":
+        return NullTraceWriter()
+    return TraceWriter(s3, table, bucket)
 
 
 class NullTraceWriter:
@@ -219,7 +227,7 @@ class TraceWriter:
                 "zones_source": trace.check.source,
                 "best": best,
                 "stills_requested": len(trace.stills),
-                "stills_downloaded": len(results),
+                "stills_downloaded": sum(1 for d in trace.stills if d.data is not None),
                 "door_sk": trace.door_sk,
                 "nova_calls": [],
                 "ttl": window["start_ms"] // 1000 + TRACE_DAYS * 86400,

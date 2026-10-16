@@ -481,6 +481,7 @@ def fetch_stills(
     crop: Box | None = None,
     interval_ms: int = STILL_INTERVAL_MS,
     setup_for: Callable[[str, str], "DoorCheck | None"] | None = None,
+    writer=None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
@@ -488,19 +489,31 @@ def fetch_stills(
     4 stills from the open span are cropped to `crop`, pay for face detection, and have
     their blurred stills stored; the span also gives the event's open and close times.
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
+    With a trace `writer`, every outcome also leaves a debug trace of what the check saw.
     """
+    from fridgesense.traces import DoorTrace  # traces imports this module
+
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
     check = _device_check(check, setup_for, account_id, device_id)
-    raw = download_stills(ring, http, state, sleep, interval_ms)
-    count = still_count(window["end_ms"] - window["start_ms"], interval_ms)
-    times = still_times(window["start_ms"], window["end_ms"], count)
+    downloaded = download_all_stills(ring, http, state, sleep, interval_ms)
+    raw = [(d.n, d.data) for d in downloaded if d.data is not None]
+    times = [d.at_ms for d in downloaded]
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
     status = "no_media"
     rule_log: dict = {"zones_source": check.source}
+    trace = DoorTrace(stills=downloaded, values={}, check=check, outcome="no_media")
+
+    def done(result: dict) -> dict:
+        if writer is not None:
+            trace.outcome = result["outcome"]
+            writer.door(state, trace)
+        return result
 
     if len(raw) >= MIN_STILLS:
-        results = check.results([data for _, data in raw])
+        values = [check.zone_values(data) for _, data in raw]
+        trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
+        results = [check.result_of(v) for v in values]
         best = check.best(results)
         rule_log = {**rule_log, "feature": best.feature, "threshold": best.threshold}
         span = open_span([1.0 if r.is_open else 0.0 for r in results], 1.0)
@@ -513,13 +526,17 @@ def fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
-            return {**state, "outcome": "not_door", "score": round(best.value, 3)}
+            return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
         opened_ms = times[raw[span[0]][0] - 1]
         if not results[span[-1]].is_open:  # the first closed still after the opening
             closed_ms = times[raw[span[-1]][0] - 1]
-        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(pick(span), start=1)]
+        picks = pick(span)
+        trace.open_span = [raw[i][0] for i in span]
+        trace.picked = [raw[i][0] for i in picks]
+        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(picks, start=1)]
         stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
         still_keys = [k for k, _ in stills]
+        trace.stored_keys = still_keys
         if len(stills) >= MIN_STILLS:
             status = "analyzing"
 
@@ -556,10 +573,12 @@ def fetch_stills(
     except TransactionConflict as e:
         if e.reasons and e.reasons[0] == "ConditionalCheckFailed":
             log_event("door_event_duplicate", account_id=account_id, ring_event=claim)
-            return {**state, "outcome": "duplicate"}
+            return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
     )
-    return {**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys}
+    trace.door_sk = door_sk
+    trace.opened_at, trace.closed_at = event["opened_at"], event["closed_at"]
+    return done({**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys})
