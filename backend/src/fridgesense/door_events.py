@@ -305,7 +305,6 @@ class DoorCheck:
         return best.is_open, best.value, best.zone
 
 
-STILL_ATTEMPTS = 3
 STILL_RETRY_DELAYS_S = (3, 6)
 DENSE_RETRY_DELAYS_S = (1, 2)  # many stills per window: shorter waits keep the task under 90 s
 NOT_READY = {416, 425}
@@ -363,6 +362,40 @@ def store_blurred_stills(
     return saved
 
 
+def fetch_still(
+    ring: RingClient,
+    http: httpx.Client,
+    device_id: str,
+    ts: int,
+    sleep: Callable[[float], None],
+    delays: tuple[int, ...] = STILL_RETRY_DELAYS_S,
+) -> tuple[bytes | None, int | None]:
+    """(JPEG, None), or (None, the last HTTP status) — status None when Ring or OAuth failed.
+
+    A still that is not ready yet is asked for again after each delay in `delays`.
+    """
+    body = {"type": "at_timestamp", "timestamp": ts, "image_options": {"format": "jpeg"}}
+    for attempt in range(len(delays) + 1):
+        try:
+            resp = ring.post(f"/v1/devices/{device_id}/media/image/download", json=body)
+            if resp.is_redirect and resp.headers.get("location"):
+                # Pre-signed link: fetched without the Ring token.
+                media = http.get(resp.headers["location"], timeout=10.0)
+                if media.status_code == 200:
+                    return media.content, None
+                status = media.status_code
+            else:
+                status = resp.status_code
+        except (httpx.HTTPError, RingAuthError, OAuthRejected, OAuthUnavailable) as e:
+            log_event("still_failed", logging.WARNING, timestamp=ts, error=type(e).__name__)
+            return None, None
+        if status not in NOT_READY or attempt == len(delays):
+            log_event("still_missing", logging.WARNING, timestamp=ts, status=status)
+            return None, status
+        sleep(delays[attempt])
+    return None, None
+
+
 def _download_still(
     ring: RingClient,
     http: httpx.Client,
@@ -371,26 +404,7 @@ def _download_still(
     sleep: Callable[[float], None],
     delays: tuple[int, ...] = STILL_RETRY_DELAYS_S,
 ) -> bytes | None:
-    body = {"type": "at_timestamp", "timestamp": ts, "image_options": {"format": "jpeg"}}
-    for attempt in range(STILL_ATTEMPTS):
-        try:
-            resp = ring.post(f"/v1/devices/{device_id}/media/image/download", json=body)
-            if resp.is_redirect and resp.headers.get("location"):
-                # Pre-signed link: fetched without the Ring token.
-                media = http.get(resp.headers["location"], timeout=10.0)
-                if media.status_code == 200:
-                    return media.content
-                status = media.status_code
-            else:
-                status = resp.status_code
-        except (httpx.HTTPError, RingAuthError, OAuthRejected, OAuthUnavailable) as e:
-            log_event("still_failed", logging.WARNING, timestamp=ts, error=type(e).__name__)
-            return None
-        if status not in NOT_READY or attempt == len(delays):
-            log_event("still_missing", logging.WARNING, timestamp=ts, status=status)
-            return None
-        sleep(delays[attempt])
-    return None
+    return fetch_still(ring, http, device_id, ts, sleep, delays)[0]
 
 
 MIN_STILLS = 2
