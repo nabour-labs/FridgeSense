@@ -2,6 +2,7 @@
 
 import pytest
 
+from fridgesense import alignment
 from fridgesense import door_calibration as dc
 from fridgesense.analysis_config import Invalid
 from fridgesense.table import FridgeTable
@@ -277,3 +278,60 @@ def test_setup_check_for_the_device(aws):
     [rule] = check.rules
     assert (rule.box, rule.feature, rule.direction) == ((0.0, 0.0, 0.5, 1.0), "blue", "above")
     assert dc.setup_check(FridgeTable(), ACCOUNT, D2) is None
+
+
+# --- door-self-calibration: the closed anchor ---
+
+
+def anchor_of(image: bytes) -> bytes:
+    return alignment.edges_to_bytes(alignment.edge_map(image))
+
+
+def checker_halves(level: int) -> bytes:
+    return color_jpeg(
+        (level,) * 3, [((0.25, 0.25, 0.25, 0.5), (255 - level,) * 3)], size=(200, 100)
+    )
+
+
+# Anchor from the newest closed reference
+def test_anchor_from_the_newest_closed_reference(aws):
+    older, newer = checker_halves(30), checker_halves(200)
+    add(older, LEFT, "closed", at=T0)
+    add(color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), BLUE)], size=(200, 100)), LEFT, "open", at=T0 + 1)
+    add(newer, LEFT, "closed", at=T0 + 2)
+    run()
+    assert dc.load_anchor(FridgeTable(), ACCOUNT, D1) == anchor_of(newer)
+    s = alignment.load_alignment(FridgeTable(), ACCOUNT, D1)
+    assert (s.dx, s.dy, s.failures, s.moved) == (0, 0, 0, False)
+
+
+def test_no_anchor_before_setup(aws):
+    assert dc.load_anchor(FridgeTable(), ACCOUNT, D1) is None
+
+
+# Failed run keeps the anchor
+def test_failed_run_keeps_the_anchor(aws):
+    add(color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), BLUE)], size=(200, 100)), LEFT, "open")
+    add(checker_halves(30), LEFT, "closed", at=T0 + 1)
+    run()
+    anchor = dc.load_anchor(FridgeTable(), ACCOUNT, D1)
+    alignment.record(
+        FridgeTable(), ACCOUNT, D1, alignment.Alignment(True, 0.02, 0, 0.01, "first"), T0 + 5
+    )
+    add(plain(128), {"x": 0.6, "y": 0, "width": 0.4, "height": 1}, "closed", at=T0 + 2)
+    assert_fails("zone 2 needs an open and a closed reference")
+    assert dc.load_anchor(FridgeTable(), ACCOUNT, D1) == anchor
+    assert alignment.load_alignment(FridgeTable(), ACCOUNT, D1).dx == pytest.approx(0.02)
+
+
+# Setup run clears moved
+def test_setup_run_clears_moved(aws):
+    add(color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), BLUE)], size=(200, 100)), LEFT, "open")
+    add(checker_halves(30), LEFT, "closed", at=T0 + 1)
+    moved = alignment.Alignment(True, 0.05, 0, 0.01, "first")
+    alignment.record(FridgeTable(), ACCOUNT, D1, moved, T0 + 7)
+    assert alignment.load_alignment(FridgeTable(), ACCOUNT, D1).moved
+    run()
+    s = alignment.load_alignment(FridgeTable(), ACCOUNT, D1)
+    assert (s.dx, s.dy, s.failures, s.moved, s.moved_at_ms) == (0, 0, 0, False, None)
+    assert s.last_moved_at_ms == T0 + 7

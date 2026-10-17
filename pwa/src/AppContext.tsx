@@ -32,6 +32,7 @@ export type Api = Pick<
   | "runDoorSetup"
   | "fridgeArea"
   | "saveFridgeArea"
+  | "warnings"
   | "debugMotions"
   | "debugMotion"
 >;

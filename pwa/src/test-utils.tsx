@@ -42,6 +42,7 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     runDoorSetup: vi.fn(),
     fridgeArea: vi.fn().mockResolvedValue({ device_id: "ava1.ring.device.D1", area: null }),
     saveFridgeArea: vi.fn(),
+    warnings: vi.fn().mockResolvedValue({ warnings: [], checked_at: "2026-10-17T12:00:00.000Z" }),
     debugMotions: vi.fn().mockResolvedValue({ motions: [], next: null }),
     debugMotion: vi.fn().mockReturnValue(new Promise(() => {})),
     ...overrides,

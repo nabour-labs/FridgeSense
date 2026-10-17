@@ -163,6 +163,16 @@ set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@exampl
 
 The camera's night vision records in black and white, so colour sees nothing with the kitchen lights off. Add closed and open references taken in the dark and setup can pick brightness or change instead.
 
+**After setup, detection keeps itself lined up.** Setup also stores an outline of the whole view with the doors closed. Each motion clip starts and ends with the door closed, so its first and last frames are lined up against that outline. If the camera was nudged up to about 6% of the frame, the zones move with it. Each clip also leaves a sample of what each zone looked like closed and open. Once there are at least three of each, setup's rule choice runs again on your references plus the newest 20 samples. The new rules are kept only if open and closed still clearly separate. The Open/close detection tab shows the current shift ("Adjusted for camera shift of …") and when the rules were last tuned. **Run setup** again to go back to rules from your references only.
+
+**Warnings.** The Fridge screen and Config show a banner, with a link to the fix, when:
+
+- motion detection is off on the camera (Ring then creates no clips, so nothing is recorded),
+- Open/close detection was never set up, or
+- the camera moved or changed angle: alignment failed on 3 clips in a row, or the shift reached 4% of the frame. Add new door references and run setup, then set the fridge area again. Each link goes away once its part is done.
+
+The same list is at `GET /api/warnings`.
+
 ### Nova cost per opening
 
 Every Nova call logs its token use and cost:

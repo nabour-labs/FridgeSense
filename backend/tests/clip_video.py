@@ -13,14 +13,21 @@ def write_mp4(
     path: Path, frames: list[tuple[int, Rgb]], size: tuple[int, int] = (320, 180)
 ) -> Path:
     """`frames` are (start ms, colour); the clip lasts until 40 ms after the last frame starts."""
+    return write_images(path, [(pts, Image.new("RGB", size, c)) for pts, c in frames])
+
+
+def write_images(path: Path, frames: list[tuple[int, Image.Image]]) -> Path:
+    """`frames` are (start ms, image), all the same size."""
     import av
 
+    size = frames[0][1].size
     with av.open(str(path), "w") as container:
         stream = container.add_stream("mpeg4", rate=25)
         stream.width, stream.height, stream.pix_fmt = *size, "yuv420p"
         stream.codec_context.time_base = MS
-        for pts, colour in frames:
-            frame = av.VideoFrame.from_image(Image.new("RGB", size, colour))
+        stream.codec_context.bit_rate = 4_000_000  # keeps textured test scenes sharp
+        for pts, image in frames:
+            frame = av.VideoFrame.from_image(image)
             frame.pts, frame.time_base = pts, MS
             for packet in stream.encode(frame):
                 container.mux(packet)

@@ -367,3 +367,31 @@ describe("no data", () => {
     render(<App api={fakeApi({ inventory: vi.fn().mockRejectedValue(error) })} />);
   }
 });
+
+// Setup warning banners on the Fridge screen
+test("setup warnings show above the fridge", async () => {
+  signedIn();
+  location.hash = "";
+  const warnings = vi.fn().mockResolvedValue({
+    warnings: [{ code: "door_setup_missing", message: "Open/close detection is not set up, so the default zones are used and openings may be missed." }],
+    checked_at: "2026-10-17T12:00:00.000Z",
+  });
+  render(<App api={fakeApi({ inventory: vi.fn().mockResolvedValue(STOCKED), warnings })} />);
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent("Open/close detection is not set up");
+  expect(within(banner).getByRole("link", { name: "Set up detection" })).toHaveAttribute("href", "#config/doors");
+  await screen.findByRole("region", { name: "Dairy" });
+  expect(warnings).toHaveBeenCalledTimes(1);
+});
+
+// Warnings request fails
+test("a failed warnings request leaves the fridge as it was", async () => {
+  signedIn();
+  location.hash = "";
+  const warnings = vi.fn().mockRejectedValue(new ApiError(500));
+  render(<App api={fakeApi({ inventory: vi.fn().mockResolvedValue(STOCKED), warnings })} />);
+  await screen.findByRole("region", { name: "Dairy" });
+  await vi.waitFor(() => expect(warnings).toHaveBeenCalled());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByText(/offline|can't reach|error/i)).not.toBeInTheDocument();
+});

@@ -7,6 +7,7 @@ import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
+import { ago } from "../format";
 import { boxShape, shapeToBox, type Shape } from "../shapes";
 import { useLoad } from "../useLoad";
 import { CARD, HEADING, PRIMARY } from "./configStyles";
@@ -22,6 +23,8 @@ const FEATURE_LABEL: Record<DoorFeature, string> = {
 };
 
 const percent = (v: number) => `${(v * 100).toFixed(1)}%`;
+/** A camera shift as a percent of the frame, without a trailing ".0": "1.6%", "0%". */
+const shift = (v: number) => `${Number((v * 100).toFixed(1))}%`;
 
 function StatusBadge({ status }: { status: DoorStatus }) {
   const open = status === "open";
@@ -172,6 +175,21 @@ export function DoorDetection() {
               ))}
               {data.setup.stale && (
                 <p className="font-medium text-amber-700 dark:text-amber-300">References changed. Run setup again.</p>
+              )}
+              {data.alignment?.moved && (
+                <p className="font-medium text-amber-700 dark:text-amber-300">
+                  Camera moved: add new references and run setup.
+                </p>
+              )}
+              {data.alignment?.checked_at && (
+                <p className="text-slate-500 dark:text-slate-400">
+                  {`Adjusted for camera shift of ${shift(data.alignment.dx)} across, ${shift(data.alignment.dy)} down (checked ${ago(data.alignment.checked_at)})`}
+                </p>
+              )}
+              {data.setup.tuned_at && (
+                <p className="text-slate-500 dark:text-slate-400">
+                  {`Tuned from ${data.setup.tuned_from} recent openings, ${ago(data.setup.tuned_at)}`}
+                </p>
               )}
             </>
           )}

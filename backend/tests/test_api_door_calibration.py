@@ -10,11 +10,13 @@ import respx
 from botocore.stub import Stubber
 from PIL import Image
 
+from fridgesense import alignment
 from fridgesense.devices import Device, DeviceRepository
 from fridgesense.door_events import iso_utc
 from fridgesense.handlers import api
 from fridgesense.ring import API_BASE
 from fridgesense.store import load_app_config
+from fridgesense.table import FridgeTable
 from tests.api_helpers import ACCOUNT, NOW, call, configure, link_account, sign_in
 from tests.conftest import color_jpeg
 
@@ -137,6 +139,7 @@ def test_nothing_set_up_yet(tokens):
         "device_id": DEVICE,
         "references": [],
         "setup": None,
+        "alignment": None,
         "defaults": {
             "zones": [
                 {"x": 0.38, "y": 0.32, "width": 0.21, "height": 0.30},
@@ -284,3 +287,61 @@ def test_setup_fails_with_scores(owner):
     [ref] = body["references"]
     assert ref["score"] == pytest.approx(0.1, abs=0.005)
     assert call("GET", "/api/door-calibration", token=owner)[1]["setup"] is None
+
+
+# --- door-self-calibration: alignment and tuning in the body ---
+
+
+def set_up_door(owner):
+    add(owner, OPEN, LEFT, "open")
+    add(owner, CLOSED, LEFT, "closed")
+    call("POST", "/api/door-calibration/run", token=owner)
+
+
+# Before any event
+def test_alignment_before_any_event(owner):
+    set_up_door(owner)
+    _, body = call("GET", "/api/door-calibration", token=owner)
+    assert body["alignment"] == {
+        "dx": 0,
+        "dy": 0,
+        "error": None,
+        "failures": 0,
+        "moved": False,
+        "moved_at": None,
+        "last_moved_at": None,
+        "checked_at": None,
+    }
+    assert body["setup"]["tuned_at"] is None
+    assert body["setup"]["tuned_from"] is None
+
+
+# Reported after an aligned event
+def test_reported_after_an_aligned_event(owner, tokens):
+    set_up_door(owner)
+    at = int(NOW * 1000) + 5000
+    result = alignment.Alignment(True, 0.0156, 0.0, 0.0312, "first")
+    alignment.record(FridgeTable(), ACCOUNT, DEVICE, result, at)
+    _, body = call("GET", "/api/door-calibration", token=tokens["viewer"])
+    assert body["alignment"] == {
+        "dx": 0.016,
+        "dy": 0,
+        "error": 0.031,
+        "failures": 0,
+        "moved": False,
+        "moved_at": None,
+        "last_moved_at": None,
+        "checked_at": iso_utc(at),
+    }
+    assert body["setup"]["tuned_at"] is None
+
+
+def test_moved_times_reported(owner):
+    set_up_door(owner)
+    at = int(NOW * 1000) + 9000
+    moved = alignment.Alignment(True, 0.05, 0, 0.01, "last")
+    alignment.record(FridgeTable(), ACCOUNT, DEVICE, moved, at)
+    _, body = call("GET", "/api/door-calibration", token=owner)
+    assert body["alignment"]["moved"] is True
+    assert body["alignment"]["moved_at"] == iso_utc(at)
+    assert body["alignment"]["last_moved_at"] == iso_utc(at)

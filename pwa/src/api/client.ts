@@ -15,6 +15,7 @@ import type {
   Pending,
   Session,
   Snapshot,
+  WarningsBody,
 } from "./types";
 
 /** The session is missing, expired or no longer valid: sign in again. */
@@ -155,6 +156,11 @@ export class ApiClient {
   /** Works out each zone's rule; a 422 ApiError carries `references` with scores in `body`. */
   runDoorSetup(): Promise<DoorSetup> {
     return this.request("POST", "/api/door-calibration/run");
+  }
+
+  /** Setup problems that stop door openings being recorded or detected well. */
+  warnings(): Promise<WarningsBody> {
+    return this.request("GET", "/api/warnings");
   }
 
   fridgeArea(): Promise<FridgeAreaBody> {

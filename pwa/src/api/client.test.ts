@@ -215,6 +215,7 @@ test.each([
   ["startLive", (api: ApiClient) => api.startLive("v=0\r\n"), "POST", "/api/camera/live", { offer: "v=0\r\n" }],
   ["stopLive", (api: ApiClient) => api.stopLive("S/1"), "DELETE", "/api/camera/live/S%2F1", undefined],
   ["fridgeArea", (api: ApiClient) => api.fridgeArea(), "GET", "/api/fridge-area", undefined],
+  ["warnings", (api: ApiClient) => api.warnings(), "GET", "/api/warnings", undefined],
   [
     "saveFridgeArea",
     (api: ApiClient) => api.saveFridgeArea("/9j/SNAP", BOX),

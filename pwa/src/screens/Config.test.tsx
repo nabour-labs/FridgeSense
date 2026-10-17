@@ -405,3 +405,24 @@ test("a user opening #config/debug sees reference images instead", async () => {
   expect(api.debugMotion).not.toHaveBeenCalled();
   location.hash = "";
 });
+
+// Setup warning banners on the Config screen
+test("setup warnings show above the config tabs", async () => {
+  location.hash = "#config/fridge";
+  const warnings = vi.fn().mockResolvedValue({
+    warnings: [
+      {
+        code: "camera_moved",
+        message: "The camera has moved or changed angle. Update the references so detection stays accurate.",
+        since: "2026-10-17T10:00:00.000Z",
+        update: ["door_references", "fridge_area"],
+      },
+    ],
+    checked_at: "2026-10-17T12:00:00.000Z",
+  });
+  renderConfig({ instructions: "", references: [] }, { api: { warnings } });
+  const banner = await screen.findByRole("alert");
+  expect(within(banner).getByRole("link", { name: "Update door references" })).toBeInTheDocument();
+  expect(within(banner).getByRole("link", { name: "Update fridge area" })).toBeInTheDocument();
+  location.hash = "";
+});

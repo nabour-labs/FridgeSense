@@ -107,7 +107,10 @@ export function mockApi(): Plugin {
   const doorBody = (scored = false) => ({
     device_id: "mock.device.D1",
     references: doorRefs.map((r) => ({ ...r, score: doorSetup || scored ? (r.status === "open" ? 0.12 : 0.003) : null })),
-    setup: doorSetup && { ...doorSetup, stale: refsChangedAt > Date.parse(doorSetup.ran_at) },
+    setup: doorSetup && { ...doorSetup, stale: refsChangedAt > Date.parse(doorSetup.ran_at), tuned_at: null, tuned_from: null },
+    alignment: doorSetup && {
+      dx: 0.016, dy: 0, error: 0.031, failures: 0, moved: false, moved_at: null, last_moved_at: null, checked_at: iso(5 * MIN),
+    },
     defaults: { zones: [{ x: 0.38, y: 0.32, width: 0.21, height: 0.3 }, { x: 0.455, y: 0.6, width: 0.12, height: 0.18 }], threshold: 0.02 },
   });
   // Two traced motions for the Debug tab: the milk opening (e0) and a walk-past.
@@ -319,6 +322,18 @@ export function mockApi(): Plugin {
           return send(200, { image: photo(snapshots % 2 ? "snapshot-closed" : "snapshot-open"), captured_at: new Date().toISOString() });
         }
         if (url === "/door-calibration" && req.method === "GET") return send(200, doorBody());
+        // FRIDGESENSE_MOCK_WARNINGS=1 adds motion detection off and a moved camera.
+        if (url === "/warnings" && req.method === "GET") {
+          const all = !!process.env.FRIDGESENSE_MOCK_WARNINGS;
+          const warnings = [
+            ...(all ? [{ code: "motion_detection_off", message: "Motion detection is off on the camera, so no door openings are recorded. Turn it on in the Ring app." }] : []),
+            ...(doorSetup ? [] : [{ code: "door_setup_missing", message: "Open/close detection is not set up, so the default zones are used and openings may be missed." }]),
+            ...(all
+              ? [{ code: "camera_moved", message: "The camera has moved or changed angle. Update the references so detection stays accurate.", since: iso(2 * HOUR), update: ["door_references", ...(fridgeArea ? ["fridge_area"] : [])] }]
+              : []),
+          ];
+          return send(200, { warnings, checked_at: iso(0) });
+        }
         if (url.startsWith("/door-calibration/") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
         if (req.method === "POST" && url === "/door-calibration/references") {
           let body = "";

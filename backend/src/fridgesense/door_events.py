@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -334,6 +334,15 @@ class DoorCheck:
         """The still furthest past (or closest to) its zone's threshold."""
         return max(results, key=lambda r: self.rules[r.zone - 1].excess(r.value))
 
+    def shifted(self, dx: float, dy: float) -> "DoorCheck":
+        """The same rules with every zone moved by (dx, dy), kept inside the image."""
+        if not dx and not dy:
+            return self
+        from fridgesense.alignment import shift_box  # alignment imports this module
+
+        rules = tuple(replace(r, box=shift_box(r.box, dx, dy)) for r in self.rules)
+        return replace(self, rules=rules)
+
     def evaluate(self, stills: list[bytes]) -> tuple[bool, float, int]:
         """(door open?, best still's value, its 1-based zone) over all stills."""
         best = self.best(self.results(stills))
@@ -549,6 +558,87 @@ def _device_check(
     return found or default
 
 
+@dataclass(frozen=True)
+class FollowPlan:
+    """What the door check needs to follow the camera: the closed anchor and the stored shift."""
+
+    anchor: bytes
+    dx: float
+    dy: float
+
+
+def _follow_plan(
+    table: FridgeTable, account_id: str, device_id: str, check: "DoorCheck"
+) -> FollowPlan | None:
+    """None for default rules, a setup made before anchors existed, or a table hiccup."""
+    if check.source == "default":
+        return None
+    from fridgesense import alignment, door_calibration  # both import this module
+
+    try:
+        anchor = door_calibration.load_anchor(table, account_id, device_id)
+        if anchor is None:
+            return None
+        stored = alignment.load_alignment(table, account_id, device_id)
+    except Exception as e:  # a table hiccup must not drop a door opening
+        log_event(
+            "door_alignment_unavailable",
+            logging.WARNING,
+            device_id=device_id,
+            error=type(e).__name__,
+        )
+        return None
+    return FollowPlan(anchor, stored.dx if stored else 0.0, stored.dy if stored else 0.0)
+
+
+def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
+    """Line the bookends up with the anchor and store the result; None if that fails."""
+    from fridgesense import alignment
+
+    try:
+        return alignment.align_event(
+            table, account_id, device_id, plan.anchor, first, last, window["start_ms"]
+        )
+    except Exception as e:
+        log_event(
+            "door_alignment_unavailable",
+            logging.WARNING,
+            device_id=device_id,
+            error=type(e).__name__,
+        )
+        return None
+
+
+def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, window) -> None:
+    """Sample an aligned event and re-tune the rules; a failure here never changes the
+    event's outcome."""
+    if aligned is None or not aligned.ok:
+        return
+    from fridgesense import self_tuning  # it imports this module
+
+    try:
+        frames = [data for _, data in raw]
+        if self_tuning.learn(
+            table, account_id, device_id, check, frames, aligned, window["start_ms"]
+        ):
+            self_tuning.retune(table, account_id, device_id, window["start_ms"])
+    except Exception as e:
+        log_event(
+            "door_sample_failed", logging.WARNING, device_id=device_id, error=type(e).__name__
+        )
+
+
+def _alignment_json(aligned) -> dict | None:
+    if aligned is None:
+        return None
+    return {
+        "dx": round(aligned.dx, 4),
+        "dy": round(aligned.dy, 4),
+        "error": round(aligned.error, 4),
+        "ok": aligned.ok,
+    }
+
+
 def iso_utc(ms: int) -> str:
     dt = datetime.fromtimestamp(ms // 1000, UTC)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ms % 1000:03d}Z"
@@ -586,7 +676,9 @@ def fetch_stills(
     from fridgesense.traces import DoorTrace  # traces imports this module
 
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
-    check = _device_check(check, setup_for, account_id, device_id)
+    base = _device_check(check, setup_for, account_id, device_id)
+    plan = _follow_plan(table, account_id, device_id, base)
+    check = base.shifted(plan.dx, plan.dy) if plan else base
     clip = None
     if frame_interval_ms is not None:
         from fridgesense.clip_frames import ClipUnavailable
@@ -600,12 +692,20 @@ def fetch_stills(
     else:
         downloaded = download_all_stills(ring, http, state, sleep, interval_ms)
     raw = [(d.n, d.data) for d in downloaded if d.data is not None]
+    aligned = None
+    if plan is not None and len(raw) >= 2:
+        aligned = _align(table, account_id, device_id, plan, raw[0][1], raw[-1][1], window)
+        if aligned is not None and aligned.ok and (aligned.dx, aligned.dy) != (plan.dx, plan.dy):
+            check = base.shifted(aligned.dx, aligned.dy)
+            if clip is not None:  # frames were scored with the stored shift: score them again
+                clip_values = [check.zone_values(data) for _, data in raw]
     times = [d.at_ms for d in downloaded]
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
     status = "no_media"
     rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
     trace = DoorTrace(stills=downloaded, values={}, check=check, outcome="no_media")
+    trace.alignment = _alignment_json(aligned)
 
     def done(result: dict) -> dict:
         if writer is not None:
@@ -629,6 +729,7 @@ def fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
+            _learn(table, account_id, device_id, check, raw, aligned, window)
             return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
         opened_ms = times[raw[span[0]][0] - 1]
         if not results[span[-1]].is_open:  # the first closed still after the opening
@@ -684,6 +785,7 @@ def fetch_stills(
             return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
+    _learn(table, account_id, device_id, check, raw, aligned, window)
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
     )

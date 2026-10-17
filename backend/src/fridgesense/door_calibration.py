@@ -11,6 +11,7 @@ from typing import Any
 
 from PIL import Image
 
+from fridgesense import alignment
 from fridgesense.analysis_config import JPEG_MAGIC, Invalid
 from fridgesense.door_events import (
     FEATURES,
@@ -119,6 +120,9 @@ class Setup:
     zones: tuple[SetupZone, ...]
     ran_at: str
     stale: bool
+    tuned_at: str | None = None  # when the rules were last re-tuned from event samples
+    tuned_from: int | None = None  # how many samples that used
+    tuned: tuple[SetupZone, ...] = ()  # the re-tuned rules, used instead of `zones` when set
 
 
 def _box_of(item: dict) -> Box:
@@ -270,6 +274,9 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
             SetupZone(zone, feature, direction, round(threshold, 4), round(margin, 4), baseline)
         )
 
+    newest_closed = next(
+        img for r, img in zip(reversed(refs), reversed(images), strict=True) if r.status == "closed"
+    )
     table.put(
         {
             "pk": account_pk(account_id),
@@ -287,9 +294,24 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
             ],
             "ran_ms": now_ms,
             "ran_at": iso_utc(now_ms),
+            # What the whole view looks like closed, for lining up later events' frames
+            "anchor": alignment.edges_to_bytes(alignment.edge_map(newest_closed)),
         }
     )
+    alignment.reset(table, account_id, device_id)
+    from fridgesense import self_tuning  # it builds on this module
+
+    self_tuning.delete_samples(table, account_id, device_id)  # learned against the old setup
     return Setup(tuple(chosen), iso_utc(now_ms), stale=False)
+
+
+def load_anchor(table: FridgeTable, account_id: str, device_id: str) -> bytes | None:
+    """The closed anchor stored by the last setup run (None before setup, or from a run made
+    before anchors existed)."""
+    item = table.get(account_pk(account_id), setup_sk(device_id))
+    if item is None or item.get("anchor") is None:
+        return None
+    return bytes(item["anchor"])
 
 
 def load_setup(table: FridgeTable, account_id: str, device_id: str) -> Setup | None:
@@ -298,7 +320,19 @@ def load_setup(table: FridgeTable, account_id: str, device_id: str) -> Setup | N
         return None
     marker = table.get(account_pk(account_id), marker_sk(device_id))
     stale = marker is not None and int(marker["changed_ms"]) > int(item["ran_ms"])
-    zones = tuple(
+    tuned_from = item.get("tuned_from")
+    return Setup(
+        _zones_of(item["zones"]),
+        item["ran_at"],
+        stale,
+        tuned_at=item.get("tuned_at"),
+        tuned_from=None if tuned_from is None else int(tuned_from),
+        tuned=_zones_of(item.get("tuned_zones") or []),
+    )
+
+
+def _zones_of(items: list[dict]) -> tuple[SetupZone, ...]:
+    return tuple(
         SetupZone(
             box=_box_of({"box": z}),
             feature=z["feature"],
@@ -307,21 +341,21 @@ def load_setup(table: FridgeTable, account_id: str, device_id: str) -> Setup | N
             margin=float(z["margin"]),
             baseline=bytes(z["baseline"]),
         )
-        for z in item["zones"]
+        for z in items
     )
-    return Setup(zones, item["ran_at"], stale)
 
 
 def setup_check(table: FridgeTable, account_id: str, device_id: str) -> DoorCheck | None:
-    """The door check from the device's setup result, or None if setup never ran."""
+    """The door check from the device's tuned rules, else its setup result; None if setup
+    never ran. Zones are where setup put them; the caller applies the camera shift."""
     setup = load_setup(table, account_id, device_id)
     if setup is None:
         return None
+    zones = setup.tuned or setup.zones
     rules = tuple(
-        ZoneRule(z.box, z.feature, z.direction, z.threshold, z.baseline, z.margin)
-        for z in setup.zones
+        ZoneRule(z.box, z.feature, z.direction, z.threshold, z.baseline, z.margin) for z in zones
     )
-    return DoorCheck(rules=rules, source="setup", ran_at=setup.ran_at)
+    return DoorCheck(rules=rules, source="tuned" if setup.tuned else "setup", ran_at=setup.ran_at)
 
 
 def reference_scores(refs: list[DoorReference], setup: Setup | None) -> dict[str, float | None]:
