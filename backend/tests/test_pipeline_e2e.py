@@ -369,7 +369,7 @@ def test_door_opening_from_the_clip(env, faces, tmp_path, monkeypatch):
     respx.get("https://dl.example.com/x").respond(200, content=OPEN)
     state = step("fetch_stills", step("find_window", RUN_INPUT))
     assert state["outcome"] == "door_open"
-    assert stills.call_count == 4  # only at the times picked from the open span
+    assert stills.call_count == 0  # the picked clip frames are the stills
     event = FridgeTable().get(account_pk(ACCOUNT), state["door_sk"])
     assert event["opened_at"] == "2026-08-14T13:53:20.000Z"
     assert event["closed_at"] == "2026-08-14T13:53:28.500Z"
