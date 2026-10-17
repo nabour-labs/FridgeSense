@@ -28,6 +28,13 @@
       "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5175", "--strictPort"],
       "env": { "FRIDGESENSE_MOCK": "1" },
       "port": 5175
+    },
+    {
+      "name": "pwa-mock-warnings",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5177", "--strictPort"],
+      "env": { "FRIDGESENSE_MOCK": "1", "FRIDGESENSE_MOCK_WARNINGS": "1" },
+      "port": 5177
     }
   ]
 }

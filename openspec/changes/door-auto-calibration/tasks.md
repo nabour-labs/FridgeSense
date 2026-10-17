@@ -41,15 +41,15 @@ Priority if time runs short: groups 1–4 and 6–7 (alignment, moved detection,
 
 ## 7. PWA
 
-- [ ] 7.1 Add `warnings()` to `api/client.ts` and the `Warning` / `WarningsBody` types to `api/types.ts`, plus the `alignment` / `tuned_*` fields on the door-calibration body, with failing `client.test.ts` tests first. Verify that they pass.
-- [ ] 7.2 Write failing tests in `components/Warnings.test.tsx` for "Motion detection off banner", "Setup missing banner", "Camera moved banner with both links", "Camera moved banner with one link", "Viewer sees no links" and "No warnings".
-- [ ] 7.3 Implement `components/Warnings.tsx`. Verify that the 7.2 tests pass.
-- [ ] 7.4 Write failing tests in `Fridge.test.tsx` and `Config.test.tsx` for the banner being shown, and "Warnings request fails" (no banner, no error, items shown). Mount `Warnings` in both screens (loaded once per visit, not on the 10 s poll). Verify that the tests pass.
-- [ ] 7.5 Write failing tests in `DoorDetection.test.tsx` for "Shift and tuning shown", "Moved notice" and "Nothing yet", then add the lines. Verify that they pass.
-- [ ] 7.6 In the browser preview at 375 px wide, check that the banners fit without horizontal scrolling and that their links open the right tab.
+- [x] 7.1 Add `warnings()` to `api/client.ts` and the `Warning` / `WarningsBody` types to `api/types.ts`, plus the `alignment` / `tuned_*` fields on the door-calibration body, with failing `client.test.ts` tests first. Verify that they pass.
+- [x] 7.2 Write failing tests in `components/Warnings.test.tsx` for "Motion detection off banner", "Setup missing banner", "Camera moved banner with both links", "Camera moved banner with one link", "Viewer sees no links" and "No warnings".
+- [x] 7.3 Implement `components/Warnings.tsx`. Verify that the 7.2 tests pass.
+- [x] 7.4 Write failing tests in `Fridge.test.tsx` and `Config.test.tsx` for the banner being shown, and "Warnings request fails" (no banner, no error, items shown). Mount `Warnings` in both screens (loaded once per visit, not on the 10 s poll). Verify that the tests pass.
+- [x] 7.5 Write failing tests in `DoorDetection.test.tsx` for "Shift and tuning shown", "Moved notice" and "Nothing yet", then add the lines. Verify that they pass.
+- [x] 7.6 In the browser preview at 375 px wide, check that the banners fit without horizontal scrolling and that their links open the right tab.
 
 ## 8. Docs and checks
 
-- [ ] 8.1 Add a short note to the README's Config section on auto-alignment, the warnings and re-running setup after moving the camera. If any AWS or Ring step hit friction, add a `docs/friction-log.md` entry; otherwise add nothing.
-- [ ] 8.2 Run all suites and linters green: `cd backend && uv run pytest -q && uv run ruff check . && uv run ruff format --check .`, `cd pwa && npm test && npm run build`, `cd infra && npm test`. Report the commands and their results.
+- [x] 8.1 Add a short note to the README's Config section on auto-alignment, the warnings and re-running setup after moving the camera. If any AWS or Ring step hit friction, add a `docs/friction-log.md` entry; otherwise add nothing.
+- [x] 8.2 Run all suites and linters green: `cd backend && uv run pytest -q && uv run ruff check . && uv run ruff format --check .`, `cd pwa && npm test && npm run build`, `cd infra && npm test`. Report the commands and their results.
 - [ ] 8.3 Run `cdk diff` and ask Jayson before `cdk deploy`. After the deploy: re-run setup on the phone (to store the anchor), open the fridge once and confirm the trace shows `alignment.ok = true`. Turn motion detection off in the Ring app and confirm the banner appears, then turn it back on.

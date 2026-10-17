@@ -225,3 +225,41 @@ test("a viewer sees the references without controls", async () => {
   drag([10, 10], [40, 50]);
   expect(api.addDoorReference).not.toHaveBeenCalled();
 });
+
+const ALIGNED = {
+  dx: 0.016,
+  dy: 0,
+  error: 0.031,
+  failures: 0,
+  moved: false,
+  moved_at: null,
+  last_moved_at: null,
+  checked_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+};
+
+// Shift and tuning shown
+test("the camera shift and tuning are shown under the setup", async () => {
+  const setup = { ...SET_UP.setup!, tuned_at: new Date(Date.now() - 2 * 3600_000).toISOString(), tuned_from: 8 };
+  renderTab({ ...SET_UP, setup, alignment: ALIGNED });
+  expect(
+    await screen.findByText("Adjusted for camera shift of 1.6% across, 0% down (checked 5 min ago)"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Tuned from 8 recent openings, 2 h ago")).toBeInTheDocument();
+});
+
+// Moved notice
+test("a moved camera asks for new references", async () => {
+  const moved = { ...ALIGNED, moved: true, moved_at: ALIGNED.checked_at, last_moved_at: ALIGNED.checked_at };
+  renderTab({ ...SET_UP, alignment: moved });
+  expect(await screen.findByText("Camera moved: add new references and run setup.")).toBeInTheDocument();
+});
+
+// Nothing yet
+test("no shift or tuning line before the first event", async () => {
+  const fresh = { ...ALIGNED, dx: 0, error: null, checked_at: null };
+  renderTab({ ...SET_UP, setup: { ...SET_UP.setup!, tuned_at: null, tuned_from: null }, alignment: fresh });
+  await screen.findByText("Zone 1: Color above 5.0%, margin 10.0%");
+  expect(screen.queryByText(/Adjusted for camera shift/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Tuned from/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Camera moved/)).not.toBeInTheDocument();
+});
