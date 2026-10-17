@@ -280,3 +280,50 @@ def test_active_has_no_paused_warning(tokens):
     pause()
     monitoring.set_paused(FridgeTable(), ACCOUNT, DEVICE, False, PAUSED_MS + 1000)
     assert warnings(tokens["owner"]) == []
+
+
+# --- Ring account needs re-linking (failure-alerting) ---
+
+RELINK = {
+    "code": "needs_relink",
+    "message": "The Ring account link has expired, so door openings are not recorded. "
+    "Re-link the Ring account in the Ring app.",
+}
+
+
+def needs_relink():
+    from fridgesense.store import TokenStore
+
+    store = TokenStore()
+    store.save(store.load().model_copy(update={"link_status": "needs_relink"}))
+
+
+# Scenario: Link expired
+@respx.mock
+def test_link_expired(tokens):
+    ring_motion("on")
+    set_up_door()
+    needs_relink()
+    assert warnings(tokens["viewer"]) == [RELINK]
+
+
+# Scenario: Link expired with other problems
+@respx.mock
+def test_link_expired_with_other_problems(tokens):
+    ring_motion("on")
+    needs_relink()
+    assert warnings(tokens["owner"]) == [RELINK, SETUP_MISSING]
+
+
+# Scenario: Link expired before any camera
+def test_link_expired_before_any_camera(tokens):
+    DeviceRepository().replace(ACCOUNT, [])
+    needs_relink()
+    assert warnings(tokens["owner"]) == [RELINK]
+
+
+# Scenario: Linked
+@respx.mock
+def test_linked_has_no_relink_warning(tokens):
+    ring_motion("off")
+    assert "needs_relink" not in [w["code"] for w in warnings(tokens["owner"])]
