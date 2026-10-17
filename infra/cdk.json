@@ -1,6 +1,7 @@
 {
   "app": "npx tsx bin/fridgesense.ts",
   "context": {
-    "@aws-cdk/core:checkSecretUsage": true
+    "@aws-cdk/core:checkSecretUsage": true,
+    "debugTraces": "true"
   }
 }

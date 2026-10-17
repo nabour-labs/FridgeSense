@@ -246,10 +246,10 @@ When traces are on, every motion the camera reports leaves a trace for 7 days. *
 - **Door check:** every still downloaded for the motion, with each zone's score against its threshold, the open/closed verdict, which stills went to analysis, and the rule that decided (setup zones with their baselines and door references, or the default zones). The door check is a pixel rule, so its scores are its reasoning; there is no prompt.
 - **Nova calls:** for each Converse attempt of a door opening, the request in order (text, reference images, stills, cache points), the raw response and stop reason, input/output/cache tokens, cost, Bedrock's `latencyMs` and the measured wall time. Failed and invalid attempts are included.
 
-Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). While **Blur faces** is on, a trace keeps each downloaded still only as a blurred thumbnail 160 px on its longest side; with it off, it keeps the still as downloaded. Only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the user and demo passcodes get 403 and see no Debug tab or links. Traces are off unless you deploy with them on, for example while tuning door detection:
+Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). While **Blur faces** is on, a trace keeps each downloaded still only as a blurred thumbnail 160 px on its longest side; with it off, it keeps the still as downloaded. Only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the user and demo passcodes get 403 and see no Debug tab or links. Traces are on for every deploy: `infra/cdk.json` sets `"debugTraces": "true"`. To deploy once without them:
 
 ```bash
-cdk deploy -c debugTraces=true
+cdk deploy -c debugTraces=false
 ```
 
 ### Blur faces
