@@ -1,5 +1,5 @@
 import { Camera, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import type { FridgeAreaBody, Snapshot } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
@@ -83,11 +83,14 @@ function SetFridgeArea({ onClose, onSaved }: { onClose: () => void; onSaved: (bo
   const [error, setError] = useState<string | null>(null);
   const valid = snap !== null && shapes.length === 1;
 
+  const cancel = useRef<AbortController | null>(null);
   const takeSnapshot = useCallback(async () => {
+    cancel.current?.abort();
+    const controller = (cancel.current = new AbortController());
     setSnapping(true);
     setError(null);
     try {
-      setSnap(await api.cameraSnapshot());
+      setSnap(await api.cameraSnapshot(controller.signal));
       setShapes([]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setError(NO_FOOTAGE);
@@ -100,6 +103,7 @@ function SetFridgeArea({ onClose, onSaved }: { onClose: () => void; onSaved: (bo
 
   useEffect(() => {
     void takeSnapshot();
+    return () => cancel.current?.abort();
   }, [takeSnapshot]);
 
   async function submit(e: FormEvent) {

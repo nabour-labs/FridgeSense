@@ -76,6 +76,8 @@ it("Reference image from a clip: the frame is used and the camera is not asked",
   await useFrame();
   expect(await screen.findByRole("img", { name: "Reference to draw on" })).toHaveAttribute("src", `data:image/jpeg;base64,${FRAME}`);
   expect(api.cameraSnapshot).not.toHaveBeenCalled();
+  expect(api.startLive).not.toHaveBeenCalled();
+  expect(api.cameraFrame).not.toHaveBeenCalled();
   expect(fetchMock).toHaveBeenCalledWith("/__dev/videos");
 });
 
@@ -91,7 +93,54 @@ it("Door reference from a clip: Add opens the picker and the frame is shown for 
   expect(api.cameraSnapshot).not.toHaveBeenCalled();
 });
 
-it("Switch off: the camera is asked once and no picker opens", async () => {
+/** A stand-in RTCPeerConnection, so the live view starts in jsdom. */
+class StubPeer {
+  iceGatheringState = "complete";
+  connectionState = "new";
+  localDescription: RTCSessionDescriptionInit | null = null;
+  ontrack = null;
+  onconnectionstatechange = null;
+  onicegatheringstatechange = null;
+  addTransceiver() {}
+  async createOffer() {
+    return { type: "offer", sdp: "v=0\r\n" };
+  }
+  async setLocalDescription(d: RTCSessionDescriptionInit) {
+    this.localDescription = d;
+  }
+  async setRemoteDescription() {}
+  close() {}
+}
+
+it("Switch off: a live view is opened once and no picker opens", async () => {
+  vi.stubGlobal("RTCPeerConnection", StubPeer);
+  signedIn();
+  location.hash = "#config/refs";
+  const api = fakeApi();
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await userEvent.click(screen.getByRole("button", { name: "Camera snapshot" }));
+  await waitFor(() => expect(api.startLive).toHaveBeenCalledTimes(1));
+  expect(api.cameraSnapshot).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog", { name: "Snapshot from a clip" })).not.toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["Open/close detection", "#config/doors", "Add"],
+  ["Fridge area", "#config/fridge", "Set area"],
+])("Switch off: %s takes its snapshot from a live view", async (_, hash, button) => {
+  vi.stubGlobal("RTCPeerConnection", StubPeer);
+  signedIn();
+  location.hash = hash;
+  const api = fakeApi();
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: button }));
+  await waitFor(() => expect(api.startLive).toHaveBeenCalledTimes(1));
+  expect(api.cameraSnapshot).not.toHaveBeenCalled();
+});
+
+it("Switch off without WebRTC: the Ring still is used", async () => {
   signedIn();
   location.hash = "#config/refs";
   const api = fakeApi({ cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) });
@@ -99,9 +148,25 @@ it("Switch off: the camera is asked once and no picker opens", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Add" }));
   await userEvent.click(screen.getByRole("button", { name: "Camera snapshot" }));
   expect(await screen.findByRole("img", { name: "Reference to draw on" })).toBeInTheDocument();
+  expect(api.startLive).not.toHaveBeenCalled();
   expect(api.cameraSnapshot).toHaveBeenCalledTimes(1);
-  expect(screen.queryByRole("dialog", { name: "Snapshot from a clip" })).not.toBeInTheDocument();
-  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("Closing the door sheet ends the live view and sends no frame", async () => {
+  vi.stubGlobal("RTCPeerConnection", StubPeer);
+  signedIn();
+  location.hash = "#config/doors";
+  const api = fakeApi({ startLive: vi.fn().mockResolvedValue({ answer: "v=0\r\n", session_id: "S1", max_seconds: 60 }) });
+  const errors = vi.spyOn(console, "error");
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await waitFor(() => expect(api.startLive).toHaveBeenCalledTimes(1));
+  await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(api.stopLive).toHaveBeenCalledWith("S1"));
+  expect(api.cameraFrame).not.toHaveBeenCalled();
+  expect(api.cameraSnapshot).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(errors).not.toHaveBeenCalled();
 });
 
 it("Cancel: the picker closes with no snapshot, no error and no request", async () => {

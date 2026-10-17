@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, Unauthorized } from "../api/client";
-import { useApp } from "../AppContext";
+import { useApp, type Api } from "../AppContext";
 import { ClipLive } from "../debug/ClipLive";
 import { useDebug } from "../debug/DebugContext";
 import { Sheet } from "./Sheet";
@@ -18,14 +18,6 @@ type State =
   | { kind: "live"; left: number }
   | { kind: "ended" }
   | { kind: "error"; message: string };
-
-/** One attempt: its peer, the camera's session once known, and its timers. */
-interface Run {
-  peer: RTCPeerConnection;
-  sessionId: string | null;
-  stopped: boolean;
-  timers: ReturnType<typeof setTimeout>[];
-}
 
 /** How this browser decodes the live video, from WebRTC stats; a field is null if the
  * browser does not report it (Safari leaves out the decoder implementation). */
@@ -72,88 +64,140 @@ function iceGathered(peer: RTCPeerConnection, ms: number): Promise<void> {
   });
 }
 
+/** What a live connection reports back. `onError` gets one of the dialog's messages and,
+ * when an API call failed, its error. */
+export interface LiveCallbacks {
+  onStream: (stream: MediaStream, maxSeconds: number) => void;
+  onError: (message: string, err?: unknown) => void;
+}
+
+/** One live connection: its peer, and `stop()`, which closes the peer and ends the camera
+ * session, once. */
+export interface LiveConnection {
+  peer: RTCPeerConnection;
+  stop: () => void;
+  readonly stopped: boolean;
+}
+
+/** Opens a live view through the app API, or returns null when the browser has no WebRTC.
+ * Video arrives through `onStream`; any failure stops the connection and calls `onError`. */
+export function openLive(
+  api: Pick<Api, "startLive" | "stopLive">,
+  createPeer: () => RTCPeerConnection | null,
+  callbacks: LiveCallbacks,
+): LiveConnection | null {
+  const peer = createPeer();
+  if (!peer) return null;
+  let sessionId: string | null = null;
+  let stopped = false;
+  let trackTimer: ReturnType<typeof setTimeout> | undefined;
+  const conn: LiveConnection = {
+    peer,
+    get stopped() {
+      return stopped;
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearTimeout(trackTimer);
+      peer.close();
+      if (sessionId) api.stopLive(sessionId).catch(() => {});
+    },
+  };
+  const fail = (message: string, err?: unknown) => {
+    if (stopped) return;
+    conn.stop();
+    callbacks.onError(message, err);
+  };
+
+  peer.addTransceiver("video", { direction: "recvonly" });
+  peer.addTransceiver("audio", { direction: "recvonly" });
+  peer.onconnectionstatechange = () => peer.connectionState === "failed" && fail(NO_CONNECTION);
+  let maxSeconds = 0;
+  peer.ontrack = (e) => {
+    if (stopped || !e.streams[0]) return;
+    clearTimeout(trackTimer);
+    callbacks.onStream(e.streams[0], maxSeconds);
+  };
+
+  void (async () => {
+    try {
+      await peer.setLocalDescription(await peer.createOffer());
+      await iceGathered(peer, ICE_WAIT_MS);
+      if (stopped) return;
+      const live = await api.startLive(peer.localDescription!.sdp!);
+      sessionId = live.session_id;
+      if (stopped) {
+        api.stopLive(live.session_id).catch(() => {});
+        return;
+      }
+      maxSeconds = live.max_seconds;
+      await peer.setRemoteDescription({ type: "answer", sdp: live.answer });
+      trackTimer = setTimeout(() => fail(NO_CONNECTION), TRACK_WAIT_MS);
+    } catch (err) {
+      if (!(err instanceof ApiError)) return fail(NO_CONNECTION, err);
+      fail(err.status === 409 ? NO_CAMERA : UNAVAILABLE, err);
+    }
+  })();
+  return conn;
+}
+
 function useLiveStream(createPeer: () => RTCPeerConnection | null, onStats?: (stats: DecoderStats) => void) {
   const { api, report } = useApp();
   const statsListener = useRef(onStats);
   statsListener.current = onStats;
   const [state, setState] = useState<State>({ kind: "connecting" });
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const current = useRef<Run | null>(null);
+  const current = useRef<{ conn: LiveConnection; timers: ReturnType<typeof setTimeout>[] } | null>(null);
 
-  /** Ends the current attempt: closes the peer and ends the camera session, once. */
+  /** Ends the current attempt and its countdown, once. */
   const stop = useCallback(() => {
     const run = current.current;
-    if (!run || run.stopped) return;
-    run.stopped = true;
+    if (!run || run.conn.stopped) return;
     run.timers.forEach((t) => clearTimeout(t));
-    run.peer.close();
+    run.conn.stop();
     setStream(null);
-    if (run.sessionId) api.stopLive(run.sessionId).catch(() => {});
-  }, [api]);
+  }, []);
 
   const start = useCallback(async () => {
     stop();
-    const peer = createPeer();
-    if (!peer) return setState({ kind: "error", message: NO_WEBRTC });
-    const run: Run = { peer, sessionId: null, stopped: false, timers: [] };
-    current.current = run;
     setState({ kind: "connecting" });
-    const fail = (message: string) => {
-      if (run.stopped) return;
-      stop();
-      setState({ kind: "error", message });
-    };
-
-    peer.addTransceiver("video", { direction: "recvonly" });
-    peer.addTransceiver("audio", { direction: "recvonly" });
-    peer.onconnectionstatechange = () => peer.connectionState === "failed" && fail(NO_CONNECTION);
-    let maxSeconds = 0;
-    peer.ontrack = (e) => {
-      if (run.stopped || !e.streams[0]) return;
-      run.timers.forEach((t) => clearTimeout(t));
-      setStream(e.streams[0]);
-      setState({ kind: "live", left: maxSeconds });
-      const readStats = () => {
-        run.timers.push(
-          setTimeout(() => {
-            if (run.stopped) return;
-            decoderStats(peer)
-              .then((stats) => stats && !run.stopped && statsListener.current?.(stats))
-              .catch(() => {})
-              .finally(() => !run.stopped && readStats());
-          }, STATS_EVERY_MS),
-        );
-      };
-      if (statsListener.current) readStats();
-      for (let s = 1; s <= maxSeconds; s++) {
-        run.timers.push(
-          setTimeout(() => {
-            if (s < maxSeconds) return setState({ kind: "live", left: maxSeconds - s });
-            stop();
-            setState({ kind: "ended" });
-          }, s * 1000),
-        );
-      }
-    };
-
-    try {
-      await peer.setLocalDescription(await peer.createOffer());
-      await iceGathered(peer, ICE_WAIT_MS);
-      if (run.stopped) return;
-      const live = await api.startLive(peer.localDescription!.sdp!);
-      run.sessionId = live.session_id;
-      if (run.stopped) {
-        api.stopLive(live.session_id).catch(() => {});
-        return;
-      }
-      maxSeconds = live.max_seconds;
-      await peer.setRemoteDescription({ type: "answer", sdp: live.answer });
-      run.timers.push(setTimeout(() => fail(NO_CONNECTION), TRACK_WAIT_MS));
-    } catch (err) {
-      if (err instanceof Unauthorized) report(err);
-      if (!(err instanceof ApiError)) return fail(NO_CONNECTION);
-      fail(err.status === 409 ? NO_CAMERA : UNAVAILABLE);
-    }
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const conn = openLive(api, createPeer, {
+      onStream(stream, maxSeconds) {
+        setStream(stream);
+        setState({ kind: "live", left: maxSeconds });
+        const readStats = () => {
+          timers.push(
+            setTimeout(() => {
+              if (conn!.stopped) return;
+              decoderStats(conn!.peer)
+                .then((stats) => stats && !conn!.stopped && statsListener.current?.(stats))
+                .catch(() => {})
+                .finally(() => !conn!.stopped && readStats());
+            }, STATS_EVERY_MS),
+          );
+        };
+        if (statsListener.current) readStats();
+        for (let s = 1; s <= maxSeconds; s++) {
+          timers.push(
+            setTimeout(() => {
+              if (s < maxSeconds) return setState({ kind: "live", left: maxSeconds - s });
+              stop();
+              setState({ kind: "ended" });
+            }, s * 1000),
+          );
+        }
+      },
+      onError(message, err) {
+        if (err instanceof Unauthorized) report(err);
+        timers.forEach((t) => clearTimeout(t));
+        setStream(null);
+        setState({ kind: "error", message });
+      },
+    });
+    if (!conn) return setState({ kind: "error", message: NO_WEBRTC });
+    current.current = { conn, timers };
   }, [api, createPeer, report, stop]);
 
   useEffect(() => {
