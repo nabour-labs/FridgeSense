@@ -1,7 +1,13 @@
-import { ChartColumn, History, ListChecks, Mic, Refrigerator, Settings, WifiOff } from "lucide-react";
+import { ChartColumn, History, ListChecks, LogOut, Mic, Refrigerator, Settings, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient, ApiError, Offline, ReadOnly, Unauthorized } from "./api/client";
 import { AppContext, type Api, type Tab } from "./AppContext";
+import type { Snapshot } from "./api/types";
+import { ClipPicker } from "./debug/ClipPicker";
+import { DebugBar } from "./debug/DebugBar";
+import { DebugContext } from "./debug/DebugContext";
+import { PickCancelled, withSnapshot } from "./debug/debug";
+import { loadMockVideo, saveMockVideo } from "./debug/mockVideo";
 import { Activity } from "./screens/Activity";
 import { Ask } from "./screens/Ask";
 import { Config } from "./screens/Config";
@@ -30,6 +36,18 @@ export default function App({ api: injected }: { api?: Api }) {
   const api = useMemo<Api>(
     () => injected ?? new ApiClient(() => loadSession()?.token ?? null),
     [injected],
+  );
+  // Debug mode: the dev server only. A literal, so the build drops every debug branch and import.
+  const debug = import.meta.env.DEV;
+  const [mockVideo, setMockVideo] = useState(() => debug && loadMockVideo());
+  const [picking, setPicking] = useState<{ resolve: (s: Snapshot) => void; reject: (e: Error) => void } | null>(null);
+  // Debug mode with Mock video on: snapshots come from a local clip the owner picks.
+  const screenApi = useMemo<Api>(
+    () =>
+      debug && mockVideo
+        ? withSnapshot(api, () => new Promise<Snapshot>((resolve, reject) => setPicking({ resolve, reject })))
+        : api,
+    [api, debug, mockVideo],
   );
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [offline, setOffline] = useState(false);
@@ -62,7 +80,9 @@ export default function App({ api: injected }: { api?: Api }) {
   }, [notice]);
 
   const report = useCallback((error: unknown) => {
-    if (error instanceof Unauthorized) {
+    if (debug && error instanceof PickCancelled) {
+      // The owner closed the clip picker: nothing to report.
+    } else if (error instanceof Unauthorized) {
       clearSession();
       setSession(null);
     } else if (error instanceof Offline) {
@@ -97,80 +117,115 @@ export default function App({ api: injected }: { api?: Api }) {
 
   const title = tab === "config" ? "Config" : TABS.find((t) => t.id === tab)!.label;
   return (
-    <AppContext.Provider value={{ api, role: session.role, report, online, go }}>
-      <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
-        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-50/90 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur dark:bg-slate-950/90">
-          <h1 className="text-[1.75rem] font-bold tracking-tight">{title}</h1>
-          <div className="flex items-center gap-2">
-            {session.role === "viewer" && (
-              <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-900">
-                Demo · read-only
-              </span>
-            )}
-            <a
-              href="#config"
-              onClick={() => setTab("config")}
-              aria-label="Config"
-              aria-current={tab === "config" ? "page" : undefined}
-              className={`grid size-11 place-items-center rounded-full transition hover:bg-slate-200/70 dark:hover:bg-slate-800 ${
-                tab === "config" ? "text-brand-600 dark:text-brand-400" : "text-slate-500 dark:text-slate-400"
-              }`}
+    <AppContext.Provider value={{ api: screenApi, role: session.role, report, online, go }}>
+      <DebugContext.Provider value={{ mockVideo: debug && mockVideo }}>
+        <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
+          <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-50/90 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur dark:bg-slate-950/90">
+            <h1 className="text-[1.75rem] font-bold tracking-tight">{title}</h1>
+            <div className="flex items-center gap-2">
+              {session.role === "viewer" && (
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-900">
+                  Demo · read-only
+                </span>
+              )}
+              <a
+                href="#config"
+                onClick={() => setTab("config")}
+                aria-label="Config"
+                aria-current={tab === "config" ? "page" : undefined}
+                className={`grid size-11 place-items-center rounded-full transition hover:bg-slate-200/70 dark:hover:bg-slate-800 ${
+                  tab === "config" ? "text-brand-600 dark:text-brand-400" : "text-slate-500 dark:text-slate-400"
+                }`}
+              >
+                <Settings aria-hidden className="size-5" />
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  clearSession();
+                  setSession(null);
+                }}
+                aria-label="Sign out"
+                title="Sign out"
+                className="grid size-11 place-items-center rounded-full text-slate-500 transition hover:bg-slate-200/70 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
+                <LogOut aria-hidden className="size-5" />
+              </button>
+            </div>
+          </header>
+          {debug && (
+            <DebugBar
+              mockVideo={mockVideo}
+              onChange={(on) => {
+                saveMockVideo(on);
+                setMockVideo(on);
+              }}
+            />
+          )}
+          {debug && picking && (
+            <ClipPicker
+              onPick={(snapshot) => {
+                picking.resolve(snapshot);
+                setPicking(null);
+              }}
+              onCancel={() => {
+                picking.reject(new PickCancelled());
+                setPicking(null);
+              }}
+            />
+          )}
+          {offline && (
+            <p className="mx-4 mb-3 flex animate-fade-in items-center gap-2 rounded-xl bg-warm-50 px-3 py-2 text-sm text-warm-800 ring-1 ring-warm-200 dark:bg-warm-950/60 dark:text-warm-200 dark:ring-warm-900">
+              <WifiOff aria-hidden className="size-4 shrink-0" />
+              Can't reach FridgeSense. Showing the last data.
+            </p>
+          )}
+          <main key={tab} className="flex-1 animate-fade-up px-4 pb-28">
+            {tab === "fridge" && <Fridge />}
+            {tab === "activity" && <Activity />}
+            {tab === "review" && <Review />}
+            {tab === "stats" && <Stats />}
+            {tab === "ask" && <Ask />}
+            {tab === "config" && <Config />}
+          </main>
+          {notice && (
+            <p
+              role="status"
+              className="fixed inset-x-0 bottom-24 z-20 mx-auto w-fit animate-fade-up rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg dark:bg-white dark:text-slate-900"
             >
-              <Settings aria-hidden className="size-5" />
-            </a>
-          </div>
-        </header>
-        {offline && (
-          <p className="mx-4 mb-3 flex animate-fade-in items-center gap-2 rounded-xl bg-warm-50 px-3 py-2 text-sm text-warm-800 ring-1 ring-warm-200 dark:bg-warm-950/60 dark:text-warm-200 dark:ring-warm-900">
-            <WifiOff aria-hidden className="size-4 shrink-0" />
-            Can't reach FridgeSense. Showing the last data.
-          </p>
-        )}
-        <main key={tab} className="flex-1 animate-fade-up px-4 pb-28">
-          {tab === "fridge" && <Fridge />}
-          {tab === "activity" && <Activity />}
-          {tab === "review" && <Review />}
-          {tab === "stats" && <Stats />}
-          {tab === "ask" && <Ask />}
-          {tab === "config" && <Config />}
-        </main>
-        {notice && (
-          <p
-            role="status"
-            className="fixed inset-x-0 bottom-24 z-20 mx-auto w-fit animate-fade-up rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg dark:bg-white dark:text-slate-900"
+              {notice}
+            </p>
+          )}
+          <nav
+            aria-label="Screens"
+            className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200/80 bg-white/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/85"
           >
-            {notice}
-          </p>
-        )}
-        <nav
-          aria-label="Screens"
-          className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200/80 bg-white/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/85"
-        >
-          <ul className="mx-auto grid max-w-xl grid-cols-5 px-2">
-            {TABS.map(({ id, label, Icon }) => (
-              <li key={id}>
-                <a
-                  href={`#${id}`}
-                  onClick={() => setTab(id)}
-                  aria-current={tab === id ? "page" : undefined}
-                  className={`group flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition active:scale-95 ${
-                    tab === id ? "text-brand-700 dark:text-brand-300" : "text-slate-500 dark:text-slate-400"
-                  }`}
-                >
-                  <span
-                    className={`grid h-8 w-14 place-items-center rounded-full transition-colors ${
-                      tab === id ? "bg-brand-100 dark:bg-brand-900/60" : "group-hover:bg-slate-100 dark:group-hover:bg-slate-800"
+            <ul className="mx-auto grid max-w-xl grid-cols-5 px-2">
+              {TABS.map(({ id, label, Icon }) => (
+                <li key={id}>
+                  <a
+                    href={`#${id}`}
+                    onClick={() => setTab(id)}
+                    aria-current={tab === id ? "page" : undefined}
+                    className={`group flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition active:scale-95 ${
+                      tab === id ? "text-brand-700 dark:text-brand-300" : "text-slate-500 dark:text-slate-400"
                     }`}
                   >
-                    <Icon aria-hidden className="size-5" strokeWidth={tab === id ? 2.4 : 2} />
-                  </span>
-                  {label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </div>
+                    <span
+                      className={`grid h-8 w-14 place-items-center rounded-full transition-colors ${
+                        tab === id ? "bg-brand-100 dark:bg-brand-900/60" : "group-hover:bg-slate-100 dark:group-hover:bg-slate-800"
+                      }`}
+                    >
+                      <Icon aria-hidden className="size-5" strokeWidth={tab === id ? 2.4 : 2} />
+                    </span>
+                    {label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </div>
+      </DebugContext.Provider>
     </AppContext.Provider>
   );
 }

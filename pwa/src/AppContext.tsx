@@ -21,13 +21,18 @@ export type Api = Pick<
   | "saveInstructions"
   | "addReference"
   | "deleteReference"
+  | "camera"
   | "cameraSnapshot"
+  | "startLive"
+  | "stopLive"
   | "doorCalibration"
   | "addDoorReference"
   | "deleteDoorReference"
   | "runDoorSetup"
   | "fridgeArea"
   | "saveFridgeArea"
+  | "debugMotions"
+  | "debugMotion"
 >;
 
 export interface AppContextValue {
@@ -41,6 +46,12 @@ export interface AppContextValue {
 }
 
 export type Tab = "fridge" | "activity" | "review" | "stats" | "ask" | "config";
+
+/** Everyone but the read-only demo viewer may change things. */
+export const canEdit = (role: Role) => role !== "viewer";
+
+/** Only the owner (admin) sees Debug: traces hold unblurred stills. */
+export const isAdmin = (role: Role) => role === "owner";
 
 export const AppContext = createContext<AppContextValue | null>(null);
 

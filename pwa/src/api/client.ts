@@ -1,5 +1,6 @@
 import type {
   AskResult,
+  CameraInfo,
   Box,
   Config,
   DoorEvent,
@@ -8,6 +9,9 @@ import type {
   EventPage,
   FridgeAreaBody,
   Inventory,
+  LiveSession,
+  MotionPage,
+  MotionTrace,
   Pending,
   Session,
   Snapshot,
@@ -111,9 +115,22 @@ export class ApiClient {
     return this.request("DELETE", `/api/config/references/${encodeURIComponent(id)}`);
   }
 
+  /** The connected camera's details, status and online history. */
+  camera(): Promise<CameraInfo> {
+    return this.request("GET", "/api/camera");
+  }
+
   /** A face-blurred still from the camera, not stored. */
   cameraSnapshot(): Promise<Snapshot> {
     return this.request("POST", "/api/camera/snapshot");
+  }
+
+  /** Opens a live view: the browser's SDP offer in, the camera's SDP answer out. */
+  startLive(offer: string): Promise<LiveSession> {
+    return this.request("POST", "/api/camera/live", { offer });
+  }
+  stopLive(sessionId: string): Promise<{ ok: true }> {
+    return this.request("DELETE", `/api/camera/live/${encodeURIComponent(sessionId)}`);
   }
 
   doorCalibration(): Promise<DoorSetup> {
@@ -141,6 +158,18 @@ export class ApiClient {
   /** Replaces the fridge area. `image` is a base64 JPEG; `box` is in fractions of it. */
   saveFridgeArea(image: string, box: Box): Promise<FridgeAreaBody> {
     return this.request("PUT", "/api/fridge-area", { image, box });
+  }
+
+  /** Traced motions in [from, to), newest first, `limit` at a time (owner only). */
+  debugMotions(from: Date, to: Date, limit: number, cursor?: string): Promise<MotionPage> {
+    const query = new URLSearchParams({ from: from.toISOString(), to: to.toISOString(), limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.request("GET", `/api/debug/motions?${query}`);
+  }
+
+  /** One motion's trace, by motion id or door event id (owner only). */
+  debugMotion(id: string): Promise<MotionTrace> {
+    return this.request("GET", `/api/debug/motions/${encodeURIComponent(id)}`);
   }
 
   private async request<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {

@@ -85,9 +85,10 @@ Box = tuple[float, float, float, float]
 
 # Measured on the fridge camera (2026-10-15 clip): French doors, then the two drawers.
 DEFAULT_ZONES: tuple[Box, ...] = ((0.38, 0.32, 0.21, 0.30), (0.455, 0.60, 0.12, 0.18))
-DEFAULT_THRESHOLD = 0.02
+DEFAULT_THRESHOLD = 0.01
 MIN_CHROMA = 60  # max(R,G,B) - min(R,G,B): grey steel, white and wood stay below this
 MIN_PEAK = 100  # brightest channel: keeps dark saturated clothing (navy) out
+MIN_BLUE_LEAD = 20  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
 
 
 def still_times(start_ms: int, end_ms: int, count: int = STILL_COUNT) -> list[int]:
@@ -148,16 +149,27 @@ def _crop_box(img: Image.Image, box: Box) -> Image.Image:
     return img.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
 
 
-def _colorful(zone: Image.Image) -> float:
+def _colorful_mask(zone: Image.Image) -> Image.Image:
     r, g, b = zone.split()
     peak = ImageChops.lighter(ImageChops.lighter(r, g), b)
     low = ImageChops.darker(ImageChops.darker(r, g), b)
     chroma = ImageChops.subtract(peak, low)
-    colourful = ImageChops.multiply(
+    return ImageChops.multiply(
         chroma.point(lambda v: 255 if v > MIN_CHROMA else 0),
         peak.point(lambda v: 255 if v > MIN_PEAK else 0),
     )
-    return ImageStat.Stat(colourful).mean[0] / 255
+
+
+def _colorful(zone: Image.Image) -> float:
+    return ImageStat.Stat(_colorful_mask(zone)).mean[0] / 255
+
+
+def _blue_lit(zone: Image.Image) -> float:
+    """Share of colourful pixels whose blue leads red and green: the lit fridge interior."""
+    r, g, b = zone.split()
+    lead = ImageChops.subtract(b, ImageChops.lighter(r, g))
+    blue = lead.point(lambda v: 255 if v > MIN_BLUE_LEAD else 0)
+    return ImageStat.Stat(ImageChops.multiply(_colorful_mask(zone), blue)).mean[0] / 255
 
 
 def _open_rgb(still: bytes | Image.Image) -> Image.Image:
@@ -175,7 +187,7 @@ def colorful_fraction(jpeg_bytes: bytes, box: Box) -> float:
     return _colorful(_crop_box(_open_rgb(jpeg_bytes), box))
 
 
-FEATURES = ("color", "change", "brightness")  # also the tie order when setup picks one
+FEATURES = ("blue", "color", "change", "brightness")  # also the tie order when setup picks one
 BASELINE_SIZE = (32, 32)
 
 
@@ -192,10 +204,13 @@ def baseline_of(stills: list[bytes], box: Box) -> bytes:
 def measure(
     still: bytes | Image.Image, box: Box, feature: str, baseline: bytes | None = None
 ) -> float:
-    """One feature (0-1) of a zone: colorful fraction, mean luminance, or change from a baseline."""
+    """One feature (0-1) of a zone: colorful or blue-lit fraction, mean luminance, or change
+    from a baseline."""
     zone = _crop_box(_open_rgb(still), box)
     if feature == "color":
         return _colorful(zone)
+    if feature == "blue":
+        return _blue_lit(zone)
     if feature == "brightness":
         return ImageStat.Stat(zone.convert("L")).mean[0] / 255
     if feature == "change":
@@ -215,6 +230,7 @@ class ZoneRule:
     direction: str = "above"
     threshold: float = DEFAULT_THRESHOLD
     baseline: bytes | None = None
+    margin: float | None = None  # from setup: how far apart open and closed references were
 
     def value(self, still: bytes | Image.Image) -> float:
         return measure(still, self.box, self.feature, self.baseline)
@@ -225,6 +241,17 @@ class ZoneRule:
 
     def is_open(self, value: float) -> bool:
         return self.excess(value) >= 0
+
+
+@dataclass(frozen=True)
+class ZoneValue:
+    """One zone's feature value in one still, against that zone's threshold."""
+
+    zone: int  # 1-based
+    value: float
+    threshold: float
+    open: bool
+    excess: float
 
 
 @dataclass(frozen=True)
@@ -261,12 +288,13 @@ def crop_still(jpeg_bytes: bytes, box: Box | None) -> bytes:
 class DoorCheck:
     zones: tuple[Box, ...] = DEFAULT_ZONES
     threshold: float = DEFAULT_THRESHOLD
-    rules: tuple[ZoneRule, ...] = ()  # from setup; without them, colour rules from zones/threshold
+    rules: tuple[ZoneRule, ...] = ()  # from setup; without them, blue rules from zones/threshold
     source: str = "default"
+    ran_at: str | None = None  # when setup ran
 
     def __post_init__(self):
         if not self.rules:
-            rules = tuple(ZoneRule(z, "color", "above", self.threshold) for z in self.zones)
+            rules = tuple(ZoneRule(z, "blue", "above", self.threshold) for z in self.zones)
             object.__setattr__(self, "rules", rules)
 
     @classmethod
@@ -279,18 +307,25 @@ class DoorCheck:
                 raise ValueError("DOOR_ZONES needs at least one zone: x,y,width,height")
         return cls(zones=parsed, threshold=float(threshold) if threshold else DEFAULT_THRESHOLD)
 
+    def zone_values(self, still: bytes | Image.Image) -> list[ZoneValue]:
+        """Every zone's value in the still, with that zone's verdict."""
+        img = _open_rgb(still)
+        values = []
+        for n, rule in enumerate(self.rules, 1):
+            value = rule.value(img)
+            excess = rule.excess(value)
+            values.append(ZoneValue(n, value, rule.threshold, excess >= 0, excess))
+        return values
+
+    def result_of(self, values: list[ZoneValue]) -> StillResult:
+        """The best zone: the one furthest past (or closest to) its threshold."""
+        best = max(values, key=lambda v: v.excess)
+        rule = self.rules[best.zone - 1]
+        return StillResult(best.open, best.value, best.zone, rule.feature, rule.threshold)
+
     def result(self, still: bytes) -> StillResult:
         """The still's best zone: the one furthest past (or closest to) its threshold."""
-        img = _open_rgb(still)
-        best = max(
-            (
-                (rule.excess(v := rule.value(img)), v, n, rule)
-                for n, rule in enumerate(self.rules, 1)
-            ),
-            key=lambda t: t[0],
-        )
-        excess, value, zone, rule = best
-        return StillResult(excess >= 0, value, zone, rule.feature, rule.threshold)
+        return self.result_of(self.zone_values(still))
 
     def results(self, stills: list[bytes]) -> list[StillResult]:
         return [self.result(s) for s in stills]
@@ -314,6 +349,43 @@ def stills_prefix(account_id: str, device_id: str, start_ms: int) -> str:
     return f"accounts/{account_id}/devices/{device_id}/events/{start_ms}/"
 
 
+@dataclass(frozen=True)
+class Downloaded:
+    """One requested still: its bytes, or the last HTTP status (None when Ring or OAuth failed)."""
+
+    n: int  # 1-based
+    at_ms: int
+    data: bytes | None
+    status: int | None = None
+
+
+def download_all_stills(
+    ring: RingClient,
+    http: httpx.Client,
+    state: dict,
+    sleep: Callable[[float], None] = time.sleep,
+    interval_ms: int = STILL_INTERVAL_MS,
+) -> list[Downloaded]:
+    """Every still requested for the window, downloaded into memory or with why it is missing."""
+    window = state["window"]
+    count = still_count(window["end_ms"] - window["start_ms"], interval_ms)
+    times = still_times(window["start_ms"], window["end_ms"], count)
+    delays = STILL_RETRY_DELAYS_S if count <= STILL_COUNT else DENSE_RETRY_DELAYS_S
+
+    def fetch(ts: int) -> tuple[bytes | None, int | None]:
+        return fetch_still(ring, http, state["device_id"], ts, sleep, delays)
+
+    if count <= STILL_COUNT:
+        results = [fetch(ts) for ts in times]
+    else:  # many stills: download in parallel to stay well inside the task timeout
+        with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
+            results = list(pool.map(fetch, times))
+    return [
+        Downloaded(n, ts, data, status)
+        for n, (ts, (data, status)) in enumerate(zip(times, results, strict=True), start=1)
+    ]
+
+
 def download_stills(
     ring: RingClient,
     http: httpx.Client,
@@ -325,20 +397,8 @@ def download_stills(
 
     Nothing is stored here; raw stills only feed the door check and face detection.
     """
-    window = state["window"]
-    count = still_count(window["end_ms"] - window["start_ms"], interval_ms)
-    times = still_times(window["start_ms"], window["end_ms"], count)
-    delays = STILL_RETRY_DELAYS_S if count <= STILL_COUNT else DENSE_RETRY_DELAYS_S
-
-    def fetch(ts: int) -> bytes | None:
-        return _download_still(ring, http, state["device_id"], ts, sleep, delays)
-
-    if count <= STILL_COUNT:
-        results = [fetch(ts) for ts in times]
-    else:  # many stills: download in parallel to stay well inside the task timeout
-        with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
-            results = list(pool.map(fetch, times))
-    return [(n, data) for n, data in enumerate(results, start=1) if data is not None]
+    stills = download_all_stills(ring, http, state, sleep, interval_ms)
+    return [(s.n, s.data) for s in stills if s.data is not None]
 
 
 def store_blurred_stills(
@@ -396,18 +456,78 @@ def fetch_still(
     return None, None
 
 
-def _download_still(
+MIN_STILLS = 2
+FRAME_JPEG_QUALITY = 90
+
+
+def _frame_jpeg(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=FRAME_JPEG_QUALITY)
+    return buf.getvalue()
+
+
+def clip_frames_checked(
+    ring: RingClient,
+    http: httpx.Client,
+    check: "DoorCheck",
+    state: dict,
+    interval_ms: int,
+    sleep: Callable[[float], None],
+    clip_dir=None,
+) -> tuple[list[Downloaded], list[list["ZoneValue"]]]:
+    """The event clip's frames every `interval_ms` (as JPEG `Downloaded`s) and their zone values.
+
+    Each frame is scored as it is decoded, so a long clip never sits in memory decoded.
+    The temp clip file is deleted whatever happens. Raises ClipUnavailable.
+    """
+    from fridgesense import clip_frames
+
+    window = state["window"]
+    started = time.monotonic()
+    path = clip_frames.download_clip(
+        ring,
+        http,
+        state["device_id"],
+        window["start_ms"],
+        window["end_ms"] - window["start_ms"],
+        sleep,
+        directory=clip_dir,
+    )
+    downloaded_ms = round((time.monotonic() - started) * 1000)
+    frames, values = [], []
+    try:
+        for n, (offset, img) in enumerate(clip_frames.sample_frames(path, interval_ms), start=1):
+            values.append(check.zone_values(img))
+            frames.append(Downloaded(n, window["start_ms"] + offset, _frame_jpeg(img)))
+        clip_bytes = path.stat().st_size
+    finally:
+        path.unlink(missing_ok=True)
+    log_event(
+        "clip_frames",
+        device_id=state["device_id"],
+        frames=len(frames),
+        clip_bytes=clip_bytes,
+        clip_download_ms=downloaded_ms,
+        clip_decode_ms=round((time.monotonic() - started) * 1000) - downloaded_ms,
+    )
+    return frames, values
+
+
+def stills_at(
     ring: RingClient,
     http: httpx.Client,
     device_id: str,
-    ts: int,
+    frames: list[Downloaded],
     sleep: Callable[[float], None],
-    delays: tuple[int, ...] = STILL_RETRY_DELAYS_S,
-) -> bytes | None:
-    return fetch_still(ring, http, device_id, ts, sleep, delays)[0]
+) -> list[bytes]:
+    """A Ring still at each frame's time (sharper than video), or the frame where none comes."""
 
+    def fetch(frame: Downloaded) -> bytes:
+        data, _ = fetch_still(ring, http, device_id, frame.at_ms, sleep)
+        return frame.data if data is None else data
 
-MIN_STILLS = 2
+    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
+        return list(pool.map(fetch, frames))
 
 
 def _device_check(
@@ -447,26 +567,56 @@ def fetch_stills(
     crop: Box | None = None,
     interval_ms: int = STILL_INTERVAL_MS,
     setup_for: Callable[[str, str], "DoorCheck | None"] | None = None,
+    writer=None,
+    frame_interval_ms: int | None = None,
+    clip_dir=None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
+
+    With `frame_interval_ms`, the check first runs on the event clip's frames at that spacing
+    and stills are downloaded only at the times picked from the open span; if the clip can't
+    be used it falls back to sampling stills across the window (the only path without it).
 
     The door check runs on the raw, uncropped stills in memory. For a door opening, up to
     4 stills from the open span are cropped to `crop`, pay for face detection, and have
     their blurred stills stored; the span also gives the event's open and close times.
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
+    With a trace `writer`, every outcome also leaves a debug trace of what the check saw.
     """
+    from fridgesense.traces import DoorTrace  # traces imports this module
+
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
     check = _device_check(check, setup_for, account_id, device_id)
-    raw = download_stills(ring, http, state, sleep, interval_ms)
-    count = still_count(window["end_ms"] - window["start_ms"], interval_ms)
-    times = still_times(window["start_ms"], window["end_ms"], count)
+    clip = None
+    if frame_interval_ms is not None:
+        from fridgesense.clip_frames import ClipUnavailable
+
+        try:
+            clip = clip_frames_checked(ring, http, check, state, frame_interval_ms, sleep, clip_dir)
+        except ClipUnavailable as e:
+            log_event("clip_unavailable", logging.WARNING, device_id=device_id, reason=e.reason)
+    if clip is not None:
+        downloaded, clip_values = clip
+    else:
+        downloaded = download_all_stills(ring, http, state, sleep, interval_ms)
+    raw = [(d.n, d.data) for d in downloaded if d.data is not None]
+    times = [d.at_ms for d in downloaded]
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
     status = "no_media"
-    rule_log: dict = {"zones_source": check.source}
+    rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
+    trace = DoorTrace(stills=downloaded, values={}, check=check, outcome="no_media")
+
+    def done(result: dict) -> dict:
+        if writer is not None:
+            trace.outcome = result["outcome"]
+            writer.door(state, trace)
+        return result
 
     if len(raw) >= MIN_STILLS:
-        results = check.results([data for _, data in raw])
+        values = clip_values if clip else [check.zone_values(data) for _, data in raw]
+        trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
+        results = [check.result_of(v) for v in values]
         best = check.best(results)
         rule_log = {**rule_log, "feature": best.feature, "threshold": best.threshold}
         span = open_span([1.0 if r.is_open else 0.0 for r in results], 1.0)
@@ -479,13 +629,22 @@ def fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
-            return {**state, "outcome": "not_door", "score": round(best.value, 3)}
+            return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
         opened_ms = times[raw[span[0]][0] - 1]
         if not results[span[-1]].is_open:  # the first closed still after the opening
             closed_ms = times[raw[span[-1]][0] - 1]
-        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(pick(span), start=1)]
+        picks = pick(span)
+        trace.open_span = [raw[i][0] for i in span]
+        trace.picked = [raw[i][0] for i in picks]
+        chosen = [downloaded[raw[i][0] - 1] for i in picks]
+        if clip:
+            datas = stills_at(ring, http, device_id, chosen, sleep)
+        else:
+            datas = [d.data for d in chosen]
+        picked = [(k, crop_still(data, crop)) for k, data in enumerate(datas, start=1)]
         stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
         still_keys = [k for k, _ in stills]
+        trace.stored_keys = still_keys
         if len(stills) >= MIN_STILLS:
             status = "analyzing"
 
@@ -522,10 +681,12 @@ def fetch_stills(
     except TransactionConflict as e:
         if e.reasons and e.reasons[0] == "ConditionalCheckFailed":
             log_event("door_event_duplicate", account_id=account_id, ring_event=claim)
-            return {**state, "outcome": "duplicate"}
+            return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
     )
-    return {**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys}
+    trace.door_sk = door_sk
+    trace.opened_at, trace.closed_at = event["opened_at"], event["closed_at"]
+    return done({**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys})

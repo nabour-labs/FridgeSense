@@ -104,3 +104,58 @@ def test_token_one_day_old(app, monkeypatch):
     assert call("GET", "/api/inventory", token=token)[0] == 200
     monkeypatch.setattr(api, "now", lambda: NOW + 24 * 3600 + 1)
     assert call("GET", "/api/inventory", token=token) == (401, {"error": "sign in"})
+
+
+@pytest.fixture
+def with_user(app):
+    configure(user_passcode="come-in")
+    fresh_config()
+
+
+# User passcode
+def test_user_passcode(with_user):
+    status, body = call("POST", "/api/session", {"passcode": "come-in"})
+    assert status == 200 and body["role"] == "user" and body["token"]
+    assert body["expires_at"] == "2026-08-07T07:06:40.000Z"  # NOW + 24 hours
+
+
+# No user passcode configured
+def test_no_user_passcode_configured(app):
+    assert call("POST", "/api/session", {"passcode": "come-in"}) == (
+        401,
+        {"error": "wrong passcode"},
+    )
+
+
+# Equal passcodes
+def test_equal_passcodes(app):
+    configure(user_passcode="come-in", demo_passcode="come-in")
+    fresh_config()
+    assert call("POST", "/api/session", {"passcode": "come-in"})[1]["role"] == "user"
+
+
+# User passcode changed
+def test_user_passcode_changed(with_user):
+    user, owner = sign_in("come-in"), sign_in()
+    configure(user_passcode="other")
+    fresh_config()
+    assert call("GET", "/api/inventory", token=user)[0] == 401
+    assert call("GET", "/api/inventory", token=owner)[0] == 200
+
+
+# User writes
+def test_user_writes(with_user):
+    user = sign_in("come-in")
+    added = {"name": "Milk", "category": "dairy", "quantity": 1}
+    assert call("POST", "/api/items", added, token=user)[0] == 200
+    assert call("PUT", "/api/items/milk", {"quantity": 2}, token=user)[0] == 200
+    status, body = call("GET", "/api/inventory", token=user)
+    assert status == 200
+    assert [(i["key"], i["quantity"]) for i in body["items"]] == [("milk", 2)]
+
+
+# User refused debug traces
+@pytest.mark.parametrize("path", ["/api/debug/motions", "/api/debug/motions/abc"])
+def test_user_refused_debug_traces(with_user, path):
+    user = sign_in("come-in")
+    assert call("GET", path, token=user) == (403, {"error": "admin only"})

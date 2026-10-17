@@ -37,6 +37,7 @@ class AppConfig(BaseModel):
     client_secret: str = ""
     hmac_key: str = ""
     passcode: str = ""
+    user_passcode: str = ""  # optional full-access passcode without Debug
     demo_passcode: str = ""  # optional read-only passcode for judges
     mcp_key: str = ""  # path key for the MCP endpoint; empty disables it
 

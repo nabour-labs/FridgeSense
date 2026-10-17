@@ -1,7 +1,7 @@
 import { Check, CheckCheck, Pencil, X } from "lucide-react";
 import { useCallback, useState, type FormEvent } from "react";
 import type { Pending } from "../api/types";
-import { useApp } from "../AppContext";
+import { canEdit, useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
@@ -10,7 +10,7 @@ import { useLoad } from "../useLoad";
 
 export function Review() {
   const { api, report, role } = useApp();
-  const canAct = role === "owner";
+  const canAct = canEdit(role);
   const { data: items, setData: setItems, failed } = useLoad(
     useCallback(() => api.pending().then((r) => r.pending), [api]),
     10_000,

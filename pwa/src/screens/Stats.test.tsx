@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { DoorEvent } from "../api/types";
 import { ApiError } from "../api/client";
@@ -98,4 +99,62 @@ test("a 409 shows No Data instead of the skeleton", async () => {
   render(<App api={fakeApi({ events: vi.fn().mockRejectedValue(new ApiError(409)) })} />);
   expect(await screen.findByText("No Data")).toBeInTheDocument();
   expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
+});
+
+function weekday(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.toLocaleDateString("en-US", { weekday: "short" });
+}
+
+function openTimes(figure: HTMLElement) {
+  return ["Average", "Longest", "Shortest"].map((name) => within(figure).getByRole("group", { name }).textContent);
+}
+
+const TWO_DAYS = () => {
+  const hour = Math.min(new Date().getHours(), 20);
+  return [event(0, hour, 20), event(0, hour, 30), event(0, hour, 40), event(1, 9, 25), event(1, 19, 35)];
+};
+
+// Today's open times
+test("open time shows today's average, longest and shortest opening", async () => {
+  renderStats(TWO_DAYS());
+  const figure = await screen.findByRole("figure", { name: "Open time" });
+  expect(within(figure).getByRole("button", { name: "Today" })).toHaveAttribute("aria-pressed", "true");
+  expect(openTimes(figure)).toEqual(["Average30 s", "Longest40 s", "Shortest20 s"]);
+});
+
+// Pick another day
+test("tapping yesterday shows yesterday's open times", async () => {
+  renderStats(TWO_DAYS());
+  const figure = await screen.findByRole("figure", { name: "Open time" });
+  await userEvent.click(within(figure).getByRole("button", { name: weekday(1) }));
+  expect(within(figure).getByRole("button", { name: weekday(1) })).toHaveAttribute("aria-pressed", "true");
+  expect(within(figure).getByRole("button", { name: "Today" })).toHaveAttribute("aria-pressed", "false");
+  expect(openTimes(figure)).toEqual(["Average30 s", "Longest35 s", "Shortest25 s"]);
+});
+
+// Seven day buttons
+test("open time has a button for each of the last 7 days, oldest first", async () => {
+  renderStats([]);
+  const figure = await screen.findByRole("figure", { name: "Open time" });
+  const names = within(figure).getAllByRole("button").map((b) => b.textContent);
+  expect(names).toEqual([6, 5, 4, 3, 2, 1].map(weekday).concat("Today"));
+});
+
+// Long opening on the card
+test("an opening of a minute or more reads in minutes and seconds", async () => {
+  const hour = Math.min(new Date().getHours(), 20);
+  renderStats([event(0, hour, 65), event(0, hour, 20)]);
+  const figure = await screen.findByRole("figure", { name: "Open time" });
+  expect(openTimes(figure)).toEqual(["Average43 s", "Longest1 m 05 s", "Shortest20 s"]);
+});
+
+// Day without openings
+test("a day without openings shows dashes and No openings", async () => {
+  renderStats(TWO_DAYS());
+  const figure = await screen.findByRole("figure", { name: "Open time" });
+  await userEvent.click(within(figure).getByRole("button", { name: weekday(2) }));
+  expect(openTimes(figure)).toEqual(["Average–", "Longest–", "Shortest–"]);
+  expect(within(figure).getByText("No openings")).toBeInTheDocument();
 });

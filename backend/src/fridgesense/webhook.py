@@ -12,6 +12,7 @@ from typing import Protocol
 import boto3
 from botocore.exceptions import ClientError
 
+from fridgesense.camera_info import StatusChange
 from fridgesense.crypto import verify_signature
 from fridgesense.logs import log_event
 from fridgesense.store import AppConfig
@@ -33,6 +34,13 @@ class MotionEvent:
 
 class MotionHandler(Protocol):
     def handle(self, event: MotionEvent) -> None: ...
+
+
+class StatusRecorder(Protocol):
+    def record(self, account_id: str, device_id: str, change: StatusChange) -> None: ...
+
+
+STATUS_EVENTS = {"device_online": True, "device_offline": False}
 
 
 class LoggingMotionHandler:
@@ -69,7 +77,12 @@ class WebhookLog:
 
 
 def handle_webhook(
-    req: Request, cfg: AppConfig, log: WebhookLog, motion: MotionHandler, now: float
+    req: Request,
+    cfg: AppConfig,
+    log: WebhookLog,
+    motion: MotionHandler,
+    now: float,
+    status: StatusRecorder | None = None,
 ) -> dict:
     if not cfg.hmac_key:
         log_event("webhook_not_configured", logging.ERROR)
@@ -113,6 +126,22 @@ def handle_webhook(
                 "motion_handoff_failed", logging.ERROR, error=type(e).__name__, **event.__dict__
             )
             return json_response(500, {"error": "hand-over failed"})
+    elif event_type in STATUS_EVENTS and status is not None:
+        try:
+            attrs = data["attributes"]
+            device_id = str(attrs["source"])
+            change = StatusChange(STATUS_EVENTS[event_type], int(attrs["timestamp"]), "webhook")
+        except (KeyError, TypeError, ValueError) as e:
+            log_event("webhook_malformed", logging.WARNING, error=type(e).__name__)
+            return json_response(200, {"ok": True})
+        try:
+            status.record(account_id, device_id, change)
+        except Exception as e:
+            # Forget the delivery so Ring's retry is recorded; re-recording a change is harmless.
+            log.forget(account_id, request_id)
+            log_event("status_record_failed", logging.ERROR, error=type(e).__name__)
+            return json_response(500, {"error": "record failed"})
+        log_event(event_type, account_id=account_id, device_id=device_id, at_ms=change.at_ms)
     elif event_type == "app_integration_added":
         log_event("app_integration_added", account_id=account_id, request_id=request_id)
     else:

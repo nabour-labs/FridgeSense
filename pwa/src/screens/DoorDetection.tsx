@@ -2,7 +2,7 @@ import { Camera, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import type { DoorFeature, DoorReference, DoorSetup, DoorStatus, Snapshot } from "../api/types";
-import { useApp } from "../AppContext";
+import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
@@ -13,7 +13,12 @@ import { NO_FOOTAGE } from "./ReferenceImages";
 
 const MAX_DOOR_REFERENCES = 12;
 const ZONE_COLOR = "#14b8a6";
-const FEATURE_LABEL: Record<DoorFeature, string> = { color: "Color", brightness: "Brightness", change: "Change" };
+const FEATURE_LABEL: Record<DoorFeature, string> = {
+  blue: "Blue light",
+  color: "Color",
+  brightness: "Brightness",
+  change: "Change",
+};
 
 const percent = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -35,7 +40,7 @@ function StatusBadge({ status }: { status: DoorStatus }) {
 /** Door references (open/closed snapshots with a box) and the setup that tunes detection. */
 export function DoorDetection() {
   const { api, report, role } = useApp();
-  const canEdit = role === "owner";
+  const editable = canEdit(role);
   const { data, setData, failed } = useLoad(
     useCallback(() => api.doorCalibration(), [api]),
     60_000,
@@ -120,7 +125,7 @@ export function DoorDetection() {
                   <span className="flex-1 text-sm font-medium tabular-nums text-slate-600 dark:text-slate-300">
                     {score === null ? "–" : percent(score)}
                   </span>
-                  {canEdit && (
+                  {editable && (
                     <button
                       type="button"
                       aria-label={`Delete reference ${i + 1}`}
@@ -134,7 +139,7 @@ export function DoorDetection() {
               </li>
             );
           })}
-          {canEdit && (
+          {editable && (
             <li>
               <button
                 type="button"
@@ -175,7 +180,7 @@ export function DoorDetection() {
             {error}
           </p>
         )}
-        {canEdit && (
+        {editable && (
           <>
             {!(hasOpen && hasClosed) && (
               <p className="px-1 text-sm text-slate-500 dark:text-slate-400">Add at least one open and one closed reference.</p>

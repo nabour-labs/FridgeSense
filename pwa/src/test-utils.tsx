@@ -1,6 +1,6 @@
 import { fireEvent, screen } from "@testing-library/react";
 import type { Api } from "./AppContext";
-import type { Inventory } from "./api/types";
+import type { Inventory, Role } from "./api/types";
 
 const DAY = 24 * 3600_000;
 
@@ -26,7 +26,10 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     saveInstructions: vi.fn(),
     addReference: vi.fn(),
     deleteReference: vi.fn(),
+    camera: vi.fn().mockReturnValue(new Promise(() => {})),
     cameraSnapshot: vi.fn(),
+    startLive: vi.fn().mockReturnValue(new Promise(() => {})),
+    stopLive: vi.fn().mockResolvedValue({ ok: true }),
     doorCalibration: vi.fn().mockResolvedValue({
       device_id: "ava1.ring.device.D1",
       references: [],
@@ -38,11 +41,13 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     runDoorSetup: vi.fn(),
     fridgeArea: vi.fn().mockResolvedValue({ device_id: "ava1.ring.device.D1", area: null }),
     saveFridgeArea: vi.fn(),
+    debugMotions: vi.fn().mockResolvedValue({ motions: [], next: null }),
+    debugMotion: vi.fn().mockReturnValue(new Promise(() => {})),
     ...overrides,
   } as Api;
 }
 
-export function signedIn(role: "owner" | "viewer" = "owner", expiresAt = Date.now() + DAY) {
+export function signedIn(role: Role = "owner", expiresAt = Date.now() + DAY) {
   localStorage.setItem("fridgesense.token", "tok");
   localStorage.setItem("fridgesense.role", role);
   localStorage.setItem("fridgesense.expires", String(expiresAt));

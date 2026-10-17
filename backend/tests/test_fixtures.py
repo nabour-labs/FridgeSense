@@ -14,6 +14,12 @@ RING_FIXTURES = [
     "history_events.json",
     "history_events_pending.json",
     "history_events_string_ts.json",
+    "device_detail.json",
+    "device_detail_recorded.json",
+    "webhook_device_online.json",
+    "webhook_device_offline.json",
+    "video_download_303.json",
+    "video_media_not_found.json",
 ]
 NOVA_FIXTURES = [
     "converse_tool_use.json",

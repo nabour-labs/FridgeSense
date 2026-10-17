@@ -37,6 +37,8 @@ export interface DoorPipelineProps {
   stillCrop: string;
   /** Milliseconds between stills across a motion window (4 to 30 stills per event). */
   stillIntervalMs: string;
+  /** Milliseconds between clip frames the door check looks at (the clip path). */
+  doorFrameIntervalMs: string;
   novaModelId: string;
   novaPriceIn: string;
   novaPriceOut: string;
@@ -44,6 +46,8 @@ export interface DoorPipelineProps {
   novaPriceCacheWrite: string;
   /** "true" adds Bedrock cache points to the analysis request. */
   novaCacheAnalysis: string;
+  /** "false" stops debug traces (raw stills, scores, Nova requests) under each event's debug/. */
+  debugTraces: string;
   /** IANA zone for the household day in usage totals. */
   timeZone: string;
   faceDetectPrice: string;
@@ -87,8 +91,9 @@ export class DoorPipeline extends Construct {
       handler: "fridgesense.handlers.pipeline.handler",
       runtime: Runtime.PYTHON_3_13,
       architecture: Architecture.ARM_64,
-      memorySize: 512,
-      timeout: Duration.seconds(90),
+      // Decodes the event clip for the door check: CPU scales with memory (2048 MB ~ 1.2 vCPU)
+      memorySize: 2048,
+      timeout: Duration.seconds(150),
       logGroup: props.logGroup("PipelineFunction"),
       description: "Door-event workflow steps: window, stills, door check, Nova, inventory",
       environment: {
@@ -98,6 +103,7 @@ export class DoorPipeline extends Construct {
         DOOR_THRESHOLD: props.doorThreshold,
         STILL_CROP: props.stillCrop,
         STILL_INTERVAL_MS: props.stillIntervalMs,
+        DOOR_FRAME_INTERVAL_MS: props.doorFrameIntervalMs,
         NOVA_MODEL_ID: props.novaModelId,
         NOVA_PRICE_IN: props.novaPriceIn,
         NOVA_PRICE_OUT: props.novaPriceOut,
@@ -106,6 +112,7 @@ export class DoorPipeline extends Construct {
         NOVA_CACHE_ANALYSIS: props.novaCacheAnalysis,
         TIME_ZONE: props.timeZone,
         FACE_DETECT_PRICE: props.faceDetectPrice,
+        DEBUG_TRACES: props.debugTraces,
       },
     });
     this.bucket.grantReadWrite(fn);

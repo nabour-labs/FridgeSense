@@ -219,7 +219,7 @@ describe("Ask assistant", () => {
     expect(faces.map((s) => s.Resource)).toEqual(["*"]);
     const env = (apiFunction().Properties.Environment as { Variables: Record<string, unknown> }).Variables;
     expect(env.DOOR_ZONES).toBe("0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18");
-    expect(env.DOOR_THRESHOLD).toBe("0.02");
+    expect(env.DOOR_THRESHOLD).toBe("0.01");
   });
 
   it("turns the assistant on with a daily limit and the pipeline's Nova settings", () => {
@@ -246,6 +246,14 @@ describe("Ask assistant", () => {
     );
     expect(on.NOVA_CACHE_ANALYSIS).toBe("true");
     expect(on.TIME_ZONE).toBe("America/Vancouver");
+  });
+
+  it("turns debug traces off from context", () => {
+    const [fn] = Object.values(
+      synthTemplate({ debugTraces: "false" }).findResources("AWS::Lambda::Function"),
+    ).filter((r) => r.Properties.Handler === "fridgesense.handlers.pipeline.handler");
+    const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    expect(vars.DEBUG_TRACES).toBe("false");
   });
 
   it("lets the API function invoke Nova through the inference profile", () => {

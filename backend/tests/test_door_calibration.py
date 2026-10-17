@@ -135,7 +135,7 @@ def test_setup_from_one_open_and_one_closed_reference(aws):
     setup = run()
     [zone] = setup.zones
     assert zone.box == (0.0, 0.0, 0.5, 1.0)
-    assert zone.feature == "color"
+    assert zone.feature == "blue"
     assert zone.direction == "above"
     assert zone.threshold == pytest.approx(0.05, abs=0.005)
     assert zone.margin == pytest.approx(0.1, abs=0.005)
@@ -249,6 +249,24 @@ def test_too_many_zones(aws):
     assert_fails("at most 6 separate zones")
 
 
+# Blue preferred over color on a tie
+def test_blue_preferred_over_color_on_a_tie(aws):
+    add(color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), BLUE)], size=(200, 100)), LEFT, "open")
+    add(plain(128), LEFT, "closed", at=T0 + 1)
+    [zone] = run().zones
+    assert zone.feature == "blue"
+    assert zone.margin == pytest.approx(0.1, abs=0.005)
+
+
+# Color chosen when the open reference is not blue
+def test_color_chosen_when_the_open_reference_is_not_blue(aws):
+    add(color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), (200, 60, 40))], size=(200, 100)), LEFT, "open")
+    add(plain(128), LEFT, "closed", at=T0 + 1)
+    [zone] = run().zones
+    assert zone.feature == "color"
+    assert zone.margin == pytest.approx(0.1, abs=0.005)
+
+
 # Setup kept per device / setup turns into the door check's rules
 def test_setup_check_for_the_device(aws):
     add(color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), BLUE)], size=(200, 100)), LEFT, "open")
@@ -257,5 +275,5 @@ def test_setup_check_for_the_device(aws):
     check = dc.setup_check(FridgeTable(), ACCOUNT, D1)
     assert check.source == "setup"
     [rule] = check.rules
-    assert (rule.box, rule.feature, rule.direction) == ((0.0, 0.0, 0.5, 1.0), "color", "above")
+    assert (rule.box, rule.feature, rule.direction) == ((0.0, 0.0, 0.5, 1.0), "blue", "above")
     assert dc.setup_check(FridgeTable(), ACCOUNT, D2) is None

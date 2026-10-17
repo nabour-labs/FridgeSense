@@ -1,4 +1,5 @@
-export type Role = "owner" | "viewer";
+/** `owner` is the admin (Debug too), `user` has full access without Debug, `viewer` is read-only. */
+export type Role = "owner" | "user" | "viewer";
 
 export interface Session {
   token: string;
@@ -99,6 +100,41 @@ export interface Box {
   height: number;
 }
 
+export interface LiveSession {
+  /** SDP answer from the camera. */
+  answer: string;
+  session_id: string;
+  /** The camera ends the session after this many seconds. */
+  max_seconds: number;
+}
+
+export interface StatusChange {
+  online: boolean;
+  at: string;
+  source: "webhook" | "poll";
+}
+
+/** The connected camera as Ring reports it, with its recorded online/offline history.
+ * Detail fields are null when Ring did not report them; `ring` is "unavailable" when Ring
+ * could not be reached and only the saved name and history are shown. */
+export interface CameraInfo {
+  device_id: string;
+  name: string;
+  image_url: string | null;
+  manufacturer: string;
+  online: boolean | null;
+  video: { codecs: string[]; ratio: string | null; max_resolution: number | null; supported_resolutions: number[] } | null;
+  image_enhancements: { name: string; on: boolean | null }[] | null;
+  motion_detection: boolean | null;
+  e2e_encryption: boolean | null;
+  location: Record<string, string> | null;
+  /** Newest first, last 30 days. */
+  history: StatusChange[];
+  uptime: { window_days: number; percent: number | null; since: string | null };
+  checked_at: string;
+  ring?: "unavailable";
+}
+
 export interface Snapshot {
   /** Base64 JPEG, faces blurred. */
   image: string;
@@ -106,7 +142,7 @@ export interface Snapshot {
 }
 
 export type DoorStatus = "open" | "closed";
-export type DoorFeature = "color" | "brightness" | "change";
+export type DoorFeature = "blue" | "color" | "brightness" | "change";
 
 /** A camera snapshot with one box around a door or drawer, labeled open or closed. */
 export interface DoorReference {
@@ -139,4 +175,116 @@ export interface FridgeAreaBody {
   device_id: string;
   /** `image` is a base64 JPEG; `box` is in fractions of it. */
   area: { image: string; box: Box; updated_at: string } | null;
+}
+
+export type MotionOutcome = "door_open" | "not_door" | "no_media" | "duplicate";
+
+export interface NovaTotals {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  usd: number;
+  latency_ms: number;
+}
+
+/** One motion the pipeline traced, as listed on the Debug tab. */
+export interface DebugMotion {
+  id: string;
+  device_id: string;
+  /** The motion window's start. */
+  at: string;
+  outcome: MotionOutcome;
+  /** The still and zone furthest past (or closest to) its threshold; null with no stills. */
+  best: { value: number; zone: number; feature: DoorFeature; threshold: number } | null;
+  stills_downloaded: number;
+  door_event_id: string | null;
+  nova: NovaTotals;
+}
+
+export interface MotionPage {
+  motions: DebugMotion[];
+  next: string | null;
+}
+
+export interface ZoneScore {
+  zone: number;
+  value: number;
+  threshold: number;
+  open: boolean;
+}
+
+/** A still the door check asked for: its link and scores, or why it is missing. */
+export interface TracedStill {
+  n: number;
+  at_ms: number;
+  url: string | null;
+  missing_status: number | null;
+  zones: ZoneScore[];
+  best_zone: number | null;
+  open: boolean | null;
+}
+
+export interface TracedZone {
+  zone: number;
+  box: Box;
+  feature: DoorFeature;
+  direction: "above" | "below";
+  threshold: number;
+  margin: number | null;
+  baseline_url: string | null;
+}
+
+export interface TracedDoorReference {
+  id: string;
+  status: DoorStatus;
+  box: Box;
+  created_at: string;
+  url: string | null;
+}
+
+export interface DoorTrace {
+  window: { start_ms: number; end_ms: number; ring_event_id: string | null };
+  outcome: MotionOutcome;
+  door_sk: string | null;
+  opened_at: string | null;
+  closed_at: string | null;
+  rule: {
+    source: "setup" | "default";
+    ran_at: string | null;
+    zones: TracedZone[];
+    references: TracedDoorReference[];
+  };
+  stills: TracedStill[];
+  open_span: number[];
+  picked: number[];
+  stored_urls: string[];
+}
+
+export type RequestBlock =
+  | { type: "text"; text: string }
+  | { type: "cache_point" }
+  | { type: "image"; role: "reference" | "still"; n: number; url: string | null };
+
+/** One Converse attempt: what was sent, what came back, what it cost and took. */
+export interface NovaCall {
+  attempt: number;
+  run_ms: number;
+  model_id: string;
+  outcome: "ok" | "invalid" | "error";
+  request: { content: RequestBlock[]; inferenceConfig: unknown; toolConfig: unknown };
+  response: { output?: unknown; stopReason?: string; usage?: unknown; metrics?: unknown } | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  usd: number;
+  latency_ms: number | null;
+  wall_ms: number;
+  error_code: string | null;
+}
+
+export interface MotionTrace extends Omit<DebugMotion, "nova"> {
+  nova_totals: NovaTotals;
+  door: DoorTrace;
+  nova: NovaCall[];
 }

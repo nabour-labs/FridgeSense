@@ -167,9 +167,9 @@ export class FridgeSenseStack extends Stack {
     // cdk deploy -c timeZone=America/Vancouver
     const timeZone = context("timeZone", "America/Toronto");
     // Used until the owner runs setup on the app's Open/close detection tab.
-    // Re-tune with -c doorZones=x,y,w,h;x,y,w,h -c doorThreshold=0.02
+    // Re-tune with -c doorZones=x,y,w,h;x,y,w,h -c doorThreshold=0.01 (blue-lit share of a zone)
     const doorZones = context("doorZones", "0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18");
-    const doorThreshold = context("doorThreshold", "0.02");
+    const doorThreshold = context("doorThreshold", "0.01");
     const doors = new DoorPipeline(this, "Doors", {
       code,
       baseEnvironment: common.environment,
@@ -183,11 +183,15 @@ export class FridgeSenseStack extends Stack {
       stillCrop: context("stillCrop", "0.30,0.0,0.34,1.0"),
       // About one still per second across each motion window: -c stillIntervalMs=2000
       stillIntervalMs: context("stillIntervalMs", "1000"),
+      // The door check looks at a clip frame this often: -c doorFrameIntervalMs=250
+      doorFrameIntervalMs: context("doorFrameIntervalMs", "500"),
       ...nova,
       // Turn on once measured: cdk deploy -c novaCacheAnalysis=true
       novaCacheAnalysis: context("novaCacheAnalysis", "false"),
       timeZone,
       faceDetectPrice: context("faceDetectPrice", "0.001"),
+      // Per-motion debug traces, kept 7 days (raw stills are unblurred): -c debugTraces=false
+      debugTraces: context("debugTraces", "true"),
     });
 
     const httpFn = new LambdaFn(this, "HttpFunction", {

@@ -7,7 +7,7 @@ import time
 import boto3
 from botocore.config import Config
 
-from fridgesense import deps, door_calibration, door_events, inventory
+from fridgesense import clip_frames, deps, door_calibration, door_events, inventory, traces
 from fridgesense.analysis import NovaAnalyzer
 from fridgesense.faces import DEFAULT_PRICE, FaceBlurrer
 from fridgesense.table import FridgeTable
@@ -44,6 +44,10 @@ def _bucket() -> str:
     return os.environ["STILLS_BUCKET"]
 
 
+def _trace_writer():
+    return traces.writer_from_env(boto3.client("s3"), FridgeTable(), _bucket())
+
+
 def handler(event, context):
     logging.getLogger().setLevel(logging.INFO)
     # The state machine sends {"task", "input"}; direct calls may send the state flat.
@@ -67,13 +71,24 @@ def handler(event, context):
             sleep,
             crop=door_events.parse_crop(os.environ.get("STILL_CROP")),
             interval_ms=door_events.parse_interval(os.environ.get("STILL_INTERVAL_MS")),
+            frame_interval_ms=clip_frames.parse_frame_interval(
+                os.environ.get("DOOR_FRAME_INTERVAL_MS")
+            ),
             setup_for=lambda account_id, device_id: door_calibration.setup_check(
                 FridgeTable(), account_id, device_id
             ),
+            writer=_trace_writer(),
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())
-        return inventory.analyze_task(analyzer, boto3.client("s3"), FridgeTable(), _bucket(), state)
+        return inventory.analyze_task(
+            analyzer,
+            boto3.client("s3"),
+            FridgeTable(),
+            _bucket(),
+            state,
+            writer=_trace_writer(),
+        )
     if task == "save":
         return inventory.save_task(FridgeTable(), state)
     if task == "mark_failed":

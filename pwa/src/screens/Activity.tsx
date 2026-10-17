@@ -1,8 +1,9 @@
-import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, Clock, DoorClosed, Trash2 } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Bug, ChevronLeft, ChevronRight, Clock, DoorClosed, Trash2, Video } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Change, DoorEvent } from "../api/types";
-import { useApp } from "../AppContext";
+import { canEdit, isAdmin, useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
+import { LiveStream } from "../components/LiveStream";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
 import { changeLabel, clock, dayLabel } from "../format";
@@ -29,6 +30,7 @@ export function Activity() {
   /** The cursor of each page so far; the last one is the page shown. */
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const picker = useRef<HTMLInputElement>(null);
+  const [watching, setWatching] = useState(false);
   const today = dateValue(new Date());
   /** Set when the user changes page, so the new page opens at its top once it has loaded. */
   const jumpUp = useRef(false);
@@ -46,15 +48,25 @@ export function Activity() {
 
   return (
     <div className="space-y-4">
-      <input
-        ref={picker}
-        type="date"
-        aria-label="Day"
-        value={dateValue(day)}
-        max={today}
-        onChange={(e) => pickDay(e.target.value)}
-        className="h-11 w-full scroll-mt-24 rounded-xl border border-slate-300 bg-white px-3 font-semibold outline-none [color-scheme:light] focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950 dark:[color-scheme:dark]"
-      />
+      <div className="flex gap-2">
+        <input
+          ref={picker}
+          type="date"
+          aria-label="Day"
+          value={dateValue(day)}
+          max={today}
+          onChange={(e) => pickDay(e.target.value)}
+          className="h-11 min-w-0 flex-1 scroll-mt-24 rounded-xl border border-slate-300 bg-white px-3 font-semibold outline-none [color-scheme:light] focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950 dark:[color-scheme:dark]"
+        />
+        <button
+          onClick={() => setWatching(true)}
+          className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-600 px-4 font-semibold text-white transition hover:bg-brand-700 active:scale-[0.98]"
+        >
+          <Video aria-hidden className="size-5" />
+          Livestream
+        </button>
+      </div>
+      {watching && <LiveStream onClose={() => setWatching(false)} />}
       <EventPage
         key={`${dateValue(day)}/${cursors.at(-1) ?? ""}`}
         day={day}
@@ -160,7 +172,8 @@ function EventPage({
                 <EventCard
                   event={e}
                   onStill={(index) => setViewing({ stills: e.stills, index })}
-                  onDelete={role === "owner" ? () => setDeleting(e) : undefined}
+                  onDelete={canEdit(role) ? () => setDeleting(e) : undefined}
+                  debug={isAdmin(role)}
                 />
               </li>
             ))}
@@ -225,11 +238,14 @@ function EventCard({
   event,
   onStill,
   onDelete,
+  debug = false,
 }: {
   event: DoorEvent;
   onStill: (index: number) => void;
   /** Absent for viewers. */
   onDelete?: () => void;
+  /** Link to the opening's debug trace (owner only: traces hold unblurred stills). */
+  debug?: boolean;
 }) {
   const shown = event.changes.filter((c) => !c.rejected);
   const quiet = "text-sm text-slate-500 dark:text-slate-400";
@@ -242,6 +258,16 @@ function EventCard({
             <Clock aria-hidden className="size-3.5" />
             <span>{event.duration_s} s</span>
           </span>
+          {debug && (
+            <a
+              href={`#config/debug/${encodeURIComponent(event.id)}`}
+              aria-label={`Debug door opening at ${clock(event.opened_at)}`}
+              title="Debug"
+              className="grid size-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            >
+              <Bug aria-hidden className="size-4" />
+            </a>
+          )}
           {onDelete && (
             <button
               type="button"

@@ -193,6 +193,7 @@ test.each([
 const BOX = { x: 0.38, y: 0.32, width: 0.21, height: 0.3 };
 
 test.each([
+  ["camera", (api: ApiClient) => api.camera(), "GET", "/api/camera", undefined],
   ["cameraSnapshot", (api: ApiClient) => api.cameraSnapshot(), "POST", "/api/camera/snapshot", undefined],
   ["doorCalibration", (api: ApiClient) => api.doorCalibration(), "GET", "/api/door-calibration", undefined],
   [
@@ -210,6 +211,8 @@ test.each([
     undefined,
   ],
   ["runDoorSetup", (api: ApiClient) => api.runDoorSetup(), "POST", "/api/door-calibration/run", undefined],
+  ["startLive", (api: ApiClient) => api.startLive("v=0\r\n"), "POST", "/api/camera/live", { offer: "v=0\r\n" }],
+  ["stopLive", (api: ApiClient) => api.stopLive("S/1"), "DELETE", "/api/camera/live/S%2F1", undefined],
   ["fridgeArea", (api: ApiClient) => api.fridgeArea(), "GET", "/api/fridge-area", undefined],
   [
     "saveFridgeArea",
@@ -234,4 +237,29 @@ test("an API error keeps the response body", async () => {
   expect(err.status).toBe(422);
   expect(err.message).toBe("zone 1: open and closed references overlap");
   expect(err.body).toEqual(body);
+});
+
+test("debug motions are listed by day and page", async () => {
+  const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ motions: [], next: null })));
+  const api = new ApiClient(() => "t", fetch);
+  const from = new Date("2026-10-16T04:00:00.000Z");
+  const to = new Date("2026-10-17T04:00:00.000Z");
+  await api.debugMotions(from, to, 10, "abc");
+  const url = new URL(fetch.mock.calls[0][0], "http://x");
+  expect(url.pathname).toBe("/api/debug/motions");
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    from: "2026-10-16T04:00:00.000Z",
+    to: "2026-10-17T04:00:00.000Z",
+    limit: "10",
+    cursor: "abc",
+  });
+  await api.debugMotions(from, to, 10);
+  expect(new URL(fetch.mock.calls[1][0], "http://x").searchParams.has("cursor")).toBe(false);
+});
+
+test("one debug motion is read by id", async () => {
+  const fetch = respond(200, { id: "a/b" });
+  await new ApiClient(() => "t", fetch).debugMotion("a/b");
+  expect(fetch.mock.calls[0][0]).toBe("/api/debug/motions/a%2Fb");
+  expect(fetch.mock.calls[0][1].method).toBe("GET");
 });

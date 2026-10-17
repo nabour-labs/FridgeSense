@@ -5,11 +5,17 @@ import os
 import time
 
 from fridgesense import deps, devices, linking, webhook, workflow
+from fridgesense.camera_info import StatusHistory
 from fridgesense.store import TokenStore, load_app_config
+from fridgesense.table import FridgeTable
 from fridgesense.web import Request, json_response
 
 now = time.time
 motion_handler: webhook.MotionHandler = workflow.default_motion_handler()
+
+
+def status_recorder() -> webhook.StatusRecorder:
+    return StatusHistory(FridgeTable())
 
 
 def handler(event, context):
@@ -22,7 +28,12 @@ def handler(event, context):
         )
     if route == ("POST", "/ring/webhook"):
         return webhook.handle_webhook(
-            req, load_app_config(), webhook.WebhookLog(), motion_handler, now()
+            req,
+            load_app_config(),
+            webhook.WebhookLog(),
+            motion_handler,
+            now(),
+            status=status_recorder(),
         )
     if route == ("GET", "/ring/link"):
         return linking.link_form(req)

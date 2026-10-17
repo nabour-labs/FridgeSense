@@ -141,7 +141,7 @@ def test_nothing_set_up_yet(tokens):
                 {"x": 0.38, "y": 0.32, "width": 0.21, "height": 0.30},
                 {"x": 0.455, "y": 0.60, "width": 0.12, "height": 0.18},
             ],
-            "threshold": 0.02,
+            "threshold": 0.01,
         },
     }
 
@@ -250,7 +250,7 @@ def test_run_setup(owner, monkeypatch):
         "y": 0.0,
         "width": 0.5,
         "height": 1.0,
-        "feature": "color",
+        "feature": "blue",
         "direction": "above",
     }
     assert zone["threshold"] == pytest.approx(0.05, abs=0.005)

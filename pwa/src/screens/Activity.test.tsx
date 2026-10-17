@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
-import type { DoorEvent } from "../api/types";
+import type { DoorEvent, Role } from "../api/types";
 import { ApiError } from "../api/client";
 import type { Api } from "../AppContext";
 import { fakeApi, signedIn } from "../test-utils";
@@ -28,7 +28,7 @@ function event(overrides: Partial<DoorEvent> = {}): DoorEvent {
 
 function renderActivity(
   events: DoorEvent[],
-  { role = "owner", ...overrides }: { role?: "owner" | "viewer" } & Partial<Record<keyof Api, unknown>> = {},
+  { role = "owner", ...overrides }: { role?: Role } & Partial<Record<keyof Api, unknown>> = {},
 ) {
   signedIn(role);
   location.hash = "#activity";
@@ -303,4 +303,46 @@ describe("still links across polls", () => {
     await poll();
     expect(shownSrcs()).toEqual(links("b", 4));
   });
+});
+
+// Owner follows the link
+test("the owner's Debug link opens the door opening's trace", async () => {
+  const api = renderActivity([event({ id: "xyz" })]);
+  const card = await screen.findByRole("article");
+  await userEvent.click(within(card).getByRole("link", { name: "Debug door opening at 18:02" }));
+  await waitFor(() => expect(api.debugMotion).toHaveBeenCalledWith("xyz"));
+  expect(location.hash).toBe("#config/debug/xyz");
+  location.hash = "";
+});
+
+// Viewer has no link
+test("a viewer sees no Debug link", async () => {
+  renderActivity([event()], { role: "viewer" });
+  const card = await screen.findByRole("article");
+  expect(within(card).queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
+});
+
+// No Debug link for users
+test("a user can delete an opening but sees no Debug link", async () => {
+  renderActivity([event()], { role: "user" });
+  const card = await screen.findByRole("article");
+  expect(within(card).getByRole("button", { name: /Delete/ })).toBeInTheDocument();
+  expect(within(card).queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
+});
+
+// Scenario: Button for every role
+test.each(["owner", "user", "viewer"] as const)("the %s sees a Livestream button", async (role) => {
+  renderActivity([event()], { role });
+  expect(await screen.findByRole("button", { name: "Livestream" })).toBeInTheDocument();
+});
+
+test("the Livestream button opens the Livestream dialog", async () => {
+  const api = renderActivity([event()], { role: "viewer" });
+  await userEvent.click(await screen.findByRole("button", { name: "Livestream" }));
+  expect(screen.getByRole("dialog", { name: "Livestream" })).toBeInTheDocument();
+  // jsdom has no WebRTC, so the dialog says so instead of calling the API.
+  expect(screen.getByText("This browser can't play live video.")).toBeInTheDocument();
+  expect(api.startLive).not.toHaveBeenCalled();
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

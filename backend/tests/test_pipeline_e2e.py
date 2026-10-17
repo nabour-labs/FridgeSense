@@ -22,6 +22,7 @@ ACCOUNT = "ava1.ring.account.A1"
 DEVICE = "ava1.ring.device.D1"
 HISTORY = f"{API_BASE}/v1/history/devices/{DEVICE}/events"
 DOWNLOAD = f"{API_BASE}/v1/devices/{DEVICE}/media/image/download"
+CLIP = f"{API_BASE}/v1/devices/{DEVICE}/media/video/download"
 RUN_INPUT = {
     "account_id": ACCOUNT,
     "device_id": DEVICE,
@@ -70,8 +71,14 @@ OPEN = color_jpeg((128, 128, 128), [((0.2, 0.2, 0.4, 0.5), (40, 90, 200))])  # l
 CLOSED = color_jpeg((128, 128, 128))  # grey steel doors
 
 
+def no_clip():
+    """Ring has no clip for the event: the door check falls back to sampled stills."""
+    return respx.post(CLIP).respond(416, json={"code": "MEDIA_NOT_FOUND"})
+
+
 def ring_serves(still: bytes):
     respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
+    no_clip()
     respx.post(DOWNLOAD).mock(
         side_effect=lambda r: httpx.Response(303, headers={"Location": "https://dl.example.com/x"})
     )
@@ -105,6 +112,30 @@ def test_door_opening_updates_inventory(env, faces):
     assert event["closed_at"] == "2026-08-14T13:53:41.000Z"
     env.assert_no_pending_responses()
 
+    # pipeline-debug-traces: the run leaves its door trace and one Nova call trace
+    debug = f"accounts/{ACCOUNT}/devices/{DEVICE}/events/{state['window']['start_ms']}/debug/"
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET, Prefix=debug)
+    names = {o["Key"].removeprefix(debug) for o in listing["Contents"]}
+    assert "door.json" in names
+    assert len([n for n in names if n.startswith("nova-") and n.endswith("-1.json")]) == 1
+    [trace] = table.query(ACCOUNT, "TRACE#")
+    assert trace["outcome"] == "door_open"
+    [call] = trace["nova_calls"]
+    assert (call["outcome"], call["input_tokens"], call["latency_ms"]) == ("ok", 1180, 2140)
+
+
+@respx.mock
+def test_tracing_off_leaves_no_debug_files(env, faces, monkeypatch):
+    monkeypatch.setenv("DEBUG_TRACES", "false")
+    env.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    no_faces(faces)
+    ring_serves(OPEN)
+    state = step("analyze", step("fetch_stills", step("find_window", RUN_INPUT)))
+    assert "analysis" in state
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET)
+    assert not any("/debug/" in o["Key"] for o in listing["Contents"])
+    assert FridgeTable().query(ACCOUNT, "TRACE#") == []
+
 
 @respx.mock
 def test_closed_door_stops_before_nova(env, faces):
@@ -135,6 +166,7 @@ def test_analysis_receives_blurred_bytes(env, faces, monkeypatch):
     monkeypatch.setenv("DOOR_THRESHOLD", "0")  # the checkerboard has no colour; 0 lets it through
     downloaded = checkerboard_jpeg()
     respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
+    no_clip()
     respx.post(DOWNLOAD).mock(
         side_effect=lambda r: httpx.Response(303, headers={"Location": "https://dl.example.com/x"})
     )
@@ -246,6 +278,53 @@ def test_invalid_interval_config_fails_before_ring(env, monkeypatch, value):
     with pytest.raises(ValueError, match="STILL_INTERVAL_MS"):
         step("fetch_stills", state)
     assert not download.called
+
+
+# Door check on the event clip, through the handler (frames every 500 ms by default)
+@respx.mock
+def test_door_opening_from_the_clip(env, faces, tmp_path, monkeypatch):
+    from tests.clip_video import door_clip
+
+    monkeypatch.delenv("DOOR_FRAME_INTERVAL_MS", raising=False)
+    env.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+    no_faces(faces)
+    respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
+    clip = door_clip(tmp_path / "c.mp4", [(4000, 12_500)], duration_ms=25_000).read_bytes()
+    respx.post(CLIP).respond(303, headers={"Location": "https://clip.example.com/c.mp4"})
+    respx.get("https://clip.example.com/c.mp4").respond(200, content=clip)
+    stills = respx.post(DOWNLOAD).mock(
+        side_effect=lambda r: httpx.Response(303, headers={"Location": "https://dl.example.com/x"})
+    )
+    respx.get("https://dl.example.com/x").respond(200, content=OPEN)
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+    assert stills.call_count == 4  # only at the times picked from the open span
+    event = FridgeTable().get(account_pk(ACCOUNT), state["door_sk"])
+    assert event["opened_at"] == "2026-08-14T13:53:20.000Z"
+    assert event["closed_at"] == "2026-08-14T13:53:28.500Z"
+    # the door trace keeps every checked frame
+    debug = f"accounts/{ACCOUNT}/devices/{DEVICE}/events/{state['window']['start_ms']}/debug/"
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET, Prefix=debug)
+    raws = [
+        o["Key"] for o in listing["Contents"] if o["Key"].removeprefix(debug).startswith("raw-")
+    ]
+    assert len(raws) == 50
+
+
+# Invalid frame interval
+@respx.mock
+@pytest.mark.parametrize("value", ["0", "-5", "abc"])
+def test_invalid_frame_interval_fails_before_ring(env, monkeypatch, value):
+    monkeypatch.setenv("DOOR_FRAME_INTERVAL_MS", value)
+    clip = respx.post(CLIP).respond(403)
+    download = respx.post(DOWNLOAD).respond(303, headers={"Location": "https://dl.example.com/x"})
+    state = {
+        **RUN_INPUT,
+        "window": {"status": "ready", "start_ms": 1, "end_ms": 2, "ring_event_id": None},
+    }
+    with pytest.raises(ValueError, match="DOOR_FRAME_INTERVAL_MS"):
+        step("fetch_stills", state)
+    assert not clip.called and not download.called
 
 
 def run_setup_for(device: str) -> None:

@@ -46,6 +46,13 @@ function renderTab(data: DoorSetup, { role = "owner", api: overrides = {} } = {}
 const refsRegion = () => screen.findByRole("region", { name: "Door references" });
 const dialog = () => screen.getByRole("dialog");
 
+// Blue light feature named
+test("a blue setup zone is named Blue light", async () => {
+  const setup = SET_UP.setup!;
+  renderTab({ ...SET_UP, setup: { ...setup, zones: [{ ...setup.zones[0], feature: "blue" }] } });
+  expect(await screen.findByText("Zone 1: Blue light above 5.0%, margin 10.0%")).toBeInTheDocument();
+});
+
 // References shown
 test("references show their box, status, score and the setup state", async () => {
   renderTab(SET_UP);
