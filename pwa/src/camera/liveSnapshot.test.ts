@@ -1,7 +1,7 @@
 import { ApiError } from "../api/client";
 import type { LiveSession, Snapshot } from "../api/types";
 import { fakeApi } from "../test-utils";
-import { FRAME_WAIT_MS, FRAMES_NEEDED, liveSnapshot } from "./liveSnapshot";
+import { FRAME_WAIT_MS, FRAMES_NEEDED, liveSnapshot, NoVideo } from "./liveSnapshot";
 
 const SESSION: LiveSession = { answer: "v=0\r\nanswer\r\n", session_id: "S1", max_seconds: 60 };
 const BLURRED: Snapshot = { image: "BLURRED", captured_at: "2026-10-15T19:20:10.000Z" };
@@ -158,15 +158,27 @@ test("when the live route fails, the snapshot is the Ring still", async () => {
 });
 
 // No frames in time
-test("with no frames for 15 s, the session ends and the Ring still is requested", async () => {
+test("with no frames for 15 s, the camera is reported as not sending video", async () => {
   const a = api();
   const { result } = await start(a);
   decodeFrames(FRAMES_NEEDED - 1);
   await vi.advanceTimersByTimeAsync(FRAME_WAIT_MS);
+  await expect(result).rejects.toBeInstanceOf(NoVideo);
+  expect(a.stopLive).toHaveBeenCalledWith("S1");
+  expect(a.cameraSnapshot).not.toHaveBeenCalled();
+  expect(a.cameraFrame).not.toHaveBeenCalled();
+});
+
+// Connection fails before any frame
+test("a connection that fails before any frame still falls back", async () => {
+  const a = api();
+  const peer = new FakePeer();
+  const { result } = await start(a, peer);
+  decodeFrames(3);
+  peer.connectionState = "failed";
+  peer.onconnectionstatechange?.();
   await expect(result).resolves.toEqual({ image: "STILL", captured_at: "x" });
   expect(a.stopLive).toHaveBeenCalledWith("S1");
-  expect(a.cameraSnapshot).toHaveBeenCalledTimes(1);
-  expect(a.cameraFrame).not.toHaveBeenCalled();
 });
 
 test("a connection that fails falls back to the Ring still", async () => {

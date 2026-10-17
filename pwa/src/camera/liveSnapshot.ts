@@ -1,6 +1,6 @@
 import type { Api } from "../AppContext";
 import type { Snapshot } from "../api/types";
-import { livePeer, openLive, type LiveConnection } from "../components/LiveStream";
+import { livePeer, NO_VIDEO, openLive, type LiveConnection } from "../components/LiveStream";
 import { grabFrame } from "../image";
 
 /** The first frames after connecting are often grey until a keyframe arrives. */
@@ -11,6 +11,15 @@ const POLL_MS = 100;
 /** True for the error a cancelled snapshot rejects with. */
 export function isAbort(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
+}
+
+/** The live view connected but the camera sent no video (for example, it is unplugged).
+ * Not a reason to fall back: the newest recording would look current but isn't. */
+export class NoVideo extends Error {
+  constructor() {
+    super(NO_VIDEO);
+    this.name = "NoVideo";
+  }
 }
 
 /** The live view could not give a frame (no WebRTC, no connection, no frames in time). */
@@ -59,6 +68,7 @@ export function liveFrame(
     let conn: LiveConnection | null = null;
     let cancelFrames = () => {};
     let finished = false;
+    let streamed = false;
     const finish = (settle: () => void) => {
       if (finished) return;
       finished = true;
@@ -69,11 +79,15 @@ export function liveFrame(
       settle();
     };
     const onAbort = () => finish(() => reject(new DOMException("Snapshot cancelled", "AbortError")));
-    const timer = setTimeout(() => finish(() => reject(new NoLiveFrame("no frames in time"))), FRAME_WAIT_MS);
+    const timer = setTimeout(
+      () => finish(() => reject(streamed ? new NoVideo() : new NoLiveFrame("no video track in time"))),
+      FRAME_WAIT_MS,
+    );
     signal?.addEventListener("abort", onAbort);
 
     conn = openLive(api, createPeer, {
       onStream(stream) {
+        streamed = true;
         const video = document.createElement("video");
         video.muted = true;
         video.playsInline = true;
@@ -88,7 +102,7 @@ export function liveFrame(
         });
       },
       onError(message) {
-        finish(() => reject(new NoLiveFrame(message)));
+        finish(() => reject(message === NO_VIDEO ? new NoVideo() : new NoLiveFrame(message)));
       },
     });
     if (!conn) finish(() => reject(new NoLiveFrame("no WebRTC")));

@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-17 · Ring Partner API · Live session "connects" for an unplugged camera but sends no video
+
+- **Task:** take setup snapshots from a frame of the WHEP live view, and play the Livestream dialog.
+- **Steps:** with the Indoor Cam's power cable unplugged, `GET /v1/devices/{id}?include=status,...` through our `GET /api/camera`, then `POST /v1/devices/{id}/media/streaming/whep/sessions` with a recvonly video+audio offer from Chrome, `setRemoteDescription` with the answer, and `getStats()` every 3 s for 42 s.
+- **Expected:** the device shown offline, or the session refused with an error.
+- **Actual:** the device status said `"online": true`. Ring answered the session with a normal SDP (`H264/90000 profile-level-id=64001f`, `OPUS/48000/2`, host candidates). ICE and DTLS reached `connected` in about 0.2 s and the browser fired the video track, but no RTP ever arrived: 26 transport packets in 24 s, no `inbound-rtp` stats, `framesDecoded` never above 0. The connection went to `disconnected` after about 27 s and `failed` after about 39 s. The app showed a black picture with a countdown.
+- **Severity:** Medium
+- **Workaround:** treat "no decoded video frame within 15 s of the answer" as "camera not sending video" and tell the user to check it's plugged in.
+- **Suggestion:** refuse the WHEP session (for example 503 with a device-offline code) when the camera can't stream, and update the device's `online` status sooner.
+
 ### 2026-10-17 · Ring Partner API · No way to get a still of the camera "now"
 
 - **Task:** take a current picture of the fridge for the setup screens (door references, fridge area).

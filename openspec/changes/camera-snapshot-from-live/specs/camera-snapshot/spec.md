@@ -71,14 +71,18 @@ When a setup screen asks for a camera snapshot ("Camera snapshot" in Reference i
 - **THEN** the screen shows the same message it shows today when `POST /api/camera/snapshot` answers 502 (for Reference images, "The camera can't be reached right now."), no image is shown, and `POST /api/camera/snapshot` is not requested
 
 ### Requirement: Fall back to the Ring still
-If the live view cannot give a frame, the app SHALL request `POST /api/camera/snapshot` once instead and handle its answer as before (including 409 "No recent footage. Walk past the camera, then try again."). The live view cannot give a frame when the browser has no WebRTC, `POST /api/camera/live` fails, the connection fails, or fewer than 10 frames are decoded within 15 s. Any live session already opened SHALL be ended.
+If the live view cannot give a frame, the app SHALL request `POST /api/camera/snapshot` once instead and handle its answer as before (including 409 "No recent footage. Walk past the camera, then try again."). The live view cannot give a frame when the browser has no WebRTC, `POST /api/camera/live` fails, or the connection fails. Any live session already opened SHALL be ended. If the live view connects but fewer than 10 frames are decoded within 15 s, the camera is not sending video: the app SHALL NOT fall back, and the screen SHALL show "The camera isn't sending video. Check that it's plugged in." with "Try again".
 
 #### Scenario: Live route unavailable
 - **WHEN** `POST /api/camera/live` answers 502 and `POST /api/camera/snapshot` answers 200
 - **THEN** the screen shows the image from `POST /api/camera/snapshot` and `POST /api/camera/frame` is not requested
 
 #### Scenario: No frames in time
-- **WHEN** the live view connects but decodes no frames for 15 s
+- **WHEN** the live view connects but decodes no frames for 15 s (the camera is unplugged)
+- **THEN** `DELETE /api/camera/live/{session_id}` is requested, `POST /api/camera/snapshot` is not requested, and the screen shows "The camera isn't sending video. Check that it's plugged in." with "Try again"
+
+#### Scenario: Connection fails before any frame
+- **WHEN** the connection state becomes `failed` before 10 frames are decoded
 - **THEN** `DELETE /api/camera/live/{session_id}` is requested and `POST /api/camera/snapshot` is requested once
 
 #### Scenario: Browser without WebRTC
