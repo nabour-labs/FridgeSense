@@ -1,0 +1,12 @@
+{
+  "_note": "Recorded 2026-10-17 from POST /v1/devices/{id}/media/video/download with {timestamp, duration} in ms. Location redacted (pre-signed: X-Amz-Date, X-Amz-Expires, req_id, req_type, security_token).",
+  "request": {
+    "timestamp": 1792181318101,
+    "duration": 20026
+  },
+  "status": 303,
+  "headers": {
+    "content-length": "0",
+    "location": "https://download-us-east-1.prod.phoenix.devices.amazon.dev/v1/download?X-Amz-Date=REDACTED&X-Amz-Expires=REDACTED&req_id=REDACTED&req_type=REDACTED&security_token=REDACTED"
+  }
+}

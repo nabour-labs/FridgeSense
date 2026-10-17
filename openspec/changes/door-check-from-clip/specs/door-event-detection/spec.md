@@ -22,8 +22,8 @@ The fetch-stills step SHALL first request the event clip once with `POST /v1/dev
 - **THEN** that request carries no `Authorization` header
 
 #### Scenario: Clip not ready yet
-- **WHEN** Ring answers the clip request with 425 `RECORDING_NOT_READY` or 416 `MEDIA_NOT_FOUND`, then with 303
-- **THEN** the clip is requested again and the door check runs on its frames, up to 3 attempts in total
+- **WHEN** Ring answers 425 `RECORDING_NOT_READY` or 416 `MEDIA_NOT_FOUND`, either to the clip request or to the `Location` download after a 303, and then a later attempt returns the MP4
+- **THEN** the whole request (POST, then link) is repeated and the door check runs on the clip's frames, up to 3 attempts in total
 
 #### Scenario: Not a door opening
 - **WHEN** no frame passes the door check
@@ -60,13 +60,17 @@ For a door opening found in the clip, the system SHALL pick up to 4 times from t
 - **THEN** the clip frame at offset 7000 ms is face-blurred and stored as that still, and analysis still gets 4 stills
 
 ### Requirement: Fall back to still sampling without the clip
-If the clip can't be used, the system SHALL log `clip_unavailable` with the device ID and a `reason`, then run the door check on sampled stills as it does today. The reasons are: `status_<code>` (any other HTTP status, or 425/416 after 3 attempts), `download_failed` (Ring, OAuth or network error), `too_large` (more than 300 MB), `decode_failed` (not a readable video) and `no_frames` (no frame at offset 0). A clip problem SHALL NOT make the step fail or drop a door opening.
+If the clip can't be used, the system SHALL log `clip_unavailable` with the device ID and a `reason`, then run the door check on sampled stills as it does today. The reasons are: `status_<code>` (any other HTTP status from the request or the link, or 425/416 after 3 attempts), `download_failed` (Ring, OAuth or network error), `too_large` (more than 300 MB), `decode_failed` (not a readable video) and `no_frames` (no frame at offset 0). A clip problem SHALL NOT make the step fail or drop a door opening.
 
 #### Scenario: Ring refuses the clip
 - **WHEN** Ring answers the clip request with 403
 - **THEN** `clip_unavailable` is logged with `reason = "status_403"`, and the door check runs on stills as before
 
 #### Scenario: Clip never ready
+- **WHEN** Ring answers 303 to all 3 clip requests and each `Location` download answers 416 `MEDIA_NOT_FOUND`
+- **THEN** `clip_unavailable` is logged with `reason = "status_416"`, and the door check runs on stills
+
+#### Scenario: Clip request never ready
 - **WHEN** Ring answers 425 to all 3 clip requests
 - **THEN** `clip_unavailable` is logged with `reason = "status_425"`, and the door check runs on stills
 

@@ -29,7 +29,7 @@
 
 5. **Stills at picked frame times.** After `pick(span)`, `fetch_still` runs for each picked time, in parallel, with `STILL_RETRY_DELAYS_S`. A miss falls back to the frame's JPEG. The opening is already confirmed by the clip, so a missing still never turns it into `no_media` while the frame exists.
 
-6. **Request body `{"timestamp": start_ms, "duration": end_ms - start_ms}` in ms**, as stills use ms timestamps. Task 1.1 confirms the units and any frame-rate option against one real response before the code relies on them. If Ring takes an fps option, request about 4 fps, which is enough for a 0.5 s spacing and makes downloads smaller.
+6. **Request body `{"timestamp": start_ms, "duration": end_ms - start_ms}` in ms.** Confirmed on 2026-10-17 (task 1.1): Ring's error echoed the range `1792181318101-1792181338127`, which is start + 20026 ms. The POST answers 303 straight away (`content-length: 0`). Missing footage only shows up as `416 MEDIA_NOT_FOUND` from the pre-signed link, so 416/425 retries cover the POST and the link together. No fps option was tried; frames are sampled from whatever rate Ring returns. In the one probe, a 20 s motion event about 15 h old had no clip, so it's unknown how often clips exist for motion events. That's why the still fallback is the safety net, and why `clip_unavailable` counts are logged.
 
 7. **Lambda sizing: 2048 MB, 150 s timeout.** Decoding is CPU-bound, and 2048 MB gives about 1.2 vCPU. Even at 5× the local decode time (~28 s for 2 minutes), plus the download and ≤4 stills, the step stays well under 150 s. The fallback path's 90 s still budget fits inside 150 s.
 

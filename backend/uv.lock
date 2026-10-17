@@ -388,6 +388,7 @@ name = "fridgesense"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "av" },
     { name = "httpx" },
     { name = "mangum" },
     { name = "mcp" },
@@ -409,6 +410,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", specifier = ">=14" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "mangum", specifier = ">=0.22.0" },
     { name = "mcp", specifier = ">=2.3,<3" },
