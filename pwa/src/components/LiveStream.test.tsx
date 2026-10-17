@@ -77,6 +77,10 @@ class FakePeer {
   }
 }
 
+/** `GET /api/camera` for a camera Ring reports online; only `online` matters here. */
+const ONLINE = { name: "Fridge", online: true };
+const OFFLINE_MESSAGE = "The camera is offline. Check that it's plugged in and connected to Wi-Fi.";
+
 const SESSION: LiveSession = { answer: "v=0\r\nanswer\r\n", session_id: "S1", max_seconds: 60 };
 
 /** Let pending promises (offer, API answer) settle. */
@@ -100,7 +104,11 @@ function renderLive(
   onStats?: (stats: DecoderStats) => void,
 ) {
   const peers: FakePeer[] = [];
-  const api = fakeApi({ startLive: vi.fn().mockResolvedValue(SESSION), ...overrides });
+  const api = fakeApi({
+    camera: vi.fn().mockResolvedValue(ONLINE),
+    startLive: vi.fn().mockResolvedValue(SESSION),
+    ...overrides,
+  });
   const report = vi.fn();
   const make =
     createPeer ??
@@ -143,6 +151,7 @@ test("Live video plays", async () => {
   expect(video.muted).toBe(true);
   expect(video).toHaveAttribute("playsinline");
   expect(screen.getByText("60 s left")).toBeInTheDocument();
+  fireEvent.playing(video);
   expect(screen.queryByText("Connecting…")).not.toBeInTheDocument();
 });
 
@@ -340,4 +349,75 @@ test("decoder stats stop when the dialog closes", async () => {
   expect(calls).toBeGreaterThan(0);
   await wait(3_000);
   expect(peers[0].statsCalls).toBe(calls);
+});
+
+// Online check before a live view
+test("Camera offline", async () => {
+  const { api, peers, report } = renderLive({ camera: vi.fn().mockResolvedValue({ ...ONLINE, online: false }) });
+  await settle();
+  expect(screen.getByText(OFFLINE_MESSAGE)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  expect(peers).toHaveLength(0);
+  expect(api.startLive).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("live-video")).not.toBeInTheDocument();
+  expect(report).not.toHaveBeenCalled();
+});
+
+test("Camera online", async () => {
+  const { api } = renderLive();
+  expect(screen.getByText("Connecting…")).toBeInTheDocument();
+  await settle();
+  expect(api.camera).toHaveBeenCalledTimes(1);
+  expect(api.startLive).toHaveBeenCalledWith("v=0\r\noffer\r\n");
+});
+
+test.each([
+  ["online null", vi.fn().mockResolvedValue({ name: "Fridge", online: null, ring: "unavailable" })],
+  ["502", vi.fn().mockRejectedValue(new ApiError(502, "camera unavailable"))],
+  ["network error", vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))],
+])("Status unknown (%s) starts the live view", async (_, camera) => {
+  const { api, report } = renderLive({ camera });
+  await settle();
+  expect(api.startLive).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(OFFLINE_MESSAGE)).not.toBeInTheDocument();
+  expect(report).not.toHaveBeenCalled();
+});
+
+test("Try again after offline", async () => {
+  const camera = vi.fn().mockResolvedValueOnce({ ...ONLINE, online: false }).mockResolvedValue(ONLINE);
+  const { api } = renderLive({ camera });
+  await settle();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await settle();
+  expect(camera).toHaveBeenCalledTimes(2);
+  expect(api.startLive).toHaveBeenCalledTimes(1);
+});
+
+test("Closed during the check", async () => {
+  let answer!: (info: unknown) => void;
+  const { api, peers } = renderLive({ camera: vi.fn().mockReturnValue(new Promise((r) => (answer = r))) });
+  await settle();
+  closeDialog();
+  await act(async () => answer(ONLINE));
+  await settle();
+  expect(peers).toHaveLength(0);
+  expect(api.startLive).not.toHaveBeenCalled();
+});
+
+// No black picture while connecting
+test("Track arrived, video not playing yet", async () => {
+  const { peers } = renderLive();
+  await settle();
+  peers[0].track();
+  expect(screen.getByTestId("live-video")).toBeInTheDocument();
+  expect(screen.getByText("Connecting…")).toBeInTheDocument();
+  expect(screen.getByText("60 s left")).toBeInTheDocument();
+});
+
+test("Video plays", async () => {
+  const { peers } = renderLive();
+  await settle();
+  peers[0].track();
+  fireEvent.playing(screen.getByTestId("live-video"));
+  expect(screen.queryByText("Connecting…")).not.toBeInTheDocument();
 });

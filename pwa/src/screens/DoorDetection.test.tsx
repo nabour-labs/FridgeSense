@@ -4,7 +4,7 @@ import { ApiError } from "../api/client";
 import type { DoorReference, DoorSetup } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { drag, fakeApi } from "../test-utils";
-import { NoVideo } from "../camera/liveSnapshot";
+import { CameraOffline, NoVideo } from "../camera/liveSnapshot";
 import { DoorDetection } from "./DoorDetection";
 
 const BOX = { x: 0.38, y: 0.32, width: 0.21, height: 0.3 };
@@ -276,4 +276,17 @@ test("no shift or tuning line before the first event", async () => {
   expect(screen.queryByText(/Adjusted for camera shift/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Tuned from/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Camera moved/)).not.toBeInTheDocument();
+});
+
+// Door reference while the camera is offline
+test("an offline camera warns in the add sheet and offers Try again", async () => {
+  const cameraSnapshot = vi.fn().mockRejectedValueOnce(new CameraOffline()).mockResolvedValueOnce(SNAPSHOT);
+  const { report } = renderTab(setupOf([]), { api: { cameraSnapshot } });
+  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  expect(await within(dialog()).findByRole("alert")).toHaveTextContent(
+    "The camera is offline. Check that it's plugged in and connected to Wi-Fi.",
+  );
+  expect(report).not.toHaveBeenCalled();
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Try again" }));
+  expect(cameraSnapshot).toHaveBeenCalledTimes(2);
 });
