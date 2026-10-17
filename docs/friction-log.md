@@ -23,6 +23,26 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-16 · Ring Partner API · Device capabilities and configurations don't match the docs
+
+- **Task:** show the camera's image enhancements (night vision, HDR) on the Config Camera tab.
+- **Steps:** `GET /v1/devices/{id}?include=status,capabilities,configurations,location` for the Indoor Cam (read-only, once), compared with the Capabilities, Configurations and Status sections of the Partner API docs.
+- **Expected:** `device-capabilities.image_enhancements.configurations` lists the on/off settings the device supports, each with a matching key in `device-configurations.image_enhancements`, as in the docs example (`color_night_vision`, `hdr`, `ir_led_night_vision`, `privacy_zones`).
+- **Actual:** capabilities listed `["ir_led_night_vision", "privacy_zones", "snapshot"]`. `snapshot` is not documented and has no configuration key. Configurations still returned `color_night_vision`, `hdr` and `auto_zoom_track` (all `"off"`), which the camera does not list as supported. The camera's status also carried undocumented `reported_at`, `state` and `audio.snooze` fields (the docs describe snooze for chimes only), and the location resource id was `ava1.ring.location.<id>`, not `ava1.ring.device.location.<id>` as in the docs. The single-device route does honor `include` (the docs show it on the list route only).
+- **Severity:** Low
+- **Workaround:** show an enhancement only when it is in capabilities and configurations gives it an `"on"`/`"off"` value; follow relationship ids rather than assuming their format.
+- **Suggestion:** document every capability value (what `snapshot` means), say whether configurations can hold unsupported settings, document `reported_at` and `state` on `device-status`, and show `include` on `GET /v1/devices/{id}`.
+
+### 2026-10-16 · Ring Partner API · Doc pages from search results return 404
+
+- **Task:** read the device status and device offline webhook docs.
+- **Steps:** opened `https://developer.amazon.com/docs/ring/status.html` and `https://developer.amazon.com/docs/ring/device-offline.html`, both returned by a web search for the Partner API status and webhook docs.
+- **Expected:** the Status and Device Offline pages.
+- **Actual:** "404 Page not found" on both. The content now lives as sections of the single page `https://developer.amazon.com/docs/ring/api-documentation.html`, with no redirect from the old URLs.
+- **Severity:** Low
+- **Workaround:** searched the single API documentation page for the sections.
+- **Suggestion:** redirect the old per-topic URLs to their anchors on the combined page.
+
 ### 2026-10-15 · Bedrock Nova · Nova 2 Lite caches a prefix under the documented 1K-token minimum
 
 - **Task:** check that the Ask assistant's system-block `cachePoint` caches before shipping it.

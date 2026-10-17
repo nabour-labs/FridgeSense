@@ -153,12 +153,20 @@ def parse_device(doc: dict, device_id: str) -> dict[str, Any]:
 
     enhancements = None
     if caps and isinstance(caps.get("image_enhancements"), dict):
-        settings = (conf or {}).get("image_enhancements") or {}
-        enhancements = [
-            {"name": name, "on": _on_off(settings.get(name))}
-            for name in caps["image_enhancements"].get("configurations") or []
-            if not name.endswith("_zones")  # zones are polygons, not an on/off setting
-        ]
+        settings = (conf or {}).get("image_enhancements")
+        supported = caps["image_enhancements"].get("configurations") or []
+        if isinstance(settings, dict):
+            # Only supported settings that are on/off: Ring also lists `snapshot` and zone
+            # polygons as capabilities, and configures settings the camera does not support.
+            enhancements = [
+                {"name": name, "on": _on_off(settings[name])}
+                for name in supported
+                if _on_off(settings.get(name)) is not None
+            ]
+        else:
+            enhancements = [
+                {"name": name, "on": None} for name in supported if not name.endswith("_zones")
+            ]
 
     e2e = ((conf or {}).get("e2e_encryption") or {}).get("enabled")
     online = (status or {}).get("online")

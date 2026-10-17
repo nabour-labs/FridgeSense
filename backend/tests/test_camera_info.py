@@ -202,3 +202,19 @@ def test_enhancements_without_configurations_are_unknown():
         {"name": "ir_led_night_vision", "on": None},
     ]
     assert d["motion_detection"] is None and d["e2e_encryption"] is None
+
+
+# Scenario: Supported capability without an on/off setting
+def test_recorded_device_response():
+    d = parse_device(load_fixture("ring/device_detail_recorded.json"), DEVICE)
+    assert d["name"] == "Fridge"
+    assert d["online"] is False
+    assert d["video"] == {
+        "codecs": ["AVC"],
+        "ratio": "16:9",
+        "max_resolution": 1440,
+        "supported_resolutions": [1440],
+    }
+    assert d["image_enhancements"] == [{"name": "ir_led_night_vision", "on": False}]
+    assert d["motion_detection"] is True and d["e2e_encryption"] is False
+    assert d["location"] == {"country": "US", "state": "Washington"}
