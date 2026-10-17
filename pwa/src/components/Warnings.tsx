@@ -7,6 +7,8 @@ type Fix = { label: string; href: string };
 
 function fixes(w: SetupWarning): Fix[] {
   switch (w.code) {
+    case "monitoring_paused":
+      return [{ label: "Resume on Camera tab", href: "#config" }];
     case "motion_detection_off":
       return [{ label: "Open Camera", href: "#config" }];
     case "door_setup_missing":

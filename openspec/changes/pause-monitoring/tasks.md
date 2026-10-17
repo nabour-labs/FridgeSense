@@ -29,10 +29,10 @@
 
 ## 6. PWA
 
-- [ ] 6.1 Add `Monitoring` to `CameraInfo`, the `monitoring_paused` variant to `SetupWarning`, and `setMonitoring(paused)` to `api/client.ts`, with a failing client test in `client.test.ts` that it sends `PUT /api/camera/monitoring` `{"paused": true}`; then make it pass with `npm test -- client`
-- [ ] 6.2 Write failing tests in `screens/Camera.test.tsx` for "Active camera", "Pause from the tab", "Resume from the tab", "Change fails" and "Viewer"; confirm they fail
+- [x] 6.1 Add `Monitoring` to `CameraInfo`, the `monitoring_paused` variant to `SetupWarning`, and `setMonitoring(paused)` to `api/client.ts`, with a failing client test in `client.test.ts` that it sends `PUT /api/camera/monitoring` `{"paused": true}`; then make it pass with `npm test -- client`
+- [x] 6.2 Write failing tests in `screens/Camera.test.tsx` for "Active camera", "Pause from the tab", "Resume from the tab", "Change fails" and "Viewer"; confirm they fail
 - [ ] 6.3 Implement the FridgeSense card and switch in `screens/Camera.tsx` until `npm test -- Camera` passes; check it at 375 px in the preview in light and dark mode
-- [ ] 6.4 Write a failing test in `components/Warnings.test.tsx` for "Banner link", then add the `monitoring_paused` fix link until `npm test -- Warnings` passes
+- [x] 6.4 Write a failing test in `components/Warnings.test.tsx` for "Banner link", then add the `monitoring_paused` fix link until `npm test -- Warnings` passes
 
 ## 7. Docs and full suite
 

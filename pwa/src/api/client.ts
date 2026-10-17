@@ -10,6 +10,7 @@ import type {
   FridgeAreaBody,
   Inventory,
   LiveSession,
+  Monitoring,
   MotionPage,
   MotionTrace,
   Pending,
@@ -119,6 +120,11 @@ export class ApiClient {
   /** The connected camera's details, status and online history. */
   camera(): Promise<CameraInfo> {
     return this.request("GET", "/api/camera");
+  }
+
+  /** Pauses or resumes FridgeSense for the camera. */
+  setMonitoring(paused: boolean): Promise<Monitoring> {
+    return this.request("PUT", "/api/camera/monitoring", { paused });
   }
 
   /** A face-blurred still from the camera, not stored. `signal` is for snapshot wrappers that
