@@ -24,8 +24,8 @@
 
 ## 5. Paused warning
 
-- [ ] 5.1 Write failing tests in `backend/tests/test_api_warnings.py` for "Paused", "Paused with other problems" and "Active"; confirm they fail
-- [ ] 5.2 Add `monitoring_paused` first in `setup_warnings.warnings_body` until `uv run pytest tests/test_api_warnings.py` passes
+- [x] 5.1 Write failing tests in `backend/tests/test_api_warnings.py` for "Paused", "Paused with other problems" and "Active"; confirm they fail
+- [x] 5.2 Add `monitoring_paused` first in `setup_warnings.warnings_body` until `uv run pytest tests/test_api_warnings.py` passes
 
 ## 6. PWA
 

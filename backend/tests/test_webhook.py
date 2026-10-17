@@ -306,7 +306,9 @@ def test_paused_camera(aws, motion, caplog):
         resp = post(MOTION)
     assert (resp["statusCode"], json.loads(resp["body"])) == (200, {"ok": True, "paused": True})
     assert motion.events == []
-    logged = [json.loads(r.getMessage()) for r in caplog.records if "motion_paused" in r.getMessage()]
+    logged = [
+        json.loads(r.getMessage()) for r in caplog.records if "motion_paused" in r.getMessage()
+    ]
     assert logged and logged[0]["account_id"] == ACCOUNT
     assert logged[0]["device_id"] == MOTION_DEVICE
     assert logged[0]["timestamp_ms"] == 1786715596787

@@ -86,9 +86,9 @@ def handler(event, context):
                 FridgeTable(), account_id, device_id
             ),
             writer=_trace_writer(),
-            paused_for=lambda account_id, device_id: monitoring.load(
-                FridgeTable(), account_id, device_id
-            ).paused,
+            paused_for=lambda account_id, device_id: (
+                monitoring.load(FridgeTable(), account_id, device_id).paused
+            ),
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())
