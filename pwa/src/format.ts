@@ -34,3 +34,9 @@ export function changeLabel(c: { direction: "added" | "removed"; quantity: numbe
   const sign = c.direction === "added" ? "+" : "−";
   return `${sign} ${c.quantity > 1 ? `${c.quantity} ` : ""}${c.name ?? c.item}`;
 }
+
+/** "45 s", "1 m 05 s" */
+export function duration(seconds: number): string {
+  if (seconds < 60) return `${seconds} s`;
+  return `${Math.floor(seconds / 60)} m ${String(seconds % 60).padStart(2, "0")} s`;
+}

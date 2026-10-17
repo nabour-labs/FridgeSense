@@ -1,9 +1,19 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { useApp } from "../AppContext";
 import { NoData } from "../components/NoData";
-import { plural } from "../format";
-import { averageDuration, byWeekdayHour, deviceTimeZone, heatLevel, lastDays, perDay, todayCount } from "../stats";
+import { duration, plural } from "../format";
+import {
+  averageDuration,
+  byWeekdayHour,
+  type DayCount,
+  deviceTimeZone,
+  durationStats,
+  heatLevel,
+  lastDays,
+  perDay,
+  todayCount,
+} from "../stats";
 import { useLoad } from "../useLoad";
 
 const AXIS = { fontSize: 11, fill: "#64748b" };
@@ -75,10 +85,48 @@ export function Stats() {
           </ResponsiveContainer>
         </div>
       </Chart>
+      <OpenTime events={events} days={stats.days} />
       <Chart title="Opens by day and hour" note="Last 4 weeks">
         <Heatmap grid={stats.grid} />
       </Chart>
     </div>
+  );
+}
+
+/** Average, longest and shortest opening on one of the last 7 days (today by default). */
+function OpenTime({ events, days }: { events: { opened_at: string; duration_s: number }[]; days: DayCount[] }) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const selected = days.find((d) => d.date === picked) ?? days[days.length - 1];
+  const times = useMemo(() => durationStats(events, selected.date, deviceTimeZone()), [events, selected.date]);
+  const show = (key: "average" | "longest" | "shortest") => (times ? duration(times[key]) : "–");
+  return (
+    <Chart title="Open time" note={times ? undefined : "No openings"}>
+      <div className="mb-3 grid grid-cols-7 gap-1">
+        {days.map((d) => {
+          const on = d.date === selected.date;
+          return (
+            <button
+              key={d.date}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setPicked(d.isToday ? null : d.date)}
+              className={`rounded-lg py-1.5 text-xs font-semibold ${
+                on
+                  ? "bg-brand-600 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              }`}
+            >
+              {d.isToday ? "Today" : d.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <Tile label="Average" value={show("average")} compact />
+        <Tile label="Longest" value={show("longest")} compact />
+        <Tile label="Shortest" value={show("shortest")} compact />
+      </div>
+    </Chart>
   );
 }
 
@@ -128,7 +176,19 @@ function Heatmap({ grid }: { grid: number[][] }) {
   );
 }
 
-function Tile({ label, value, short, accent }: { label: string; value: string; short?: string; accent?: boolean }) {
+function Tile({
+  label,
+  value,
+  short,
+  accent,
+  compact,
+}: {
+  label: string;
+  value: string;
+  short?: string;
+  accent?: boolean;
+  compact?: boolean;
+}) {
   return (
     <div
       role="group"
@@ -145,7 +205,7 @@ function Tile({ label, value, short, accent }: { label: string; value: string; s
       >
         {short ?? label}
       </p>
-      <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight">{value}</p>
+      <p className={`mt-1 font-bold tabular-nums tracking-tight ${compact ? "text-base" : "text-2xl"}`}>{value}</p>
     </div>
   );
 }

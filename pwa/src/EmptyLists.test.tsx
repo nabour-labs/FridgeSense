@@ -19,7 +19,7 @@ test("empty stats show zeros, not No Data", async () => {
   signedIn();
   location.hash = "#stats";
   render(<App api={fakeApi()} />);
-  expect(await screen.findByText("Today")).toBeInTheDocument();
+  expect(await screen.findByRole("group", { name: "Today" })).toBeInTheDocument();
   expect(screen.queryByText("No Data")).not.toBeInTheDocument();
   expect(screen.queryByTestId("loading")).not.toBeInTheDocument();
 });
