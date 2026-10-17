@@ -21,5 +21,5 @@
 
 ## 5. Wrap up
 
-- [ ] 5.1 Run the suites green and report the commands and their results: `cd pwa && npm test && npm run typecheck`, `cd infra && npm test`, and `cd backend && uv run pytest` (nothing changed there, but it confirms the base with `event-open-clip` merged)
-- [ ] 5.2 Add a friction-log entry if S3 CORS for presigned video or canvas tainting caused friction. Skip it if none did
+- [x] 5.1 Run the suites green and report the commands and their results: `cd pwa && npm test && npm run typecheck`, `cd infra && npm test`, and `cd backend && uv run pytest` (nothing changed there, but it confirms the base with `event-open-clip` merged)
+- [x] 5.2 Add a friction-log entry if S3 CORS for presigned video or canvas tainting caused friction. Skip it if none did (none: nothing was deployed, so no S3 CORS friction was observed)
