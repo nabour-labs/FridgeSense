@@ -3,7 +3,7 @@ import type { Table } from "aws-cdk-lib/aws-dynamodb";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Architecture, type Code, Function as LambdaFn, Runtime } from "aws-cdk-lib/aws-lambda";
 import type { LogGroup } from "aws-cdk-lib/aws-logs";
-import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
+import { BlockPublicAccess, Bucket, BucketEncryption, HttpMethods } from "aws-cdk-lib/aws-s3";
 import type { ISecret } from "aws-cdk-lib/aws-secretsmanager";
 import {
   Choice,
@@ -83,6 +83,16 @@ export class DoorPipeline extends Construct {
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       lifecycleRules: [{ expiration: Duration.days(7) }],
+      // The app draws clip frames onto a canvas, which needs CORS. Any origin: reads still need a
+      // presigned link, and naming the CloudFront domain here would make a dependency cycle.
+      cors: [
+        {
+          allowedMethods: [HttpMethods.GET, HttpMethods.HEAD],
+          allowedOrigins: ["*"],
+          allowedHeaders: ["Range"],
+          exposedHeaders: ["Content-Length", "Content-Range", "Accept-Ranges"],
+        },
+      ],
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
