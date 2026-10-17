@@ -285,3 +285,71 @@ def test_status_recorder_fails(aws, motion, monkeypatch):
     # The request id was forgotten, so Ring's retry is recorded.
     assert post(OFFLINE)["statusCode"] == 200
     assert len(recorded_changes()) == 1
+
+
+# --- paused camera (fridge-monitoring) ---
+
+MOTION_DEVICE = "ava1.ring.device.XXXYYY"
+
+
+def pause(device=MOTION_DEVICE, paused=True):
+    from fridgesense import monitoring
+    from fridgesense.table import FridgeTable
+
+    monitoring.set_paused(FridgeTable(), ACCOUNT, device, paused, int(NOW * 1000))
+
+
+# Scenario: Paused camera
+def test_paused_camera(aws, motion, caplog):
+    pause()
+    with caplog.at_level(logging.INFO):
+        resp = post(MOTION)
+    assert (resp["statusCode"], json.loads(resp["body"])) == (200, {"ok": True, "paused": True})
+    assert motion.events == []
+    logged = [json.loads(r.getMessage()) for r in caplog.records if "motion_paused" in r.getMessage()]
+    assert logged and logged[0]["account_id"] == ACCOUNT
+    assert logged[0]["device_id"] == MOTION_DEVICE
+    assert logged[0]["timestamp_ms"] == 1786715596787
+
+
+# Scenario: Paused and delivered again
+def test_paused_and_delivered_again(aws, motion):
+    pause()
+    post(MOTION)
+    resp = post(MOTION)
+    assert (resp["statusCode"], json.loads(resp["body"])) == (200, {"ok": True, "duplicate": True})
+    assert motion.events == []
+
+
+# Scenario: Active camera
+def test_resumed_camera_hands_over(aws, motion):
+    pause()
+    pause(paused=False)
+    assert post(MOTION)["statusCode"] == 200
+    assert len(motion.events) == 1
+
+
+def test_other_device_paused_does_not_matter(aws, motion):
+    pause(device="ava1.ring.device.OTHER")
+    assert post(MOTION)["statusCode"] == 200
+    assert len(motion.events) == 1
+
+
+# Scenario: Paused state unreadable
+def test_paused_state_unreadable(aws, motion, monkeypatch):
+    def broken(account_id, device_id):
+        raise RuntimeError("table down")
+
+    monkeypatch.setattr(http, "is_paused", broken)
+    resp = post(MOTION)
+    assert (resp["statusCode"], json.loads(resp["body"])) == (200, {"ok": True})
+    assert len(motion.events) == 1
+
+
+# Scenario: Status events while paused
+def test_status_events_while_paused(aws, motion):
+    from fridgesense.camera_info import StatusChange
+
+    pause(device=STATUS_DEVICE)
+    assert post(OFFLINE)["statusCode"] == 200
+    assert recorded_changes() == [StatusChange(False, 1771025206000, "webhook")]

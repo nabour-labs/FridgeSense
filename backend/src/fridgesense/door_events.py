@@ -660,6 +660,7 @@ def fetch_stills(
     writer=None,
     frame_interval_ms: int | None = None,
     clip_dir=None,
+    paused_for: Callable[[str, str], bool] | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
@@ -670,12 +671,16 @@ def fetch_stills(
     The door check runs on the raw, uncropped stills in memory. For a door opening, up to
     4 stills from the open span are cropped to `crop`, pay for face detection, and have
     their blurred stills stored; the span also gives the event's open and close times.
-    Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
+    Outcomes: door_open (go on to analysis), not_door, no_media, duplicate, and paused when
+    `paused_for` says the owner paused the camera (checked before anything is downloaded).
     With a trace `writer`, every outcome also leaves a debug trace of what the check saw.
     """
     from fridgesense.traces import DoorTrace  # traces imports this module
 
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
+    if paused_for is not None and paused_for(account_id, device_id):
+        log_event("door_check_paused", account_id=account_id, device_id=device_id)
+        return {**state, "outcome": "paused"}
     base = _device_check(check, setup_for, account_id, device_id)
     plan = _follow_plan(table, account_id, device_id, base)
     check = base.shifted(plan.dx, plan.dy) if plan else base

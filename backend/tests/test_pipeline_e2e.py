@@ -357,3 +357,17 @@ def test_setup_kept_per_device(env, faces, monkeypatch):
     ring_serves(color_jpeg((128, 128, 128), [((0.6, 0.0, 0.4, 1.0), (40, 90, 200))]))
     state = step("fetch_stills", step("find_window", RUN_INPUT))
     assert state["outcome"] == "not_door"  # D1 has no setup: DOOR_ZONES misses the light
+
+
+# fridge-monitoring: a run for a paused camera stops before any Ring media download
+@respx.mock
+def test_paused_camera_stops_before_ring_media(env, faces):
+    from fridgesense import monitoring
+
+    ring_serves(OPEN)  # no DetectFaces or Converse responses queued: a call would fail
+    state = step("find_window", RUN_INPUT)
+    monitoring.set_paused(FridgeTable(), ACCOUNT, DEVICE, True, 1786715600000)
+    state = step("fetch_stills", state)
+    assert state["outcome"] == "paused"
+    assert not respx.routes[2].called  # image download
+    assert FridgeTable().query(ACCOUNT, "DOOR#") == []

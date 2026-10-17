@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from fridgesense import deps
+from fridgesense import deps, monitoring
 from fridgesense.camera_info import StatusChange, StatusHistory
 from fridgesense.devices import Device, DeviceRepository
 from fridgesense.handlers import api
@@ -19,6 +19,7 @@ DETAIL = f"{API_BASE}/v1/devices/{DEVICE}"
 INCLUDE = {"include": "status,capabilities,configurations,location"}
 NOW_MS = int(NOW * 1000)
 HOUR_MS = 3600 * 1000
+PAUSED_MS = 1792332300000  # 2026-10-18T14:05:00Z
 
 
 @pytest.fixture
@@ -175,3 +176,30 @@ def test_history_and_uptime_in_the_body(tokens):
     assert [h["source"] for h in body["history"]] == ["webhook", "webhook"]
     assert body["uptime"]["percent"] == 99.2
     assert body["uptime"]["since"] == "2026-07-07T07:06:40.000Z"
+
+
+# fridge-monitoring, Scenario: Paused camera
+@respx.mock
+def test_camera_includes_paused_monitoring(tokens):
+    ring_answers()
+    monitoring.set_paused(FridgeTable(), ACCOUNT, DEVICE, True, PAUSED_MS)
+    status, body = call("GET", "/api/camera", token=tokens["viewer"])
+    assert status == 200
+    assert body["monitoring"] == {"paused": True, "since": "2026-10-18T14:05:00.000Z"}
+
+
+@respx.mock
+def test_camera_never_paused_is_active(tokens):
+    ring_answers()
+    body = call("GET", "/api/camera", token=tokens["owner"])[1]
+    assert body["monitoring"] == {"paused": False, "since": None}
+
+
+# fridge-monitoring, Scenario: Ring unreachable
+@respx.mock
+def test_camera_monitoring_when_ring_unreachable(tokens):
+    ring_answers(status=500)
+    monitoring.set_paused(FridgeTable(), ACCOUNT, DEVICE, True, PAUSED_MS)
+    status, body = call("GET", "/api/camera", token=tokens["viewer"])
+    assert status == 200 and body["ring"] == "unavailable"
+    assert body["monitoring"] == {"paused": True, "since": "2026-10-18T14:05:00.000Z"}

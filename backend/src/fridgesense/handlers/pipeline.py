@@ -7,7 +7,15 @@ import time
 import boto3
 from botocore.config import Config
 
-from fridgesense import clip_frames, deps, door_calibration, door_events, inventory, traces
+from fridgesense import (
+    clip_frames,
+    deps,
+    door_calibration,
+    door_events,
+    inventory,
+    monitoring,
+    traces,
+)
 from fridgesense.analysis import NovaAnalyzer
 from fridgesense.faces import DEFAULT_PRICE, FaceBlurrer
 from fridgesense.table import FridgeTable
@@ -78,6 +86,9 @@ def handler(event, context):
                 FridgeTable(), account_id, device_id
             ),
             writer=_trace_writer(),
+            paused_for=lambda account_id, device_id: monitoring.load(
+                FridgeTable(), account_id, device_id
+            ).paused,
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())

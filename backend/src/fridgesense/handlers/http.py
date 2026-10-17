@@ -4,7 +4,7 @@ import logging
 import os
 import time
 
-from fridgesense import deps, devices, linking, webhook, workflow
+from fridgesense import deps, devices, linking, monitoring, webhook, workflow
 from fridgesense.camera_info import StatusHistory
 from fridgesense.store import TokenStore, load_app_config
 from fridgesense.table import FridgeTable
@@ -16,6 +16,10 @@ motion_handler: webhook.MotionHandler = workflow.default_motion_handler()
 
 def status_recorder() -> webhook.StatusRecorder:
     return StatusHistory(FridgeTable())
+
+
+def is_paused(account_id: str, device_id: str) -> bool:
+    return monitoring.load(FridgeTable(), account_id, device_id).paused
 
 
 def handler(event, context):
@@ -34,6 +38,7 @@ def handler(event, context):
             motion_handler,
             now(),
             status=status_recorder(),
+            paused=lambda account_id, device_id: is_paused(account_id, device_id),
         )
     if route == ("GET", "/ring/link"):
         return linking.link_form(req)

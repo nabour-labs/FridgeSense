@@ -29,6 +29,7 @@ from fridgesense import (
     fridge_area,
     inventory,
     live,
+    monitoring,
     session,
     setup_warnings,
     traces,
@@ -549,7 +550,19 @@ def get_camera(ctx: Context) -> dict:
         devices[0].name,
         int(now() * 1000),
     )
+    body["monitoring"] = monitoring.load(ctx.table, ctx.account_id, devices[0].device_id).to_body()
     return json_response(200, body)
+
+
+@route("PUT", "/api/camera/monitoring", write=True)
+@with_device
+def put_monitoring(ctx: Context, device_id: str) -> dict:
+    paused = (_json_body(ctx.req) or {}).get("paused")
+    if not isinstance(paused, bool):
+        return json_response(400, {"error": "paused must be true or false"})
+    state = monitoring.set_paused(ctx.table, ctx.account_id, device_id, paused, int(now() * 1000))
+    log_event("monitoring_changed", account_id=ctx.account_id, device_id=device_id, paused=paused)
+    return json_response(200, state.to_body())
 
 
 @route("POST", "/api/camera/snapshot", write=True)
