@@ -331,13 +331,19 @@ test("a user can delete an opening but sees no Debug link", async () => {
 });
 
 // Scenario: Button for every role
-test.each(["owner", "user", "viewer"] as const)("the %s sees a Livestream button", async (role) => {
+test.each(["owner", "user"] as const)("the %s sees a Livestream button", async (role) => {
   renderActivity([event()], { role });
   expect(await screen.findByRole("button", { name: "Livestream" })).toBeInTheDocument();
 });
 
+test("the viewer sees no Livestream button", async () => {
+  renderActivity([event()], { role: "viewer" });
+  expect(await screen.findByLabelText("Day")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Livestream" })).not.toBeInTheDocument();
+});
+
 test("the Livestream button opens the Livestream dialog", async () => {
-  const api = renderActivity([event()], { role: "viewer", camera: vi.fn().mockResolvedValue({ name: "Fridge", online: true }) });
+  const api = renderActivity([event()], { role: "user", camera: vi.fn().mockResolvedValue({ name: "Fridge", online: true }) });
   await userEvent.click(await screen.findByRole("button", { name: "Livestream" }));
   expect(screen.getByRole("dialog", { name: "Livestream" })).toBeInTheDocument();
   // jsdom has no WebRTC, so after the online check the dialog says so instead of calling the API.

@@ -42,7 +42,7 @@ function locationText(location: Record<string, string> | null) {
 
 /** The connected camera: Ring's details, its status now, and its recorded online history. */
 export function Camera({ createPeer }: { createPeer?: () => RTCPeerConnection | null } = {}) {
-  const { api } = useApp();
+  const { api, role } = useApp();
   const { data, failed } = useLoad(
     useCallback(
       () =>
@@ -70,7 +70,7 @@ export function Camera({ createPeer }: { createPeer?: () => RTCPeerConnection | 
         <Overview info={data} />
         <Details info={data} />
         <History info={data} />
-        <Decoder createPeer={createPeer} />
+        {canEdit(role) && <Decoder createPeer={createPeer} />}
       </>
     );
   }

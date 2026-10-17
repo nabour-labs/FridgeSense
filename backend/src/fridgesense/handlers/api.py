@@ -628,7 +628,7 @@ MAX_OFFER_CHARS = 20_000
 SESSION_ID = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
 
 
-@route("POST", "/api/camera/live")
+@route("POST", "/api/camera/live", write=True)  # live video is never face-blurred
 @with_device
 def post_live(ctx: Context, device_id: str) -> dict:
     offer = (_json_body(ctx.req) or {}).get("offer")
@@ -643,7 +643,7 @@ def post_live(ctx: Context, device_id: str) -> dict:
     )
 
 
-@route("DELETE", "/api/camera/live/{session_id}")
+@route("DELETE", "/api/camera/live/{session_id}", write=True)
 @with_device
 def delete_live(ctx: Context, device_id: str) -> dict:
     session_id = ctx.params["session_id"]

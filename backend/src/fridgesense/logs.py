@@ -6,6 +6,10 @@ from typing import Any
 
 logger = logging.getLogger("fridgesense")
 
+# httpx logs every request URL at INFO; Ring's signed media URLs and the MCP URL hold secrets.
+for _name in ("httpx", "httpx2"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
+
 REDACTED = "[redacted]"
 _EXACT = {"code", "passcode", "hmac_key", "authorization"}
 
