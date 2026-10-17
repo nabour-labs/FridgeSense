@@ -7,7 +7,15 @@ import time
 import boto3
 from botocore.config import Config
 
-from fridgesense import clip_frames, deps, door_calibration, door_events, inventory, traces
+from fridgesense import (
+    clip_frames,
+    deps,
+    door_calibration,
+    door_events,
+    face_blur,
+    inventory,
+    traces,
+)
 from fridgesense.analysis import NovaAnalyzer
 from fridgesense.faces import DEFAULT_PRICE, FaceBlurrer
 from fridgesense.table import FridgeTable
@@ -59,14 +67,16 @@ def handler(event, context):
         check = door_events.DoorCheck.from_config(
             os.environ.get("DOOR_ZONES"), os.environ.get("DOOR_THRESHOLD")
         )
+        table = FridgeTable()
+        blur = face_blur.load(table, state["account_id"])  # once per motion
         return door_events.fetch_stills(
             deps.ring_client(),
             deps.http_client(),
             boto3.client("s3"),
-            FridgeTable(),
+            table,
             _bucket(),
             check,
-            _blurrer(),
+            face_blur.blurrer_for(blur, _blurrer),
             state,
             sleep,
             crop=door_events.parse_crop(os.environ.get("STILL_CROP")),
@@ -78,6 +88,7 @@ def handler(event, context):
                 FridgeTable(), account_id, device_id
             ),
             writer=_trace_writer(),
+            face_blur=blur,
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())

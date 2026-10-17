@@ -317,3 +317,8 @@ export interface MotionTrace extends Omit<DebugMotion, "nova"> {
   door: DoorTrace;
   nova: NovaCall[];
 }
+
+/** The owner's face-blur setting. */
+export interface FaceBlur {
+  enabled: boolean;
+}

@@ -78,3 +78,10 @@ class FaceBlurrer:
         boxes = [_box(f) for f in resp.get("FaceDetails", [])]
         log_event("face_detect_cost", **context, faces=len(boxes), usd=self.price_usd)
         return blur_regions(jpeg, boxes) if boxes else jpeg
+
+
+class NoBlur:
+    """Stands in for FaceBlurrer while face blurring is off: no detection, bytes unchanged."""
+
+    def blur(self, jpeg: bytes, context: dict) -> bytes:
+        return jpeg

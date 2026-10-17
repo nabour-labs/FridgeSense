@@ -24,6 +24,8 @@ export type Api = Pick<
   | "camera"
   | "cameraSnapshot"
   | "cameraFrame"
+  | "faceBlur"
+  | "setFaceBlur"
   | "startLive"
   | "stopLive"
   | "doorCalibration"

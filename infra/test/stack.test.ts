@@ -248,12 +248,16 @@ describe("Ask assistant", () => {
     expect(on.TIME_ZONE).toBe("America/Vancouver");
   });
 
-  it("turns debug traces off from context", () => {
+  it.each([
+    ["off by default when deployed", {}, "false"],
+    ["turned on for tuning", { debugTraces: "true" }, "true"],
+    ["turned off from context", { debugTraces: "false" }, "false"],
+  ])("debug traces: %s", (_name, context: Record<string, string>, expected) => {
     const [fn] = Object.values(
-      synthTemplate({ debugTraces: "false" }).findResources("AWS::Lambda::Function"),
+      synthTemplate(context).findResources("AWS::Lambda::Function"),
     ).filter((r) => r.Properties.Handler === "fridgesense.handlers.pipeline.handler");
     const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
-    expect(vars.DEBUG_TRACES).toBe("false");
+    expect(vars.DEBUG_TRACES).toBe(expected);
   });
 
   it("lets the API function invoke Nova through the inference profile", () => {

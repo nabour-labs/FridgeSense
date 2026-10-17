@@ -7,6 +7,7 @@ import type {
   DoorSetup,
   DoorStatus,
   EventPage,
+  FaceBlur,
   FridgeAreaBody,
   Inventory,
   LiveSession,
@@ -130,6 +131,15 @@ export class ApiClient {
   /** A live frame (base64 JPEG) back with every face blurred; not stored. */
   cameraFrame(image: string): Promise<Snapshot> {
     return this.request("POST", "/api/camera/frame", { image });
+  }
+
+  /** Whether faces are blurred in stored stills, snapshots and debug traces (on by default). */
+  faceBlur(): Promise<FaceBlur> {
+    return this.request("GET", "/api/settings/face-blur");
+  }
+  /** Owner only. */
+  setFaceBlur(enabled: boolean): Promise<FaceBlur> {
+    return this.request("PUT", "/api/settings/face-blur", { enabled });
   }
 
   /** Opens a live view: the browser's SDP offer in, the camera's SDP answer out. */

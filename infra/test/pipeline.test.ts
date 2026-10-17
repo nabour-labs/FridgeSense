@@ -156,7 +156,8 @@ describe("pipeline Lambda", () => {
     expect(vars.DOOR_FRAME_INTERVAL_MS).toBe("500");
     expect(vars).not.toHaveProperty("DOOR_BOX");
     expect(vars.FACE_DETECT_PRICE).toBe("0.001");
-    expect(vars.DEBUG_TRACES).toBe("true");
+    // Off by default when deployed
+    expect(vars.DEBUG_TRACES).toBe("false");
   });
 
   it("may call only rekognition:DetectFaces, on *", () => {

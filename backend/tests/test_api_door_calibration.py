@@ -7,10 +7,11 @@ import json
 import boto3
 import pytest
 import respx
+from botocore.exceptions import ClientError
 from botocore.stub import Stubber
 from PIL import Image
 
-from fridgesense import alignment
+from fridgesense import alignment, face_blur
 from fridgesense.devices import Device, DeviceRepository
 from fridgesense.door_events import iso_utc
 from fridgesense.handlers import api
@@ -113,6 +114,37 @@ def test_snapshot_face_detection_unavailable(owner, faces):
         502,
         {"error": "camera unavailable"},
     )
+
+
+# Snapshot while blurring is off
+@respx.mock
+def test_snapshot_while_blurring_is_off(owner, faces):
+    call("PUT", "/api/settings/face-blur", {"enabled": False}, owner)
+    respx.post(DOWNLOAD).respond(303, headers={"Location": LINK})
+    respx.get(LINK).respond(200, content=color_jpeg(size=(1920, 1080)))
+    status, body = call("POST", "/api/camera/snapshot", token=owner)  # no detect_faces stubbed
+    assert status == 200
+    assert Image.open(io.BytesIO(base64.b64decode(body["image"]))).size == (960, 540)
+    faces.assert_no_pending_responses()
+
+
+# Read fails for a snapshot
+@respx.mock
+def test_snapshot_setting_read_fails(owner, faces, monkeypatch):
+    call("PUT", "/api/settings/face-blur", {"enabled": False}, owner)
+    get = FridgeTable.get
+
+    def failing_get(self, pk, sk):
+        if sk == face_blur.SETTING_SK:
+            raise ClientError({"Error": {"Code": "InternalServerError"}}, "GetItem")
+        return get(self, pk, sk)
+
+    monkeypatch.setattr(FridgeTable, "get", failing_get)
+    respx.post(DOWNLOAD).respond(303, headers={"Location": LINK})
+    respx.get(LINK).respond(200, content=color_jpeg(size=(960, 540)))
+    faces.add_response("detect_faces", {"FaceDetails": []})
+    assert call("POST", "/api/camera/snapshot", token=owner)[0] == 200
+    faces.assert_no_pending_responses()  # detection ran although the saved setting is off
 
 
 # No device discovered (every route)

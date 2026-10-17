@@ -196,6 +196,8 @@ test.each([
   ["camera", (api: ApiClient) => api.camera(), "GET", "/api/camera", undefined],
   ["cameraSnapshot", (api: ApiClient) => api.cameraSnapshot(), "POST", "/api/camera/snapshot", undefined],
   ["cameraFrame", (api: ApiClient) => api.cameraFrame("/9j/FRAME"), "POST", "/api/camera/frame", { image: "/9j/FRAME" }],
+  ["faceBlur", (api: ApiClient) => api.faceBlur(), "GET", "/api/settings/face-blur", undefined],
+  ["setFaceBlur", (api: ApiClient) => api.setFaceBlur(false), "PUT", "/api/settings/face-blur", { enabled: false }],
   ["doorCalibration", (api: ApiClient) => api.doorCalibration(), "GET", "/api/door-calibration", undefined],
   [
     "addDoorReference",

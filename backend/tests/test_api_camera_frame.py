@@ -77,6 +77,14 @@ def test_face_blurred_in_the_frame(owner, faces):
     assert ImageStat.Stat(face).stddev[0] < 10
 
 
+# Frame while blurring is off
+def test_frame_while_blurring_is_off(owner, faces):
+    call("PUT", "/api/settings/face-blur", {"enabled": False}, owner)
+    status, body = call("POST", FRAME, {"image": b64(color_jpeg(size=(1920, 1080)))}, owner)
+    assert status == 200  # no detect_faces stubbed: a call would fail the route
+    assert decoded(body).size == (960, 540)
+
+
 # Small frame kept at its size
 def test_small_frame_kept_at_its_size(owner, faces):
     faces.add_response("detect_faces", {"FaceDetails": []})
