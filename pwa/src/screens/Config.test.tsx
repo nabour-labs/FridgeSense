@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Mock } from "vitest";
 import { ApiError } from "../api/client";
@@ -305,8 +305,10 @@ test("a frame from a recent clip can be added as a reference, blurred first", as
   const video = within(picker).getByTestId("clip-video");
   fireEvent.loadedData(video);
   await userEvent.click(within(picker).getByRole("button", { name: "Use this frame" }));
-  expect(api.cameraFrame).toHaveBeenCalledWith(btoa("raw"));
-  expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument();
+  await waitFor(() => expect(api.cameraFrame).toHaveBeenCalledWith(btoa("raw")));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument(),
+  );
   const img = await within(screen.getByRole("dialog")).findByRole("img", { name: "Reference to draw on" });
   expect(img).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
   await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");

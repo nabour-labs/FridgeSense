@@ -84,7 +84,7 @@ it("Use this frame sends the grabbed frame to be blurred and returns only the bl
   await userEvent.click(use);
   expect(grab).toHaveBeenCalledWith(video());
   expect(api.cameraFrame).toHaveBeenCalledWith("RAWFRAME");
-  expect(onPick).toHaveBeenCalledWith(BLURRED);
+  await waitFor(() => expect(onPick).toHaveBeenCalledWith(BLURRED));
 });
 
 // No recent clips
@@ -114,7 +114,7 @@ it("says so when the frame can't be drawn, and sends nothing", async () => {
   await screen.findByRole("combobox", { name: "Clip" });
   loaded();
   await userEvent.click(screen.getByRole("button", { name: "Use this frame" }));
-  expect(screen.getByRole("alert")).toHaveTextContent("This frame can't be used. Try another clip.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("This frame can't be used. Try another clip.");
   expect(api.cameraFrame).not.toHaveBeenCalled();
   expect(onPick).not.toHaveBeenCalled();
 });
@@ -127,7 +127,7 @@ it("says so when faces can't be blurred, and returns no image", async () => {
   await screen.findByRole("combobox", { name: "Clip" });
   loaded();
   await userEvent.click(screen.getByRole("button", { name: "Use this frame" }));
-  expect(screen.getByRole("alert")).toHaveTextContent("Faces couldn't be blurred, so this frame can't be used.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Faces couldn't be blurred, so this frame can't be used.");
   expect(onPick).not.toHaveBeenCalled();
   expect(report).not.toHaveBeenCalled();
 });
