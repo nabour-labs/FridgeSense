@@ -17,6 +17,7 @@ import boto3
 from botocore.config import Config
 
 from fridgesense import (
+    alignment,
     analysis,
     analysis_config,
     ask,
@@ -604,6 +605,24 @@ def delete_live(ctx: Context, device_id: str) -> dict:
     return json_response(200, {"ok": True})
 
 
+def _alignment_body(table: FridgeTable, account_id: str, device_id: str) -> dict:
+    s = alignment.load_alignment(table, account_id, device_id) or alignment.AlignState()
+
+    def at(ms: int | None) -> str | None:
+        return None if ms is None else iso_utc(ms)
+
+    return {
+        "dx": round(s.dx, 3),
+        "dy": round(s.dy, 3),
+        "error": None if s.error is None else round(s.error, 3),
+        "failures": s.failures,
+        "moved": s.moved,
+        "moved_at": at(s.moved_at_ms),
+        "last_moved_at": at(s.last_moved_at_ms),
+        "checked_at": at(s.checked_at_ms),
+    }
+
+
 def door_setup_body(
     table: FridgeTable, account_id: str, device_id: str, scores: dict | None = None
 ) -> dict:
@@ -640,7 +659,10 @@ def door_setup_body(
             ],
             "ran_at": setup.ran_at,
             "stale": setup.stale,
+            "tuned_at": setup.tuned_at,
+            "tuned_from": setup.tuned_from,
         },
+        "alignment": None if setup is None else _alignment_body(table, account_id, device_id),
         "defaults": {
             "zones": [door_calibration.box_json(z) for z in defaults.zones],
             "threshold": defaults.threshold,

@@ -71,7 +71,7 @@ The camera SHALL count as moved when `failures` reaches 3, or when a successful 
 - **THEN** the alignment reads `moved = false`, `moved_at = null`, `failures = 0`, shift `(0, 0)`, and `last_moved_at` is still the time it moved
 
 ### Requirement: Event samples from recent activity
-For each aligned event, a sample SHALL be stored per setup zone, measured with the shifted zone boxes. The *closed sample* is the bookend used for alignment, kept only if the current rules call that zone closed in it. The *open sample* is the frame whose `change` from the closed sample is highest in that zone, kept only if that change is at least 0.08. Each sample holds the zone's `color`, `blue` and `brightness` values and its 32×32 RGB thumbnail. The newest 20 sample events per device SHALL be kept and older ones deleted.
+For each aligned event, a sample SHALL be stored per setup zone, measured with the shifted zone boxes. The *closed sample* is the bookend used for alignment, kept only if the current rules call that zone closed in it. The *open sample* is the frame whose `change` from the closed sample is highest in that zone, kept only if that change is at least 0.08 and the closed sample was kept. Each sample holds the zone's `color`, `blue` and `brightness` values and its 32×32 RGB thumbnail. The newest 20 sample events per device SHALL be kept and older ones deleted.
 
 #### Scenario: Opening sampled
 - **WHEN** an aligned event's last frame is closed in zone 1, and frame 6 is the lit interior with `change = 0.30` from it
@@ -87,7 +87,7 @@ For each aligned event, a sample SHALL be stored per setup zone, measured with t
 
 #### Scenario: Bookend not closed
 - **WHEN** the current rules call zone 1 open in the alignment bookend
-- **THEN** zone 1's sample has `closed = null`
+- **THEN** zone 1's sample has `closed = null` and `open = null`, since an opening can't be measured against a bookend that isn't closed
 
 #### Scenario: Oldest dropped
 - **WHEN** 20 sample events are stored and a 21st is added

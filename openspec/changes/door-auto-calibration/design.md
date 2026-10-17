@@ -63,7 +63,7 @@ One `Warnings` component takes the role (owner/viewer) from `AppContext` and ren
 - [Lighting at night (IR mode) changes edges] → Rotation-like errors raise `failures`, but 3 in a row are needed, and one good daytime event resets it. Night mode is out of scope in setup too. Test 1.1 measures the real error.
 - [Someone standing in front for a whole clip] → Both bookends are bad, so alignment fails and no sample is stored. That only counts toward moved after 3 events in a row.
 - [Wrong open samples (a person close to the zone)] → They can only stop a re-tune (no separation), never adopt a rule that misclassifies the owner's references.
-- [Extra CPU per event] → 2 × 289 small diffs plus one re-tune over at most 20 samples. Measured in task 2.x. The pipeline Lambda's 90 s budget has ample room.
+- [Extra CPU per event] → On an 89-frame 2560×1440 clip on a Mac: alignment 0.04 s, sampling 1.7 s (each JPEG frame decoded once more). Even at several times slower on Lambda, that fits the pipeline task's 90 s budget.
 - [DynamoDB item size] → Samples stay ≤ 36 KB. The anchor is 9 KB in the setup item, next to 6 baselines of 3 KB each.
 - [Tuning drifts away from what the owner set] → The tab shows "Tuned from N recent openings". Re-running setup resets to the owner's rules.
 

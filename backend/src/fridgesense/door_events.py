@@ -609,6 +609,25 @@ def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
         return None
 
 
+def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, window) -> None:
+    """Sample an aligned event and re-tune the rules; a failure here never changes the
+    event's outcome."""
+    if aligned is None or not aligned.ok:
+        return
+    from fridgesense import self_tuning  # it imports this module
+
+    try:
+        frames = [data for _, data in raw]
+        if self_tuning.learn(
+            table, account_id, device_id, check, frames, aligned, window["start_ms"]
+        ):
+            self_tuning.retune(table, account_id, device_id, window["start_ms"])
+    except Exception as e:
+        log_event(
+            "door_sample_failed", logging.WARNING, device_id=device_id, error=type(e).__name__
+        )
+
+
 def _alignment_json(aligned) -> dict | None:
     if aligned is None:
         return None
@@ -710,6 +729,7 @@ def fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
+            _learn(table, account_id, device_id, check, raw, aligned, window)
             return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
         opened_ms = times[raw[span[0]][0] - 1]
         if not results[span[-1]].is_open:  # the first closed still after the opening
@@ -765,6 +785,7 @@ def fetch_stills(
             return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
+    _learn(table, account_id, device_id, check, raw, aligned, window)
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
     )

@@ -195,7 +195,7 @@ class TraceWriter:
         self._put(f"{prefix}door.json", json.dumps(doc).encode(), "application/json")
 
     def _rule(self, state: dict, check: DoorCheck, prefix: str) -> dict:
-        setup = check.source == "setup"
+        setup = check.source in ("setup", "tuned")
         zones = []
         for n, rule in enumerate(check.rules, 1):
             baseline_key = None

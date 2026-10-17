@@ -22,16 +22,16 @@ Priority if time runs short: groups 1–4 and 6–7 (alignment, moved detection,
 
 ## 4. Door setup reports alignment
 
-- [ ] 4.1 Write failing tests in `test_api_door_calibration.py` for "Reported after an aligned event" and "Before any event" (with `last_moved_at`).
-- [ ] 4.2 Add `alignment`, `setup.tuned_at` and `setup.tuned_from` to the `GET /api/door-calibration` body. Verify that the 4.1 tests and the existing door-calibration API tests pass.
+- [x] 4.1 Write failing tests in `test_api_door_calibration.py` for "Reported after an aligned event" and "Before any event" (with `last_moved_at`).
+- [x] 4.2 Add `alignment`, `setup.tuned_at` and `setup.tuned_from` to the `GET /api/door-calibration` body. Verify that the 4.1 tests and the existing door-calibration API tests pass.
 
 ## 5. Self-tuning from samples (can be cut)
 
-- [ ] 5.1 Write failing tests in `backend/tests/test_self_tuning.py` (moto) for "Opening sampled", "Missed opening still sampled", "No clear opening", "Bookend not closed", "Oldest dropped" and "Unaligned event not sampled".
-- [ ] 5.2 Implement `backend/src/fridgesense/self_tuning.py` (`sample_event`, `store_sample` keeping the newest 20). Verify that the 5.1 tests pass.
-- [ ] 5.3 Write failing tests for "Tuned rules adopted", "Samples overlap", "Too few samples" and "Re-running setup resets tuning".
-- [ ] 5.4 Implement `retune` using `door_calibration._choose` and `baseline_of` on owner references plus samples, storing `tuned_zones`, `tuned_at` and `tuned_from`. Make `setup_check` prefer tuned rules, and make `run` delete the samples. Verify that the 5.3 tests pass.
-- [ ] 5.5 Write a failing test for "Re-tune failure after a claimed opening". Then call sampling and re-tuning after the claim in `fetch_stills` (also for `not_door`), each guarded with a logged warning. Verify that the test and all pipeline tests pass.
+- [x] 5.1 Write failing tests in `backend/tests/test_self_tuning.py` (moto) for "Opening sampled", "Missed opening still sampled", "No clear opening", "Bookend not closed", "Oldest dropped" and "Unaligned event not sampled".
+- [x] 5.2 Implement `backend/src/fridgesense/self_tuning.py` (`sample_event`, `store_sample` keeping the newest 20). Verify that the 5.1 tests pass.
+- [x] 5.3 Write failing tests for "Tuned rules adopted", "Samples overlap", "Too few samples" and "Re-running setup resets tuning".
+- [x] 5.4 Implement `retune` using `door_calibration._choose` and `baseline_of` on owner references plus samples, storing `tuned_zones`, `tuned_at` and `tuned_from`. Make `setup_check` prefer tuned rules, and make `run` delete the samples. Verify that the 5.3 tests pass.
+- [x] 5.5 Write a failing test for "Re-tune failure after a claimed opening". Then call sampling and re-tuning after the claim in `fetch_stills` (also for `not_door`), each guarded with a logged warning. Verify that the test and all pipeline tests pass.
 
 ## 6. Setup warnings API
 

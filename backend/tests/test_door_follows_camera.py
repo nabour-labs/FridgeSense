@@ -10,7 +10,7 @@ import pytest
 import respx
 from PIL import Image, ImageDraw
 
-from fridgesense import alignment, door_calibration
+from fridgesense import alignment, door_calibration, self_tuning
 from fridgesense.door_events import DoorCheck, fetch_stills
 from fridgesense.table import FridgeTable, account_pk
 from fridgesense.traces import TraceWriter
@@ -186,3 +186,87 @@ def test_trace_without_alignment(aws, ring_http, tmp_path):
     run(ring_http, tmp_path, writer=TraceWriter(s3, FridgeTable(), BUCKET))
     doc = json.loads(s3.get_object(Bucket=BUCKET, Key=f"{PREFIX}debug/door.json")["Body"].read())
     assert doc["alignment"] is None
+
+
+# --- samples and re-tuning after the event ---
+
+
+@respx.mock
+def test_opening_leaves_a_sample(aws, ring_http, tmp_path):
+    set_up()
+    serve_clip(tmp_path, px=6)
+    serve_stills()
+    assert run(ring_http, tmp_path)["outcome"] == "door_open"
+    [event] = self_tuning.list_samples(FridgeTable(), ACCOUNT, DEVICE)
+    assert event.at_ms == START
+    [zone] = event.zones
+    assert zone.closed is not None and zone.open is not None
+    assert zone.open.blue > zone.closed.blue
+
+
+@respx.mock
+def test_missed_opening_leaves_a_sample(aws, ring_http, tmp_path):
+    """The rules miss the opening (outcome not_door), but the sample still records it."""
+    set_up()
+    item = FridgeTable().get(account_pk(ACCOUNT), door_calibration.setup_sk(DEVICE))
+    item["zones"][0]["threshold"] = 0.99  # a rule that can never call the door open
+    FridgeTable().put(item)
+    serve_clip(tmp_path, px=0)
+    serve_stills()
+    assert run(ring_http, tmp_path)["outcome"] == "not_door"
+    [zone] = self_tuning.list_samples(FridgeTable(), ACCOUNT, DEVICE)[0].zones
+    assert zone.open is not None
+
+
+@respx.mock
+def test_unaligned_event_leaves_no_sample(aws, ring_http, tmp_path):
+    set_up(keep_anchor=False)
+    serve_clip(tmp_path, px=0)
+    serve_stills()
+    run(ring_http, tmp_path)
+    assert self_tuning.list_samples(FridgeTable(), ACCOUNT, DEVICE) == []
+
+
+@respx.mock
+def test_retune_runs_after_the_event(aws, ring_http, tmp_path, monkeypatch):
+    set_up()
+    calls = []
+    monkeypatch.setattr(self_tuning, "retune", lambda *args: calls.append(args) or False)
+    serve_clip(tmp_path, px=0)
+    serve_stills()
+    run(ring_http, tmp_path)
+    assert [c[1:3] for c in calls] == [(ACCOUNT, DEVICE)]
+
+
+# Re-tune failure after a claimed opening
+@respx.mock
+def test_retune_failure_after_a_claimed_opening(aws, ring_http, tmp_path, caplog, monkeypatch):
+    caplog.set_level(logging.INFO)
+    set_up()
+
+    def broken(*args):
+        raise RuntimeError("table hiccup")
+
+    monkeypatch.setattr(self_tuning, "store_sample", broken)
+    serve_clip(tmp_path, px=0)
+    serve_stills()
+    assert run(ring_http, tmp_path)["outcome"] == "door_open"
+    assert logged(caplog, "door_sample_failed")["error"] == "RuntimeError"
+
+
+@respx.mock
+def test_trace_records_tuned_rules(aws, ring_http, tmp_path):
+    set_up()
+    table = FridgeTable()
+    item = table.get(account_pk(ACCOUNT), door_calibration.setup_sk(DEVICE))
+    table.update(
+        account_pk(ACCOUNT),
+        door_calibration.setup_sk(DEVICE),
+        {"tuned_zones": item["zones"], "tuned_at": "2026-08-14T13:00:00.000Z", "tuned_from": 8},
+    )
+    serve_clip(tmp_path, px=0)
+    serve_stills()
+    s3 = boto3.client("s3")
+    run(ring_http, tmp_path, writer=TraceWriter(s3, FridgeTable(), BUCKET))
+    doc = json.loads(s3.get_object(Bucket=BUCKET, Key=f"{PREFIX}debug/door.json")["Body"].read())
+    assert doc["rules"] == "tuned"
