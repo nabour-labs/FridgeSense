@@ -10,7 +10,7 @@ import respx
 
 from fridgesense.door_events import fetch_stills
 from fridgesense.table import FridgeTable, account_pk
-from fridgesense.traces import NullTraceWriter, TraceWriter, writer_from_env
+from fridgesense.traces import NullTraceWriter, TraceWriter, trace_thumbnail, writer_from_env
 from tests import test_fetch_stills_task as fetch_tests
 from tests.conftest import BUCKET, FakeBlurrer
 from tests.test_fetch_stills_task import (
@@ -39,7 +39,7 @@ class BlurAll(FakeBlurrer):
         super().__init__(blurred=lambda data: b"blurred:" + data, drop=drop)
 
 
-def run(ring_http, state=STATE, blurrer=None, writer=None, setup_for=None, s3=None):
+def run(ring_http, state=STATE, blurrer=None, writer=None, setup_for=None, s3=None, face_blur=True):
     ring, http = ring_http
     return fetch_stills(
         ring,
@@ -55,6 +55,7 @@ def run(ring_http, state=STATE, blurrer=None, writer=None, setup_for=None, s3=No
         writer=TraceWriter(s3 or boto3.client("s3"), FridgeTable(), BUCKET)
         if writer is None
         else writer,
+        face_blur=face_blur,
     )
 
 
@@ -113,12 +114,29 @@ def test_door_opening_traced(aws, ring_http):
     assert summary()["stills_downloaded"] == 25
 
 
-# Raw stills are the downloaded bytes
+def all_objects() -> list[bytes]:
+    return [s3_get(k) for k in keys()]
+
+
+# Raw stills are small blurred thumbnails
+@respx.mock
+def test_raw_stills_are_blurred_thumbnails(aws, ring_http):
+    images = stills_open_at(set(range(6, 16)))
+    ring_serves(images)
+    out = run(ring_http, blurrer=BlurAll())
+    assert [s3_get(f"{DEBUG}raw-{n}.jpg") for n in range(1, 26)] == [
+        trace_thumbnail(i) for i in images
+    ]
+    assert not set(images) & set(all_objects())
+    assert s3_get(out["still_keys"][0]) == b"blurred:" + images[5]
+
+
+# Raw stills are the downloaded bytes (blurring off)
 @respx.mock
 def test_raw_stills_are_the_downloaded_bytes(aws, ring_http):
     images = stills_open_at(set(range(6, 16)))
     ring_serves(images)
-    out = run(ring_http, blurrer=BlurAll())
+    out = run(ring_http, blurrer=BlurAll(), face_blur=False)
     assert [s3_get(f"{DEBUG}raw-{n}.jpg") for n in range(1, 26)] == images
     assert s3_get(out["still_keys"][0]) == b"blurred:" + images[5]
 
@@ -165,7 +183,9 @@ def test_debug_copy_is_not_an_event_still(aws, ring_http):
     images = stills_open_at(set(range(6, 16)))
     ring_serves(images)
     out = run(ring_http, blurrer=BlurAll(drop={2}))
-    assert s3_get(DEBUG + "raw-9.jpg") == images[8]  # picked still 9 failed detection
+    # picked still 9 failed detection: only its thumbnail is kept
+    assert s3_get(DEBUG + "raw-9.jpg") == trace_thumbnail(images[8])
+    assert images[8] not in all_objects()
     assert len(out["still_keys"]) == 3
     assert f"{PREFIX}still-2.jpg" not in out["still_keys"]
     assert all(s3_get(k).startswith(b"blurred:") for k in out["still_keys"])
@@ -201,9 +221,11 @@ def test_trace_failure_keeps_the_door_event(aws, ring_http, caplog):
 @respx.mock
 def test_tracing_off_writes_nothing(aws, ring_http):
     ring_serves(stills_open_at(set(range(6, 16))))
-    out = run(ring_http, writer=NullTraceWriter())
+    out = run(ring_http, blurrer=BlurAll(), writer=NullTraceWriter())
     assert out["outcome"] == "door_open"
     assert keys(DEBUG) == []
+    # No debug stills when tracing is off: only the blurred event stills are stored
+    assert all(b.startswith(b"blurred:") for b in all_objects())
     assert FridgeTable().query(ACCOUNT, "TRACE#") == []
 
 

@@ -7,6 +7,7 @@ import type {
   DoorSetup,
   DoorStatus,
   EventPage,
+  FaceBlur,
   FridgeAreaBody,
   Inventory,
   LiveSession,
@@ -138,6 +139,15 @@ export class ApiClient {
     return this.request("POST", "/api/camera/frame", { image });
   }
 
+  /** Whether faces are blurred in stored stills, snapshots and debug traces (on by default). */
+  faceBlur(): Promise<FaceBlur> {
+    return this.request("GET", "/api/settings/face-blur");
+  }
+  /** Owner only. */
+  setFaceBlur(enabled: boolean): Promise<FaceBlur> {
+    return this.request("PUT", "/api/settings/face-blur", { enabled });
+  }
+
   /** Opens a live view: the browser's SDP offer in, the camera's SDP answer out. */
   startLive(offer: string): Promise<LiveSession> {
     return this.request("POST", "/api/camera/live", { offer });
@@ -151,8 +161,22 @@ export class ApiClient {
   }
 
   /** `image` is a base64 JPEG; `box` is in fractions of it. */
-  addDoorReference(image: string, box: Box, status: DoorStatus): Promise<DoorSetup> {
-    return this.request("POST", "/api/door-calibration/references", { image, box, status });
+  addDoorZone(name: string, box: Box): Promise<DoorSetup> {
+    return this.request("POST", "/api/door-calibration/zones", { name, box });
+  }
+
+  /** Rename and/or redraw a door zone; its references follow the new box. */
+  updateDoorZone(id: string, change: { name?: string; box?: Box }): Promise<DoorSetup> {
+    return this.request("PATCH", `/api/door-calibration/zones/${encodeURIComponent(id)}`, change);
+  }
+
+  /** Delete a door zone and its references. */
+  deleteDoorZone(id: string): Promise<DoorSetup> {
+    return this.request("DELETE", `/api/door-calibration/zones/${encodeURIComponent(id)}`);
+  }
+
+  addDoorReference(image: string, zoneId: string, status: DoorStatus): Promise<DoorSetup> {
+    return this.request("POST", "/api/door-calibration/references", { image, zone_id: zoneId, status });
   }
 
   deleteDoorReference(id: string): Promise<DoorSetup> {

@@ -190,8 +190,8 @@ export class FridgeSenseStack extends Stack {
       novaCacheAnalysis: context("novaCacheAnalysis", "false"),
       timeZone,
       faceDetectPrice: context("faceDetectPrice", "0.001"),
-      // Per-motion debug traces, kept 7 days (raw stills are unblurred): -c debugTraces=false
-      debugTraces: context("debugTraces", "true"),
+      // Per-motion debug traces, kept 7 days; off unless deployed with -c debugTraces=true
+      debugTraces: context("debugTraces", "false"),
     });
 
     const httpFn = new LambdaFn(this, "HttpFunction", {

@@ -118,10 +118,76 @@ test("the camera tab shows the camera's details", async () => {
   expect(value("Location")).toBe("WA, US");
 });
 
-test("the camera tab has no edit controls for anyone", async () => {
+test("the camera details have no edit controls for anyone", async () => {
   renderCamera(vi.fn().mockResolvedValue(INFO));
   await screen.findByRole("heading", { name: "Fridge Cam" });
   expect(screen.queryByRole("button", { name: /save|delete|add/i })).not.toBeInTheDocument();
+});
+
+// Scenario: Only the two switches are editable
+test("for the owner the FridgeSense and blur switches are the only controls that change data", async () => {
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "owner");
+  await screen.findByRole("heading", { name: "Fridge Cam" });
+  expect(screen.queryByRole("button", { name: /save|delete|add/i })).not.toBeInTheDocument();
+  await screen.findAllByRole("switch");
+  const switches = screen.getAllByRole("switch");
+  expect(switches).toHaveLength(2);
+  expect(switches[0]).toHaveAccessibleName("FridgeSense");
+  expect(switches[1]).toHaveAccessibleName("Blur faces");
+  await waitFor(() => switches.forEach((s) => expect(s).toBeEnabled()));
+});
+
+// Scenario: Owner sees it on by default
+test("the owner sees Blur faces on by default", async () => {
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "owner");
+  const toggle = await screen.findByRole("switch", { name: "Blur faces" });
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+  expect(toggle).toBeEnabled();
+  expect(screen.getByText("Blurs faces in stored stills, snapshots and debug traces. Livestream is never blurred.")).toBeInTheDocument();
+  expect(screen.queryByText("Faces are stored as recorded for 7 days.")).not.toBeInTheDocument();
+});
+
+// Scenario: Owner turns it off
+test("the owner turns Blur faces off", async () => {
+  const { api } = renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "owner");
+  const toggle = await screen.findByRole("switch", { name: "Blur faces" });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  await userEvent.click(toggle);
+  expect(api.setFaceBlur).toHaveBeenCalledWith(false);
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+  expect(await screen.findByText("Faces are stored as recorded for 7 days.")).toBeInTheDocument();
+});
+
+// Scenario: Save fails
+test("a failed save turns Blur faces back on", async () => {
+  const error = new ApiError(500);
+  const { api, report } = renderCamera(
+    vi.fn().mockResolvedValue(INFO),
+    { setFaceBlur: vi.fn().mockRejectedValue(error) },
+    undefined,
+    "owner",
+  );
+  const toggle = await screen.findByRole("switch", { name: "Blur faces" });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  await userEvent.click(toggle);
+  expect(api.setFaceBlur).toHaveBeenCalledWith(false);
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+  expect(report).toHaveBeenCalledWith(error);
+});
+
+// Scenario: Others see it read-only
+test.each(["user", "viewer"] as const)("the %s sees Blur faces read-only", async (role) => {
+  const { api } = renderCamera(
+    vi.fn().mockResolvedValue(INFO),
+    { faceBlur: vi.fn().mockResolvedValue({ enabled: false }) },
+    undefined,
+    role,
+  );
+  const toggle = await screen.findByRole("switch", { name: "Blur faces" });
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+  expect(toggle).toBeDisabled();
+  await userEvent.click(toggle);
+  expect(api.setFaceBlur).not.toHaveBeenCalled();
 });
 
 // Scenario: Camera offline

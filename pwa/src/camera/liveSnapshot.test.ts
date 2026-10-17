@@ -1,7 +1,7 @@
 import { ApiError } from "../api/client";
 import type { LiveSession, Snapshot } from "../api/types";
 import { fakeApi } from "../test-utils";
-import { FRAME_WAIT_MS, FRAMES_NEEDED, liveSnapshot, NoVideo } from "./liveSnapshot";
+import { CameraOffline, FRAME_WAIT_MS, FRAMES_NEEDED, liveSnapshot, NoVideo } from "./liveSnapshot";
 
 const SESSION: LiveSession = { answer: "v=0\r\nanswer\r\n", session_id: "S1", max_seconds: 60 };
 const BLURRED: Snapshot = { image: "BLURRED", captured_at: "2026-10-15T19:20:10.000Z" };
@@ -72,6 +72,10 @@ afterEach(() => {
 
 function api(overrides: Record<string, unknown> = {}) {
   return fakeApi({
+    camera: vi.fn().mockImplementation(async () => {
+      calls.push("camera");
+      return { name: "Fridge", online: true };
+    }),
     startLive: vi.fn().mockImplementation(async () => {
       calls.push("startLive");
       return SESSION;
@@ -127,7 +131,7 @@ test("the live session ends before the frame is sent", async () => {
   decodeFrames(FRAMES_NEEDED);
   await settle();
   await result;
-  expect(calls).toEqual(["startLive", "draw", "stopLive", "cameraFrame"]);
+  expect(calls).toEqual(["camera", "startLive", "draw", "stopLive", "cameraFrame"]);
   expect(peer.closed).toBe(1);
 });
 
@@ -241,4 +245,32 @@ test("aborting while connecting ends the session once it opens", async () => {
   await settle();
   await expect(result).rejects.toMatchObject({ name: "AbortError" });
   expect(a.cameraSnapshot).not.toHaveBeenCalled();
+});
+
+// Online check before a snapshot
+test("an offline camera is reported and nothing else is requested", async () => {
+  const a = api({ camera: vi.fn().mockResolvedValue({ name: "Fridge", online: false }) });
+  const { result } = await start(a);
+  await expect(result).rejects.toBeInstanceOf(CameraOffline);
+  await expect(result).rejects.toThrow("The camera is offline. Check that it's plugged in and connected to Wi-Fi.");
+  expect(a.startLive).not.toHaveBeenCalled();
+  expect(a.cameraFrame).not.toHaveBeenCalled();
+  expect(a.cameraSnapshot).not.toHaveBeenCalled();
+});
+
+test("an online camera is checked, then the live view opens", async () => {
+  const a = api();
+  await start(a);
+  expect(a.camera).toHaveBeenCalledTimes(1);
+  expect(a.startLive).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ["online null", vi.fn().mockResolvedValue({ name: "Fridge", online: null })],
+  ["502", vi.fn().mockRejectedValue(new ApiError(502, "camera unavailable"))],
+  ["network error", vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))],
+])("an unknown status (%s) still opens the live view", async (_, camera) => {
+  const a = api({ camera });
+  await start(a);
+  expect(a.startLive).toHaveBeenCalledTimes(1);
 });

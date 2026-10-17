@@ -1,15 +1,18 @@
 """The pipeline Lambda driven in state-machine order, end to end (all external calls stubbed)."""
 
 import io
+import logging
 import time
 
 import boto3
 import httpx
 import pytest
 import respx
+from botocore.exceptions import ClientError
 from botocore.stub import Stubber
 from PIL import Image
 
+from fridgesense import face_blur
 from fridgesense.door_events import crop_still
 from fridgesense.faces import blur_regions
 from fridgesense.handlers import pipeline
@@ -237,6 +240,74 @@ def test_analysis_sees_the_cropped_still(env, faces, monkeypatch):
     assert all(Image.open(io.BytesIO(i)).size == (160, 180) for i in images)
 
 
+def blurring_off() -> None:
+    face_blur.save(FridgeTable(), ACCOUNT, False, now_ms=1786715500000)
+
+
+def no_cost_lines(caplog) -> bool:
+    return not any('"face_detect_cost"' in r.getMessage() for r in caplog.records)
+
+
+# Blurring off, no crop box (and Analysis while blurring is off)
+@respx.mock
+def test_blurring_off_no_crop_box(env, faces, caplog):
+    caplog.set_level(logging.INFO)
+    blurring_off()
+    ring_serves(OPEN)  # no DetectFaces responses queued: a call would fail the stubber
+    sent = capture_converse(env)
+
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+    step("analyze", state)
+
+    s3 = boto3.client("s3")
+    stored = [s3.get_object(Bucket=BUCKET, Key=k)["Body"].read() for k in state["still_keys"]]
+    assert len(stored) == 4 and all(b == OPEN for b in stored)
+    [request] = sent
+    images = [
+        c["image"]["source"]["bytes"] for c in request["messages"][0]["content"] if "image" in c
+    ]
+    assert images == stored
+    assert no_cost_lines(caplog)
+
+
+# Blurring off, with a crop box
+@respx.mock
+def test_blurring_off_with_a_crop_box(env, faces, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("STILL_CROP", "0.25,0.0,0.5,1.0")
+    blurring_off()
+    ring_serves(OPEN)
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+    s3 = boto3.client("s3")
+    stored = [s3.get_object(Bucket=BUCKET, Key=k)["Body"].read() for k in state["still_keys"]]
+    assert stored == [crop_still(OPEN, (0.25, 0.0, 0.5, 1.0))] * 4
+    assert no_cost_lines(caplog)
+
+
+# Read fails in the pipeline
+@respx.mock
+def test_setting_read_fails_in_the_pipeline(env, faces, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    blurring_off()
+    get = FridgeTable.get
+
+    def failing_get(self, pk, sk):
+        if sk == face_blur.SETTING_SK:
+            raise ClientError(
+                {"Error": {"Code": "ProvisionedThroughputExceededException"}}, "GetItem"
+            )
+        return get(self, pk, sk)
+
+    monkeypatch.setattr(FridgeTable, "get", failing_get)
+    no_faces(faces)  # detection runs on every still, as when the setting is on
+    ring_serves(OPEN)
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+    assert any('"face_blur_setting_failed"' in r.getMessage() for r in caplog.records)
+
+
 # Invalid crop config
 @respx.mock
 def test_invalid_crop_config_fails_before_ring(env, monkeypatch):
@@ -333,8 +404,9 @@ def run_setup_for(device: str) -> None:
 
     right = {"x": 0.6, "y": 0.0, "width": 0.4, "height": 1.0}
     lit = color_jpeg((128, 128, 128), [((0.6, 0.0, 0.4, 1.0), (40, 90, 200))])
-    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, lit, right, "open", 1)
-    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, CLOSED, right, "closed", 2)
+    z = door_calibration.add_zone(FridgeTable(), ACCOUNT, device, "Doors", right, 1).sk
+    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, lit, z, "open", 1)
+    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, CLOSED, z, "closed", 2)
     door_calibration.run(FridgeTable(), ACCOUNT, device, now_ms=3)
 
 

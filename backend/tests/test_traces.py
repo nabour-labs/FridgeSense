@@ -10,7 +10,7 @@ from PIL import Image
 
 from fridgesense.door_events import DoorCheck, Downloaded
 from fridgesense.table import FridgeTable, account_pk
-from fridgesense.traces import DoorTrace, NullTraceWriter, TraceWriter
+from fridgesense.traces import DoorTrace, NullTraceWriter, TraceWriter, trace_thumbnail
 from tests.conftest import BUCKET, color_jpeg
 
 HALVES = ((0.0, 0.0, 0.5, 1.0), (0.5, 0.0, 0.5, 1.0))
@@ -88,7 +88,9 @@ def test_door_opening_trace(aws):
     )
     writer().door(STATE, trace)
 
-    assert [s3_get(f"{PREFIX}raw-{n}.jpg") for n in range(1, 5)] == [CLOSED, OPEN, OPEN, CLOSED]
+    assert [s3_get(f"{PREFIX}raw-{n}.jpg") for n in range(1, 5)] == [
+        trace_thumbnail(i) for i in (CLOSED, OPEN, OPEN, CLOSED)
+    ]
     doc = door_json()
     assert doc["outcome"] == "door_open"
     assert doc["door_sk"] == door_sk
@@ -120,6 +122,25 @@ def test_zone_values_rounded_to_four_places(aws):
     writer().door(STATE, trace_of(four(OPEN, CLOSED, CLOSED, CLOSED), outcome="not_door"))
     value = door_json()["stills"][0]["zones"][1]["value"]
     assert value == round(value, 4)
+
+
+# Raw stills are the downloaded bytes (blurring off)
+def test_raw_stills_kept_as_downloaded_while_blurring_is_off(aws):
+    writer().door(
+        STATE, trace_of(four(CLOSED, OPEN, OPEN, CLOSED), outcome="not_door", face_blur=False)
+    )
+    assert [s3_get(f"{PREFIX}raw-{n}.jpg") for n in range(1, 5)] == [CLOSED, OPEN, OPEN, CLOSED]
+
+
+# Still that cannot be decoded
+def test_still_that_cannot_be_decoded(aws):
+    stills = four(CLOSED, CLOSED, b"not an image", CLOSED)
+    check = DoorCheck(zones=HALVES, threshold=0.02)
+    values = {s.n: check.zone_values(s.data) for s in stills if s.n != 3}
+    trace = DoorTrace(stills=stills, values=values, check=check, outcome="not_door")
+    writer().door(STATE, trace)
+    assert door_json()["stills"][2]["key"] is None
+    assert s3_keys() == [PREFIX + n for n in ("door.json", "raw-1.jpg", "raw-2.jpg", "raw-4.jpg")]
 
 
 # Too few stills
@@ -194,8 +215,9 @@ def test_setup_rule(aws):
     closed_ref = color_jpeg(GREY, size=(200, 100))
     t0 = 1792092000000
     table = FridgeTable()
-    r1 = dc.add_reference(table, ACCOUNT, DEVICE, open_ref, left, "open", now_ms=t0)
-    r2 = dc.add_reference(table, ACCOUNT, DEVICE, closed_ref, left, "closed", now_ms=t0 + 1)
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", left, now_ms=t0).sk
+    r1 = dc.add_reference(table, ACCOUNT, DEVICE, open_ref, z, "open", now_ms=t0)
+    r2 = dc.add_reference(table, ACCOUNT, DEVICE, closed_ref, z, "closed", now_ms=t0 + 1)
     dc.run(table, ACCOUNT, DEVICE, now_ms=t0 + 60_000)
     check = dc.setup_check(table, ACCOUNT, DEVICE)
 

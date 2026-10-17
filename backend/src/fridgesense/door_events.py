@@ -660,6 +660,7 @@ def fetch_stills(
     writer=None,
     frame_interval_ms: int | None = None,
     clip_dir=None,
+    face_blur: bool = True,
     paused_for: Callable[[str, str], bool] | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
@@ -669,8 +670,8 @@ def fetch_stills(
     be used it falls back to sampling stills across the window (the only path without it).
 
     The door check runs on the raw, uncropped stills in memory. For a door opening, up to
-    4 stills from the open span are cropped to `crop`, pay for face detection, and have
-    their blurred stills stored; the span also gives the event's open and close times.
+    4 stills from the open span are cropped to `crop`, go through `blurrer` (face detection,
+    unless blurring is off), and are stored; the span also gives the event's open and close times.
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate, and paused when
     `paused_for` says the owner paused the camera (checked before anything is downloaded).
     With a trace `writer`, every outcome also leaves a debug trace of what the check saw.
@@ -709,7 +710,9 @@ def fetch_stills(
     still_keys: list[str] = []
     status = "no_media"
     rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
-    trace = DoorTrace(stills=downloaded, values={}, check=check, outcome="no_media")
+    trace = DoorTrace(
+        stills=downloaded, values={}, check=check, outcome="no_media", face_blur=face_blur
+    )
     trace.alignment = _alignment_json(aligned)
 
     def done(result: dict) -> dict:

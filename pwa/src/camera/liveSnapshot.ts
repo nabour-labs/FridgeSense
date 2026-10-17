@@ -1,6 +1,13 @@
 import type { Api } from "../AppContext";
 import type { Snapshot } from "../api/types";
-import { livePeer, NO_VIDEO, openLive, type LiveConnection } from "../components/LiveStream";
+import {
+  CAMERA_OFFLINE,
+  cameraOffline,
+  livePeer,
+  NO_VIDEO,
+  openLive,
+  type LiveConnection,
+} from "../components/LiveStream";
 import { grabFrame } from "../image";
 
 /** The first frames after connecting are often grey until a keyframe arrives. */
@@ -19,6 +26,14 @@ export class NoVideo extends Error {
   constructor() {
     super(NO_VIDEO);
     this.name = "NoVideo";
+  }
+}
+
+/** Ring reports the camera offline: no live view is opened and there is no fallback. */
+export class CameraOffline extends Error {
+  constructor() {
+    super(CAMERA_OFFLINE);
+    this.name = "CameraOffline";
   }
 }
 
@@ -114,9 +129,10 @@ export function liveFrame(
  * Ring still from `cameraSnapshot` instead; a failed blur is not retried that way.
  */
 export async function liveSnapshot(
-  api: Pick<Api, "startLive" | "stopLive" | "cameraFrame" | "cameraSnapshot">,
+  api: Pick<Api, "camera" | "startLive" | "stopLive" | "cameraFrame" | "cameraSnapshot">,
   options: LiveSnapshotOptions = {},
 ): Promise<Snapshot> {
+  if (await cameraOffline(api)) throw new CameraOffline();
   let frame: string;
   try {
     frame = await liveFrame(api, options);

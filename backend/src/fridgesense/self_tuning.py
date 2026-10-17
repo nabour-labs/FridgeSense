@@ -168,7 +168,7 @@ def _zone_rule(zone: dc.SetupZone, refs, images, events, k: int):
     closed = [e.zones[k].closed for e in events if e.zones[k].closed is not None]
     if len(opened) < MIN_SAMPLES or len(closed) < MIN_SAMPLES:
         return None
-    mine = [i for i, r in enumerate(refs) if dc.iou(r.box, zone.box) >= dc.GROUP_IOU]
+    mine = [i for i, r in enumerate(refs) if r.zone_id == zone.zone_id]
     ref_open = [images[i] for i in mine if refs[i].status == "open"]
     ref_closed = [images[i] for i in mine if refs[i].status == "closed"]
     ref_thumbs = [_thumb(_crop_box(img, zone.box)) for img in ref_closed]
@@ -214,6 +214,8 @@ def retune(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> 
         tuned.append(
             {
                 **dc.box_json(zone.box),
+                "zone_id": zone.zone_id,
+                "name": zone.name,
                 "feature": feature,
                 "direction": direction,
                 "threshold": round(threshold, 4),

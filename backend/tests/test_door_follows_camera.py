@@ -61,9 +61,10 @@ def jpeg(img: Image.Image) -> bytes:
 def set_up(keep_anchor=True):
     box = dict(zip(("x", "y", "width", "height"), ZONE, strict=True))
     table = FridgeTable()
-    door_calibration.add_reference(table, ACCOUNT, DEVICE, jpeg(view(OPEN)), box, "open", START)
+    z = door_calibration.add_zone(table, ACCOUNT, DEVICE, "Doors", box, START).sk
+    door_calibration.add_reference(table, ACCOUNT, DEVICE, jpeg(view(OPEN)), z, "open", START)
     door_calibration.add_reference(
-        table, ACCOUNT, DEVICE, jpeg(view(CLOSED)), box, "closed", START + 1
+        table, ACCOUNT, DEVICE, jpeg(view(CLOSED)), z, "closed", START + 1
     )
     door_calibration.run(table, ACCOUNT, DEVICE, START + 2)
     if not keep_anchor:  # a setup run from before anchors existed

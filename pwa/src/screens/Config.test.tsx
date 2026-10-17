@@ -6,6 +6,7 @@ import type { Resize } from "../image";
 import type { Config as ConfigData, Reference, Role } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { drag, fakeApi } from "../test-utils";
+import { CameraOffline } from "../camera/liveSnapshot";
 import { Config } from "./Config";
 
 function ref(id: string, annotation: string): Reference {
@@ -425,4 +426,21 @@ test("setup warnings show above the config tabs", async () => {
   expect(within(banner).getByRole("link", { name: "Update door references" })).toBeInTheDocument();
   expect(within(banner).getByRole("link", { name: "Update fridge area" })).toBeInTheDocument();
   location.hash = "";
+});
+
+// Reference image while the camera is offline
+test("a snapshot from an offline camera warns and keeps Choose photo", async () => {
+  const { api } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { cameraSnapshot: vi.fn().mockRejectedValue(new CameraOffline()) } },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await userEvent.click(screen.getByRole("button", { name: "Camera snapshot" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "The camera is offline. Check that it's plugged in and connected to Wi-Fi.",
+  );
+  expect(screen.getByLabelText("Choose photo")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Camera snapshot" })).toBeEnabled();
+  expect(screen.queryByRole("img", { name: "Reference to draw on" })).not.toBeInTheDocument();
+  expect(api.addReference).not.toHaveBeenCalled();
 });

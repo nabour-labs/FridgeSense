@@ -13,6 +13,18 @@ const NO_WEBRTC = "This browser can't play live video.";
 const NO_CONNECTION = "Could not connect to the camera.";
 /** The session connected but no video came: Ring still answers for an unplugged camera. */
 export const NO_VIDEO = "The camera isn't sending video. Check that it's plugged in.";
+export const CAMERA_OFFLINE = "The camera is offline. Check that it's plugged in and connected to Wi-Fi.";
+
+/** True only when Ring reports the camera offline. An unknown status (Ring unreachable, a
+ * failed check) counts as online, so a working camera is never hidden; a 401 is rethrown. */
+export async function cameraOffline(api: Pick<Api, "camera">): Promise<boolean> {
+  try {
+    return (await api.camera()).online === false;
+  } catch (err) {
+    if (err instanceof Unauthorized) throw err;
+    return false;
+  }
+}
 const UNAVAILABLE = "The camera is not available right now.";
 const NO_CAMERA = "No camera is linked yet.";
 
@@ -163,9 +175,12 @@ function useLiveStream(createPeer: () => RTCPeerConnection | null, onStats?: (st
   const [state, setState] = useState<State>({ kind: "connecting" });
   const [stream, setStream] = useState<MediaStream | null>(null);
   const current = useRef<{ conn: LiveConnection; timers: ReturnType<typeof setTimeout>[] } | null>(null);
+  /** Bumped by every start and stop, so an online check that answers late is ignored. */
+  const attempt = useRef(0);
 
   /** Ends the current attempt and its countdown, once. */
   const stop = useCallback(() => {
+    attempt.current += 1;
     const run = current.current;
     if (!run || run.conn.stopped) return;
     run.timers.forEach((t) => clearTimeout(t));
@@ -175,7 +190,17 @@ function useLiveStream(createPeer: () => RTCPeerConnection | null, onStats?: (st
 
   const start = useCallback(async () => {
     stop();
+    const mine = ++attempt.current;
     setState({ kind: "connecting" });
+    let offline: boolean;
+    try {
+      offline = await cameraOffline(api);
+    } catch (err) {
+      if (mine === attempt.current) report(err);
+      return;
+    }
+    if (mine !== attempt.current) return;
+    if (offline) return setState({ kind: "error", message: CAMERA_OFFLINE });
     const timers: ReturnType<typeof setTimeout>[] = [];
     const conn = openLive(api, createPeer, {
       onStream(stream, maxSeconds) {
@@ -247,7 +272,10 @@ function RealLiveStream({
 }) {
   const { state, stream, start } = useLiveStream(createPeer, onStats);
   const video = useRef<HTMLVideoElement>(null);
+  // The track arrives before any picture; until the video plays, say so instead of showing black.
+  const [playing, setPlaying] = useState(false);
   useEffect(() => {
+    setPlaying(false);
     if (video.current) video.current.srcObject = stream;
   }, [stream]);
 
@@ -270,10 +298,11 @@ function RealLiveStream({
             autoPlay
             muted
             playsInline
+            onPlaying={() => setPlaying(true)}
             className="absolute inset-0 size-full object-contain"
           />
         )}
-        {state.kind === "connecting" && <p>Connecting…</p>}
+        {(state.kind === "connecting" || (state.kind === "live" && !playing)) && <p className="relative">Connecting…</p>}
         {state.kind === "ended" && <p>Stream ended</p>}
         {state.kind === "error" && <p className="px-6 text-center">{state.message}</p>}
         {state.kind === "live" && (

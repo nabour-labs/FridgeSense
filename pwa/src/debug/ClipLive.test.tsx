@@ -78,7 +78,7 @@ it("Livestream with no clips: says so and asks nothing of the camera", async () 
 
 it("Livestream switch off: the live view starts as before, with no clip dropdown", async () => {
   serve(CLIPS);
-  const api = renderLive(false);
+  const api = renderLive(false, fakeApi({ camera: vi.fn().mockResolvedValue({ name: "Fridge", online: true }) }));
   await waitFor(() => expect(api.startLive).toHaveBeenCalledWith("v=0\r\noffer\r\n"));
   expect(screen.queryByRole("combobox", { name: "Clip" })).not.toBeInTheDocument();
   expect(screen.getByText("Connecting…")).toBeInTheDocument();

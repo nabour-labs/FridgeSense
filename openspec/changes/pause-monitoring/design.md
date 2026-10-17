@@ -33,6 +33,7 @@ Door openings flow webhook → `StepFunctionsMotionHandler.start_execution` → 
 - [Owner forgets to resume] → banner on the Fridge and Config screens on every visit while paused.
 - [A run already past fetch_stills when paused] → it finishes and that one opening is analyzed. Accepted.
 - [Extra DynamoDB read per motion webhook] → one GetItem, a few ms, well within the 5 s budget.
+- [`face-blur-setting` also modifies the camera-info "Camera tab" requirement] → this change's version includes both switches, so archive `face-blur-setting` before this one.
 - [The `setup-warnings` spec lives in the un-archived `door-auto-calibration` change] → archive that change before this one, so this ADDED requirement lands on an existing spec.
 
 ## Migration Plan
