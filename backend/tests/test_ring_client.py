@@ -1,5 +1,7 @@
 """ring-token-lifecycle: Valid token for every Ring API call."""
 
+import threading
+
 import httpx
 import pytest
 import respx
@@ -106,3 +108,64 @@ def test_post_sends_json(http):
     req = route.calls.last.request
     assert req.headers["content-type"] == "application/json"
     assert req.content == b'{"nonce":"N1"}'
+
+
+# Concurrent refresh
+@respx.mock
+def test_concurrent_refresh_calls_oauth_once(http):
+    oauth = respx.post(OAUTH_URL).respond(200, json=load_fixture("ring/oauth_refresh.json"))
+    route = respx.get(f"{API_BASE}/v1/devices").respond(200, json={"data": []})
+    both_loaded = threading.Barrier(2, timeout=5)
+
+    class SlowStore(MemoryTokenStore):
+        loads = 0
+
+        def load(self):
+            SlowStore.loads += 1
+            current = super().load()
+            if SlowStore.loads <= 2:  # both calls read the expiring tokens first
+                both_loaded.wait()
+            return current
+
+    store = SlowStore(tokens(expires_in=240))
+    ring = client(http, store)
+    errors = []
+
+    def call():
+        try:
+            ring.get("/v1/devices")
+        except Exception as e:  # pragma: no cover - surfaced below
+            errors.append(e)
+
+    threads = [threading.Thread(target=call) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert oauth.call_count == 1
+    assert [c.request.headers["authorization"] for c in route.calls] == ["Bearer at2"] * 2
+    assert (store.tokens.access_token, store.tokens.refresh_token) == ("at2", "rt2")
+
+
+# Another caller already refreshed
+@respx.mock
+def test_another_caller_already_refreshed(http):
+    oauth = respx.post(OAUTH_URL).respond(200, json=load_fixture("ring/oauth_refresh.json"))
+    route = respx.get(f"{API_BASE}/v1/devices").respond(200, json={"data": []})
+    newer = tokens(expires_in=14400).model_copy(
+        update={"access_token": "at2", "refresh_token": "rt2"}
+    )
+
+    class RefreshedMeanwhile(MemoryTokenStore):
+        def load(self):
+            current = self.tokens
+            self.tokens = newer  # another caller saves right after this read
+            return current
+
+    store = RefreshedMeanwhile(tokens(expires_in=240))
+    client(http, store).get("/v1/devices")
+    assert not oauth.called
+    assert route.calls.last.request.headers["authorization"] == "Bearer at2"
+    assert store.tokens == newer
+    assert store.saves == 0

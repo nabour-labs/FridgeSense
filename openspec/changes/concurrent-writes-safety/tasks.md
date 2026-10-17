@@ -2,10 +2,10 @@
 
 ## 1. Ring token refresh race
 
-- [ ] 1.1 Write failing tests in `backend/tests/test_ring_client.py` for "Concurrent refresh" (two threads, one OAuth call) and "Another caller already refreshed" (no OAuth call, uses `at2`); run them and see them fail
-- [ ] 1.2 Implement reload-before-refresh under a module-level lock in `RingClient._refresh`; verify with `uv run pytest tests/test_ring_client.py`
-- [ ] 1.3 Write failing tests in `backend/tests/test_token_refresh.py` for "Refresh rejected after another caller already refreshed" and "Refresh rejected and nobody else refreshed"; run them and see the first fail
-- [ ] 1.4 Implement the reload check in `run_refresh`; verify with `uv run pytest tests/test_token_refresh.py`
+- [x] 1.1 Write failing tests in `backend/tests/test_ring_client.py` for "Concurrent refresh" (two threads, one OAuth call) and "Another caller already refreshed" (no OAuth call, uses `at2`); run them and see them fail
+- [x] 1.2 Implement reload-before-refresh under a module-level lock in `RingClient._refresh`; verify with `uv run pytest tests/test_ring_client.py`
+- [x] 1.3 Write failing tests in `backend/tests/test_token_refresh.py` for "Refresh rejected after another caller already refreshed" and "Refresh rejected and nobody else refreshed"; run them and see the first fail
+- [x] 1.4 Implement the reload check in `run_refresh`; verify with `uv run pytest tests/test_token_refresh.py`
 
 ## 2. Inventory lost updates
 

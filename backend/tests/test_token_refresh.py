@@ -98,6 +98,35 @@ def test_refresh_token_rejected(oauth, caplog, status):
     assert all("rt1" not in r.getMessage() and "at1" not in r.getMessage() for r in caplog.records)
 
 
+# Refresh rejected after another caller already refreshed
+@respx.mock
+def test_refresh_rejected_after_another_caller_refreshed(oauth, caplog):
+    caplog.set_level(logging.INFO)
+    newer = OLD.model_copy(
+        update={"access_token": "at2", "refresh_token": "rt2", "expires_at": NOW + 14400}
+    )
+    store = MemoryTokenStore(OLD)
+
+    def rotated_elsewhere(request):
+        store.tokens = newer  # another caller used rt1 first and stored its result
+        return httpx.Response(400, json={"error": "invalid_grant"})
+
+    respx.post(OAUTH_URL).mock(side_effect=rotated_elsewhere)
+    assert run(store, oauth) == "already_refreshed"
+    assert store.tokens == newer
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert all("rt1" not in r.getMessage() and "rt2" not in r.getMessage() for r in caplog.records)
+
+
+# Refresh rejected and nobody else refreshed
+@respx.mock
+def test_refresh_rejected_and_nobody_else_refreshed(oauth):
+    respx.post(OAUTH_URL).respond(400, json={"error": "invalid_grant"})
+    store = MemoryTokenStore(OLD)
+    assert run(store, oauth) == "needs_relink"
+    assert store.tokens == OLD.model_copy(update={"link_status": "needs_relink"})
+
+
 # OAuth endpoint unavailable
 @respx.mock
 @pytest.mark.parametrize(

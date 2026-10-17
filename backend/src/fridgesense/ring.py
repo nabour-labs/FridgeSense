@@ -1,5 +1,6 @@
 """Ring API client with automatic token refresh."""
 
+import threading
 import time
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -12,6 +13,9 @@ from fridgesense.store import Tokens
 API_BASE = "https://api.amazonvision.com"
 TIMEOUT_S = 5.0
 REFRESH_MARGIN_S = 300
+
+# Download threads share one client: refresh one at a time so a stale copy never wins.
+_refresh_lock = threading.Lock()
 
 
 class RingAuthError(Exception):
@@ -73,10 +77,15 @@ class RingClient:
                 raise RingAuthError("Ring answered 401 after a token refresh")
         return resp
 
-    def _refresh(self, tokens: Tokens) -> Tokens:
-        new = refreshed(tokens, self.oauth, self.now())
-        self.store.save(new)
-        return new
+    def _refresh(self, stale: Tokens) -> Tokens:
+        """Refresh `stale`, unless another caller already stored newer tokens."""
+        with _refresh_lock:
+            current = self.store.load() or stale
+            if current.access_token != stale.access_token:
+                return current
+            new = refreshed(current, self.oauth, self.now())
+            self.store.save(new)
+            return new
 
     def _send(self, method: str, path: str, tokens: Tokens, **kwargs: Any) -> httpx.Response:
         extra = {k: v for k, v in kwargs.pop("headers", {}).items() if k.lower() != "authorization"}
