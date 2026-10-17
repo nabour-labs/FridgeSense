@@ -86,3 +86,18 @@ export function averageDuration(events: Opening[]): number | null {
   if (events.length === 0) return null;
   return Math.round(events.reduce((sum, e) => sum + e.duration_s, 0) / events.length);
 }
+
+export interface DurationStats {
+  average: number;
+  longest: number;
+  shortest: number;
+}
+
+/** Average (rounded), longest and shortest seconds open on one local day (YYYY-MM-DD), or null without openings. */
+export function durationStats(events: Opening[], date: string, timeZone: string): DurationStats | null {
+  const day = events.filter((e) => dayKey(new Date(e.opened_at), timeZone) === date);
+  const average = averageDuration(day);
+  if (average === null) return null;
+  const seconds = day.map((e) => e.duration_s);
+  return { average, longest: Math.max(...seconds), shortest: Math.min(...seconds) };
+}

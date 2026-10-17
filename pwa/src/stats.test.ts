@@ -1,4 +1,4 @@
-import { averageDuration, byWeekdayHour, heatLevel, lastDays, perDay, todayCount } from "./stats";
+import { averageDuration, byWeekdayHour, durationStats, heatLevel, lastDays, perDay, todayCount } from "./stats";
 
 const UTC = "UTC";
 const NOW = new Date("2026-10-15T20:00:00Z");
@@ -75,4 +75,39 @@ test("no openings gives zeros and no average", () => {
 test("only today is marked as today", () => {
   const days = perDay(WEEK, NOW, UTC);
   expect(days.map((d) => d.isToday)).toEqual([false, false, false, false, false, false, true]);
+});
+
+// Today's open times
+test("duration stats give the average, longest and shortest opening of a day", () => {
+  expect(durationStats(WEEK, "2026-10-15", UTC)).toEqual({ average: 30, longest: 40, shortest: 20 });
+  expect(durationStats(WEEK, "2026-10-14", UTC)).toEqual({ average: 30, longest: 35, shortest: 25 });
+});
+
+// Average rounded
+test("the day's average open time is rounded to the nearest second", () => {
+  const day = [at("2026-10-15T08:00:00Z", 20), at("2026-10-15T09:00:00Z", 25)];
+  expect(durationStats(day, "2026-10-15", UTC)?.average).toBe(23);
+});
+
+// Single opening
+test("a single opening is the average, longest and shortest", () => {
+  expect(durationStats([at("2026-10-15T08:00:00Z", 18)], "2026-10-15", UTC)).toEqual({
+    average: 18,
+    longest: 18,
+    shortest: 18,
+  });
+});
+
+// Day without openings
+test("a day without openings has no duration stats", () => {
+  expect(durationStats(WEEK, "2026-10-13", UTC)).toBeNull();
+  expect(durationStats([], "2026-10-15", UTC)).toBeNull();
+});
+
+// Open time in local days
+test("open time counts toward the local day", () => {
+  const ev = [at("2026-10-15T02:30:00Z", 50)];
+  const tz = "America/Vancouver";
+  expect(durationStats(ev, "2026-10-14", tz)).toEqual({ average: 50, longest: 50, shortest: 50 });
+  expect(durationStats(ev, "2026-10-15", tz)).toBeNull();
 });
