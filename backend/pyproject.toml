@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "FridgeSense backend: Ring access, webhook intake and Lambda handlers"
 requires-python = ">=3.13"
 dependencies = [
+    "av>=14",  # decodes event clips for the door check
     "httpx>=0.28",
     "mangum>=0.22.0",
     "mcp>=2.3,<3",
@@ -22,7 +23,7 @@ dev = [
     "respx>=0.22",
     "ruff>=0.8",
 ]
-clips = [
+clips = [  # kept so `uv sync --group clips` keeps working; av is now a runtime dependency
     "av>=14",
 ]
 

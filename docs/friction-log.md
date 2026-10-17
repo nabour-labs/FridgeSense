@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-17 · Ring Partner API · Clip download answers 303 even when there is no clip
+
+- **Task:** run the door check on frames from the motion event's clip instead of 30 separate stills.
+- **Steps:** `GET /v1/history/devices/{id}/events?event_types=motion` (latest finished event, 20 s, about 15 h old), then `POST /v1/devices/{id}/media/video/download` with `{"timestamp": 1792181318101, "duration": 20026}`, then `GET` on the `Location` link. Read-only, once.
+- **Expected:** a 303 to an MP4 for the event's recording, or an error on the POST if there is none. Our notes list the body as `{timestamp, duration}` without units.
+- **Actual:** the POST answered `303` with `content-length: 0`. The link then answered `416 application/json`: `{"code":"MEDIA_NOT_FOUND","detail":"No media found in time range 1792181318101-1792181338127"}`. The range in the message shows `duration` is in milliseconds. The motion event is in history, but no clip is available for it.
+- **Severity:** Medium
+- **Workaround:** treat 416/425 from the link like the POST's (retry, then fall back to stills), and log `clip_unavailable` with the reason.
+- **Suggestion:** document the units of `duration`, return `MEDIA_NOT_FOUND` from the POST rather than after the redirect, and say when a history event has no recording (for example a `has_recording` flag).
+
 ### 2026-10-16 · Ring Partner API · Device capabilities and configurations don't match the docs
 
 - **Task:** show the camera's image enhancements (night vision, HDR) on the Config Camera tab.

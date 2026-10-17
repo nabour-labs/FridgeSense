@@ -183,6 +183,8 @@ export class FridgeSenseStack extends Stack {
       stillCrop: context("stillCrop", "0.30,0.0,0.34,1.0"),
       // About one still per second across each motion window: -c stillIntervalMs=2000
       stillIntervalMs: context("stillIntervalMs", "1000"),
+      // The door check looks at a clip frame this often: -c doorFrameIntervalMs=250
+      doorFrameIntervalMs: context("doorFrameIntervalMs", "500"),
       ...nova,
       // Turn on once measured: cdk deploy -c novaCacheAnalysis=true
       novaCacheAnalysis: context("novaCacheAnalysis", "false"),

@@ -457,6 +457,77 @@ def fetch_still(
 
 
 MIN_STILLS = 2
+FRAME_JPEG_QUALITY = 90
+
+
+def _frame_jpeg(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=FRAME_JPEG_QUALITY)
+    return buf.getvalue()
+
+
+def clip_frames_checked(
+    ring: RingClient,
+    http: httpx.Client,
+    check: "DoorCheck",
+    state: dict,
+    interval_ms: int,
+    sleep: Callable[[float], None],
+    clip_dir=None,
+) -> tuple[list[Downloaded], list[list["ZoneValue"]]]:
+    """The event clip's frames every `interval_ms` (as JPEG `Downloaded`s) and their zone values.
+
+    Each frame is scored as it is decoded, so a long clip never sits in memory decoded.
+    The temp clip file is deleted whatever happens. Raises ClipUnavailable.
+    """
+    from fridgesense import clip_frames
+
+    window = state["window"]
+    started = time.monotonic()
+    path = clip_frames.download_clip(
+        ring,
+        http,
+        state["device_id"],
+        window["start_ms"],
+        window["end_ms"] - window["start_ms"],
+        sleep,
+        directory=clip_dir,
+    )
+    downloaded_ms = round((time.monotonic() - started) * 1000)
+    frames, values = [], []
+    try:
+        for n, (offset, img) in enumerate(clip_frames.sample_frames(path, interval_ms), start=1):
+            values.append(check.zone_values(img))
+            frames.append(Downloaded(n, window["start_ms"] + offset, _frame_jpeg(img)))
+        clip_bytes = path.stat().st_size
+    finally:
+        path.unlink(missing_ok=True)
+    log_event(
+        "clip_frames",
+        device_id=state["device_id"],
+        frames=len(frames),
+        clip_bytes=clip_bytes,
+        clip_download_ms=downloaded_ms,
+        clip_decode_ms=round((time.monotonic() - started) * 1000) - downloaded_ms,
+    )
+    return frames, values
+
+
+def stills_at(
+    ring: RingClient,
+    http: httpx.Client,
+    device_id: str,
+    frames: list[Downloaded],
+    sleep: Callable[[float], None],
+) -> list[bytes]:
+    """A Ring still at each frame's time (sharper than video), or the frame where none comes."""
+
+    def fetch(frame: Downloaded) -> bytes:
+        data, _ = fetch_still(ring, http, device_id, frame.at_ms, sleep)
+        return frame.data if data is None else data
+
+    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
+        return list(pool.map(fetch, frames))
 
 
 def _device_check(
@@ -497,8 +568,14 @@ def fetch_stills(
     interval_ms: int = STILL_INTERVAL_MS,
     setup_for: Callable[[str, str], "DoorCheck | None"] | None = None,
     writer=None,
+    frame_interval_ms: int | None = None,
+    clip_dir=None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
+
+    With `frame_interval_ms`, the check first runs on the event clip's frames at that spacing
+    and stills are downloaded only at the times picked from the open span; if the clip can't
+    be used it falls back to sampling stills across the window (the only path without it).
 
     The door check runs on the raw, uncropped stills in memory. For a door opening, up to
     4 stills from the open span are cropped to `crop`, pay for face detection, and have
@@ -510,13 +587,24 @@ def fetch_stills(
 
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
     check = _device_check(check, setup_for, account_id, device_id)
-    downloaded = download_all_stills(ring, http, state, sleep, interval_ms)
+    clip = None
+    if frame_interval_ms is not None:
+        from fridgesense.clip_frames import ClipUnavailable
+
+        try:
+            clip = clip_frames_checked(ring, http, check, state, frame_interval_ms, sleep, clip_dir)
+        except ClipUnavailable as e:
+            log_event("clip_unavailable", logging.WARNING, device_id=device_id, reason=e.reason)
+    if clip is not None:
+        downloaded, clip_values = clip
+    else:
+        downloaded = download_all_stills(ring, http, state, sleep, interval_ms)
     raw = [(d.n, d.data) for d in downloaded if d.data is not None]
     times = [d.at_ms for d in downloaded]
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
     status = "no_media"
-    rule_log: dict = {"zones_source": check.source}
+    rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
     trace = DoorTrace(stills=downloaded, values={}, check=check, outcome="no_media")
 
     def done(result: dict) -> dict:
@@ -526,7 +614,7 @@ def fetch_stills(
         return result
 
     if len(raw) >= MIN_STILLS:
-        values = [check.zone_values(data) for _, data in raw]
+        values = clip_values if clip else [check.zone_values(data) for _, data in raw]
         trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
         results = [check.result_of(v) for v in values]
         best = check.best(results)
@@ -548,7 +636,12 @@ def fetch_stills(
         picks = pick(span)
         trace.open_span = [raw[i][0] for i in span]
         trace.picked = [raw[i][0] for i in picks]
-        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(picks, start=1)]
+        chosen = [downloaded[raw[i][0] - 1] for i in picks]
+        if clip:
+            datas = stills_at(ring, http, device_id, chosen, sleep)
+        else:
+            datas = [d.data for d in chosen]
+        picked = [(k, crop_still(data, crop)) for k, data in enumerate(datas, start=1)]
         stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
         still_keys = [k for k, _ in stills]
         trace.stored_keys = still_keys

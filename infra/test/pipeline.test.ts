@@ -117,15 +117,16 @@ describe("door-event state machine", () => {
 });
 
 describe("pipeline Lambda", () => {
-  it("is arm64 with 512 MB, 90 s and the pipeline settings", () => {
+  it("is arm64 with 2048 MB, 150 s (clip decoding) and the pipeline settings", () => {
     const [, fn] = lambdaByHandler("fridgesense.handlers.pipeline.handler");
     expect(fn.Properties.Runtime).toBe("python3.13");
     expect(fn.Properties.Architectures).toEqual(["arm64"]);
-    expect(fn.Properties.MemorySize).toBe(512);
-    expect(fn.Properties.Timeout).toBe(90);
+    expect(fn.Properties.MemorySize).toBe(2048);
+    expect(fn.Properties.Timeout).toBe(150);
     const vars = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
     expect(Object.keys(vars).sort()).toEqual([
       "DEBUG_TRACES",
+      "DOOR_FRAME_INTERVAL_MS",
       "DOOR_THRESHOLD",
       "DOOR_ZONES",
       "FACE_DETECT_PRICE",
@@ -152,6 +153,7 @@ describe("pipeline Lambda", () => {
     expect(vars.DOOR_THRESHOLD).toBe("0.01");
     expect(vars.STILL_CROP).toBe("0.30,0.0,0.34,1.0");
     expect(vars.STILL_INTERVAL_MS).toBe("1000");
+    expect(vars.DOOR_FRAME_INTERVAL_MS).toBe("500");
     expect(vars).not.toHaveProperty("DOOR_BOX");
     expect(vars.FACE_DETECT_PRICE).toBe("0.001");
     expect(vars.DEBUG_TRACES).toBe("true");

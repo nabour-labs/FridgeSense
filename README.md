@@ -132,8 +132,8 @@ Ring tokens are refreshed every 3 hours. If a refresh is ever rejected, the logs
 
 1. Ring sends a motion webhook. FridgeSense starts one Step Functions run (`fridgesense-door-events`) for it.
 2. The run waits for Ring to finish the recording, then finds the event's start and end in Ring's history.
-3. It downloads about one still per second across the recording (4 to 30 of them) and checks each one in the door zones. The first open still and the first closed still after it give the door event's `opened_at` and `closed_at`, so `duration_s` is how long the door was really open, not how long someone stood in view. Motion without an opening stops here, so no face detection or Nova call is made.
-4. Up to 4 stills from the open stretch go on. Each is cropped to the strip the camera's privacy mask leaves visible. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
+3. It downloads the recording once from Ring and checks a frame every 0.5 s in the door zones, however long the motion lasted. The first open frame and the first closed frame after it give the door event's `opened_at` and `closed_at`, so `duration_s` is how long the door was really open, not how long someone stood in view. Motion without an opening stops here, so no face detection or Nova call is made. The clip stays in the Lambda's `/tmp` and is never stored. If Ring has no clip for the motion, the step logs `clip_unavailable` with the reason and checks about one still per second instead (4 to 30 of them).
+4. Up to 4 stills from the open stretch go on: Ring stills at the picked times, which are sharper than video frames (the clip frame stands in if a still can't be downloaded). Each is cropped to the strip the camera's privacy mask leaves visible. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
 5. Amazon Nova 2 Lite compares the stills and lists items added and removed. Changes with confidence 0.7 or more update the inventory; the rest wait for confirmation.
 
 Nova 2 Lite runs through the `us.` cross-region inference profile, so a still may be processed in us-east-1, us-east-2 or us-west-2. To use Nova Lite v1 in us-east-1 only, deploy with `-c novaModelId=amazon.nova-lite-v1:0 -c novaPriceIn=0.00006 -c novaPriceOut=0.00024`.
@@ -155,10 +155,10 @@ Until setup has run, the check uses colourful pixels in the `doorZones` from CDK
 set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 1h --filter-pattern '"motion_not_door"'
 ```
 
-Each line shows `score`, the `zone` and `feature` that scored it, `threshold`, and `zones_source` (`setup` or `default`). `stillCrop` is the visible strip kept for storage and Nova (`-c stillCrop=` keeps the full frame), and `stillIntervalMs` sets the time between stills:
+Each line shows `score`, the `zone` and `feature` that scored it, `threshold`, and `zones_source` (`setup` or `default`). `stillCrop` is the visible strip kept for storage and Nova (`-c stillCrop=` keeps the full frame), `doorFrameIntervalMs` sets the time between checked clip frames (default 500), and `stillIntervalMs` the time between stills when there is no clip:
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c "doorZones=0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18" -c doorThreshold=0.02 -c stillCrop=0.30,0.0,0.34,1.0 -c stillIntervalMs=1000
+set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com -c "doorZones=0.38,0.32,0.21,0.30;0.455,0.60,0.12,0.18" -c doorThreshold=0.02 -c stillCrop=0.30,0.0,0.34,1.0 -c doorFrameIntervalMs=500 -c stillIntervalMs=1000
 ```
 
 The camera's night vision records in black and white, so colour sees nothing with the kitchen lights off. Add closed and open references taken in the dark and setup can pick brightness or change instead.
@@ -278,7 +278,7 @@ cd pwa && FRIDGESENSE_VIDEOS=/path/to/clips FRIDGESENSE_MOCK=1 npm run dev
 
 Clip frames are **not face-blurred**. With `FRIDGESENSE_URL`, saving a reference made from a clip uploads that frame to the deployed backend, and the picker warns you. The production build has no debug mode and no clip routes.
 
-**Door check on recorded clips (local only).** The same clips can test the open/close check. A fake camera serves clip frames as Ring stills, and the unchanged pipeline step runs on them. Results are scored against hand-written labels in [`backend/tests/fixtures/clips/door_labels.json`](backend/tests/fixtures/clips/door_labels.json): for each clip, the seconds it opened and closed. Nothing calls Ring, AWS or Bedrock. Without the clips or the decoder, the tests skip, so CI never runs them.
+**Door check on recorded clips (local only).** The same clips can test the open/close check. A fake camera serves each clip as Ring's clip download (and its frames as Ring stills), and the unchanged pipeline step runs on it. Results are scored against hand-written labels in [`backend/tests/fixtures/clips/door_labels.json`](backend/tests/fixtures/clips/door_labels.json): for each clip, the seconds it opened and closed. Nothing calls Ring, AWS or Bedrock. Without the clips or the decoder, the tests skip, so CI never runs them.
 
 ```bash
 cd backend && uv sync --group clips

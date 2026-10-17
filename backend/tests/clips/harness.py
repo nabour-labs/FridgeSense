@@ -108,6 +108,7 @@ EPOCH_MS = 1786715596000  # every clip's window starts here
 NOW_S = EPOCH_MS / 1000
 JPEG_QUALITY = 90
 DOWNLOAD = rf"{API_BASE}/v1/devices/[^/]+/media/image/download"
+CLIP_DOWNLOAD = rf"{API_BASE}/v1/devices/[^/]+/media/video/download"
 MEDIA_HOST = "https://clip-camera.invalid"
 
 
@@ -175,6 +176,14 @@ def clip_camera(router: respx.Router, source: FrameSource, start_ms: int) -> Non
 
     router.post(url__regex=DOWNLOAD).mock(side_effect=download)
     router.get(url__regex=rf"{MEDIA_HOST}/\d+").mock(side_effect=media)
+    path = getattr(source, "path", None)
+    if path is not None:  # the whole recording, as Ring's clip download would serve it
+        router.post(url__regex=CLIP_DOWNLOAD).respond(
+            303, headers={"Location": f"{MEDIA_HOST}/clip.mp4"}
+        )
+        router.get(f"{MEDIA_HOST}/clip.mp4").mock(
+            side_effect=lambda request: httpx.Response(200, content=Path(path).read_bytes())
+        )
 
 
 class ClipUnreadable(Exception):
@@ -185,42 +194,27 @@ class AvSource:
     """A clip decoded with PyAV. `prepare` decodes the given times in one pass and keeps JPEGs."""
 
     def __init__(self, path: Path):
-        import av
+        from fridgesense.clip_frames import ClipUnavailable, clip_duration_ms
 
         self.path = Path(path)
         self.jpegs: dict[int, bytes] = {}  # by offset in ms
         try:
-            with av.open(str(self.path)) as container:
-                stream = container.streams.video[0]
-                self.size = (stream.width, stream.height)
-                self.duration_s = container.duration / 1_000_000
-        except (av.FFmpegError, IndexError, TypeError) as e:
-            raise ClipUnreadable(f"{self.path.name}: not a readable video ({e})") from e
+            self.duration_s = clip_duration_ms(self.path) / 1000
+        except ClipUnavailable as e:
+            raise ClipUnreadable(f"{self.path.name}: not a readable video ({e.reason})") from e
 
     def prepare(self, offsets_s: list[float]) -> None:
         """Decode the frame shown at each offset (the latest frame at or before it)."""
-        import av
+        from fridgesense.clip_frames import ClipUnavailable, frames_at
 
-        wanted = sorted(
-            {round(t * 1000) for t in offsets_s if 0 <= t <= self.duration_s} - self.jpegs.keys()
-        )
+        wanted = {round(t * 1000) for t in offsets_s} - self.jpegs.keys()
         if not wanted:
             return
         try:
-            with av.open(str(self.path)) as container:
-                stream = container.streams.video[0]
-                stream.thread_type = "AUTO"
-                shown = None
-                for frame in container.decode(stream):
-                    while wanted and shown is not None and frame.time * 1000 > wanted[0]:
-                        self.jpegs[wanted.pop(0)] = to_jpeg(shown.to_image())
-                    if not wanted:
-                        return
-                    shown = frame
-                for ms in wanted:  # past the last frame's start: it is still showing
-                    self.jpegs[ms] = to_jpeg(shown.to_image())
-        except av.FFmpegError as e:
-            raise ClipUnreadable(f"{self.path.name}: not a readable video ({e})") from e
+            for ms, img in frames_at(self.path, wanted):
+                self.jpegs[ms] = to_jpeg(img)
+        except ClipUnavailable as e:
+            raise ClipUnreadable(f"{self.path.name}: not a readable video ({e.reason})") from e
 
     def jpeg_at(self, offset_s: float) -> bytes | None:
         if not 0 <= offset_s <= self.duration_s:
@@ -228,12 +222,15 @@ class AvSource:
         ms = round(offset_s * 1000)
         if ms not in self.jpegs:
             self.prepare([offset_s])
-        return self.jpegs[ms]
+        return self.jpegs.get(ms)
 
 
 ACCOUNT = "clip.account"
 DEVICE = "clip.device"
 TOLERANCE_STILLS = 1.5
+
+
+_FROM_ENV = object()
 
 
 def tolerance_s(duration_ms: int, interval_ms: int) -> float:
@@ -375,13 +372,17 @@ def evaluate_clip(
     openings: list[Opening],
     check: DoorCheck | None = None,
     interval_ms: int | None = None,
+    frame_interval_ms=_FROM_ENV,
 ) -> ClipResult:
     """Run the unchanged fetch-stills task on a clip and score it against its labels.
 
-    The check and interval default to DOOR_ZONES, DOOR_THRESHOLD and STILL_INTERVAL_MS.
+    The check and intervals default to DOOR_ZONES, DOOR_THRESHOLD, STILL_INTERVAL_MS and
+    DOOR_FRAME_INTERVAL_MS. A source with a video file is served as Ring's clip, so the check
+    runs on its frames; `frame_interval_ms=None` (or a stand-in without a file) samples stills.
     """
     import boto3
 
+    from fridgesense.clip_frames import parse_frame_interval
     from fridgesense.table import FridgeTable
 
     if check is None:
@@ -390,11 +391,17 @@ def evaluate_clip(
         )
     if interval_ms is None:
         interval_ms = parse_interval(os.environ.get("STILL_INTERVAL_MS"))
+    if frame_interval_ms is _FROM_ENV:
+        frame_interval_ms = parse_frame_interval(os.environ.get("DOOR_FRAME_INTERVAL_MS"))
+    if getattr(source, "path", None) is None:  # a stand-in without a video file: stills only
+        frame_interval_ms = None
+    uses_clip = frame_interval_ms is not None
     duration_ms = round(source.duration_s * 1000)
     start, end = EPOCH_MS, EPOCH_MS + duration_ms
     times = still_times(start, end, still_count(duration_ms, interval_ms))
     offsets = [(t - start) / 1000 for t in times]
-    source.prepare(offsets)
+    if not uses_clip:
+        source.prepare(offsets)
     state = {
         "account_id": ACCOUNT,
         "device_id": DEVICE,
@@ -421,6 +428,7 @@ def evaluate_clip(
             sleep=lambda s: None,
             interval_ms=interval_ms,
             writer=capture,
+            frame_interval_ms=frame_interval_ms,
         )
     trace = capture.trace
     results = list(trace.results().values())
@@ -433,11 +441,13 @@ def evaluate_clip(
         openings,
         source.duration_s,
         detected,
-        tolerance_s(duration_ms, interval_ms),
+        TOLERANCE_STILLS * frame_interval_ms / 1000
+        if uses_clip
+        else tolerance_s(duration_ms, interval_ms),
         best.value if best else 0.0,
         best.threshold if best else check.threshold,
     )
-    result.still_offsets_s = offsets
+    result.still_offsets_s = [(d.at_ms - start) / 1000 for d in trace.stills]
     result.trace = trace
     return result
 

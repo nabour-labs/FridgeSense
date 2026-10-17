@@ -1,0 +1,17 @@
+{
+  "_note": "Recorded 2026-10-17: the pre-signed link from the 303 answered 416 application/json for a 20 s motion event ~15 h old.",
+  "status": 416,
+  "body": {
+    "errors": [
+      {
+        "id": "ee7d608c-7cc7-4bf7-bfc5-150c5776a2eb",
+        "status": "416",
+        "code": "MEDIA_NOT_FOUND",
+        "detail": "No media found in time range 1792181318101-1792181338127",
+        "meta": {
+          "timestamp": "2026-10-17T11:59:18Z"
+        }
+      }
+    ]
+  }
+}

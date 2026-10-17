@@ -7,7 +7,7 @@ import time
 import boto3
 from botocore.config import Config
 
-from fridgesense import deps, door_calibration, door_events, inventory, traces
+from fridgesense import clip_frames, deps, door_calibration, door_events, inventory, traces
 from fridgesense.analysis import NovaAnalyzer
 from fridgesense.faces import DEFAULT_PRICE, FaceBlurrer
 from fridgesense.table import FridgeTable
@@ -71,6 +71,9 @@ def handler(event, context):
             sleep,
             crop=door_events.parse_crop(os.environ.get("STILL_CROP")),
             interval_ms=door_events.parse_interval(os.environ.get("STILL_INTERVAL_MS")),
+            frame_interval_ms=clip_frames.parse_frame_interval(
+                os.environ.get("DOOR_FRAME_INTERVAL_MS")
+            ),
             setup_for=lambda account_id, device_id: door_calibration.setup_check(
                 FridgeTable(), account_id, device_id
             ),
