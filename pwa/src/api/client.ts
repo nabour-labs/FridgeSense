@@ -121,9 +121,15 @@ export class ApiClient {
     return this.request("GET", "/api/camera");
   }
 
-  /** A face-blurred still from the camera, not stored. */
-  cameraSnapshot(): Promise<Snapshot> {
+  /** A face-blurred still from the camera, not stored. `signal` is for snapshot wrappers that
+   * can be cancelled (a live frame); this request itself always completes. */
+  cameraSnapshot(_signal?: AbortSignal): Promise<Snapshot> {
     return this.request("POST", "/api/camera/snapshot");
+  }
+
+  /** A live frame (base64 JPEG) back with every face blurred; not stored. */
+  cameraFrame(image: string): Promise<Snapshot> {
+    return this.request("POST", "/api/camera/frame", { image });
   }
 
   /** Opens a live view: the browser's SDP offer in, the camera's SDP answer out. */

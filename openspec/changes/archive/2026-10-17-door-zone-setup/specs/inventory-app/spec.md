@@ -3,23 +3,51 @@
 ## MODIFIED Requirements
 
 ### Requirement: Config screen
-The app SHALL offer a Config screen, opened by a "Config" gear button in the header. It has two tabs: "Reference images" at `#config` (the "Reference images" and "Custom instructions" sub-sections, which guide the item analysis) and "Open/close detection" at `#config/doors`. Switching tabs SHALL update the hash, and opening either hash SHALL show that tab. For a viewer, both tabs are shown without add, snapshot, delete, run or save controls.
+The app SHALL offer a Config screen, opened by a "Config" gear button in the header. Its tabs are "Camera" at `#config` (the default), "Reference images" at `#config/refs`, "Open/close detection" at `#config/doors`, "Fridge area" at `#config/fridge` and, for the owner only, "Debug" at `#config/debug`. Switching tabs SHALL update the hash, and opening any of these hashes SHALL show that tab. The tabs SHALL fit side by side at 375 px without horizontal scrolling. Viewers get no edit controls.
 
 #### Scenario: Open config
 - **WHEN** the signed-in user taps the gear button
-- **THEN** the header title reads "Config", the "Reference images" tab is selected, `GET /api/config` is requested, and the "Reference images" and "Custom instructions" sub-sections are shown
+- **THEN** the header title reads "Config", the "Camera" tab is selected, `GET /api/camera` is requested, and the location hash is `#config`
+
+#### Scenario: Reference images tab
+- **WHEN** the user selects the "Reference images" tab
+- **THEN** the location hash is `#config/refs`, `GET /api/config` is requested, and the "Reference images" and "Custom instructions" sub-sections are shown
+
+#### Scenario: Direct link to reference images
+- **WHEN** the app opens at `#config/refs`
+- **THEN** the "Reference images" tab is selected
 
 #### Scenario: Switch to open/close detection
 - **WHEN** the user taps the "Open/close detection" tab
 - **THEN** the hash becomes `#config/doors`, `GET /api/door-calibration` is requested, and the door references are shown
 
+#### Scenario: Switch to fridge area
+- **WHEN** the user taps the "Fridge area" tab
+- **THEN** the hash becomes `#config/fridge` and `GET /api/fridge-area` is requested
+
+#### Scenario: Switch to debug
+- **WHEN** the owner taps the "Debug" tab
+- **THEN** the hash becomes `#config/debug` and `GET /api/debug/motions` is requested
+
 #### Scenario: Open the detection tab by link
 - **WHEN** the app is opened at `#config/doors`
 - **THEN** the Config screen shows with the "Open/close detection" tab selected
 
+#### Scenario: Open the fridge area tab by link
+- **WHEN** the app is opened at `#config/fridge`
+- **THEN** the Config screen shows with the "Fridge area" tab selected
+
+#### Scenario: Owner's tabs
+- **WHEN** the owner opens Config
+- **THEN** the tabs are "Camera", "Reference images", "Open/close detection", "Fridge area" and "Debug", in one row
+
+#### Scenario: Non-owner opens the debug link
+- **WHEN** a viewer or user opens `#config/debug`
+- **THEN** the "Reference images" tab is shown, as before, and no `/api/debug` request is made
+
 #### Scenario: Viewer sees read-only config
-- **WHEN** a viewer opens Config, the config has one reference and instructions, and there are two door references
-- **THEN** the reference thumbnail, its annotation, the instructions and both door references are shown, with no "Add", "Delete", "Run setup" or "Save" controls
+- **WHEN** a viewer opens the "Reference images" tab and the config has one reference and instructions
+- **THEN** the reference thumbnail, its annotation and the instructions are shown, with no "Add", "Delete" or "Save" controls
 
 ### Requirement: Manage reference images
 The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer two sources: "Choose photo" (pick or take a photo on the device) and "Camera snapshot" (`POST /api/camera/snapshot`). Once an image is chosen, the owner SHALL be able to draw on it with a "Box" tool and a "Line" tool, undo the last shape with "Undo", and type the annotation. The shapes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.

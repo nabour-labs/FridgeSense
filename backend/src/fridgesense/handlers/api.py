@@ -574,6 +574,22 @@ def post_snapshot(ctx: Context, device_id: str) -> dict:
     )
 
 
+@route("POST", "/api/camera/frame", write=True)
+def post_frame(ctx: Context) -> dict:
+    jpeg = camera.frame_jpeg((_json_body(ctx.req) or {}).get("image"))
+    if jpeg is None:
+        return json_response(400, {"error": "bad image"})
+    price = float(os.environ.get("FACE_DETECT_PRICE") or DEFAULT_PRICE)
+    try:
+        blurred = camera.blur_frame(FaceBlurrer(rekognition_client(), price), jpeg)
+    except camera.SnapshotFailed:
+        return json_response(502, {"error": "camera unavailable"})
+    return json_response(
+        200,
+        {"image": base64.b64encode(blurred).decode(), "captured_at": iso_utc(int(now() * 1000))},
+    )
+
+
 MAX_OFFER_CHARS = 20_000
 SESSION_ID = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
 

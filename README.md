@@ -142,7 +142,7 @@ Nova 2 Lite runs through the `us.` cross-region inference profile, so a still ma
 
 Teach FridgeSense what your fridge looks like open and closed, from the app: **Config → Open/close detection**.
 
-1. Tap **Add**. The app takes a snapshot from the camera (faces blurred). If it says there is no recent footage, walk past the camera and try again: the camera only records when something moves.
+1. Tap **Add**. The app takes a snapshot from a few seconds of the camera's live view, and the backend blurs faces before it is shown (`POST /api/camera/frame`). If the live view can't connect, it falls back to the camera's newest recording; if that says there is no recent footage, walk past the camera and try again.
 2. Drag a box around one door or drawer, mark the snapshot **Open** or **Closed**, and save.
 3. Add each door and drawer both ways, ideally in daylight and with the kitchen lights on, and once with someone standing in front of the closed fridge.
 4. Tap **Run setup**. For each box, setup measures three signals on your references: **Color** (the lit interior and food are colourful, steel is grey), **Brightness** and **Change** (how different it looks from your closed snapshots). It keeps the one that best separates open from closed and puts the threshold halfway between them. Each zone shows its rule and margin; a bigger margin is safer.
@@ -185,7 +185,7 @@ Each door event also stores its total as `nova_usd`. Expect about $0.0014 per op
 
 ### Face detection cost
 
-Every face-detection call (one per stored still, so at most four per door opening, plus one per camera snapshot taken in Config) logs its cost:
+Every face-detection call (one per stored still, so at most four per door opening, plus one per camera snapshot or live frame taken in Config) logs its cost:
 
 ```bash
 set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"face_detect_cost"'

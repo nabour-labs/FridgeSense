@@ -195,6 +195,7 @@ const BOX = { x: 0.38, y: 0.32, width: 0.21, height: 0.3 };
 test.each([
   ["camera", (api: ApiClient) => api.camera(), "GET", "/api/camera", undefined],
   ["cameraSnapshot", (api: ApiClient) => api.cameraSnapshot(), "POST", "/api/camera/snapshot", undefined],
+  ["cameraFrame", (api: ApiClient) => api.cameraFrame("/9j/FRAME"), "POST", "/api/camera/frame", { image: "/9j/FRAME" }],
   ["doorCalibration", (api: ApiClient) => api.doorCalibration(), "GET", "/api/door-calibration", undefined],
   [
     "addDoorReference",

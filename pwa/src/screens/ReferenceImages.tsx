@@ -1,5 +1,6 @@
 import { Camera, ImagePlus, Trash2, Undo2 } from "lucide-react";
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { NoVideo } from "../camera/liveSnapshot";
 import { ApiError } from "../api/client";
 import type { Config as ConfigData } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
@@ -214,14 +215,20 @@ function AddReference({
     use(file, file && typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : null);
   }
 
+  const cancel = useRef<AbortController | null>(null);
+  useEffect(() => () => cancel.current?.abort(), []);
+
   async function snapshot() {
+    cancel.current?.abort();
+    const controller = (cancel.current = new AbortController());
     setSnapping(true);
     setError(null);
     try {
-      const snap = await api.cameraSnapshot();
+      const snap = await api.cameraSnapshot(controller.signal);
       use(jpegBlob(snap.image), `data:image/jpeg;base64,${snap.image}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setError(NO_FOOTAGE);
+      else if (err instanceof NoVideo) setError(err.message);
       else if (err instanceof ApiError && err.status === 502) setError("The camera can't be reached right now.");
       else report(err);
     } finally {

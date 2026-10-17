@@ -1,5 +1,6 @@
 import { Camera, RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { NoVideo } from "../camera/liveSnapshot";
 import { ApiError } from "../api/client";
 import type { DoorFeature, DoorReference, DoorSetup, DoorStatus, Snapshot } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
@@ -233,14 +234,18 @@ function AddDoorReference({ onClose, onAdded }: { onClose: () => void; onAdded: 
   const [error, setError] = useState<string | null>(null);
   const valid = snap !== null && shapes.length === 1 && status !== null;
 
+  const cancel = useRef<AbortController | null>(null);
   const takeSnapshot = useCallback(async () => {
+    cancel.current?.abort();
+    const controller = (cancel.current = new AbortController());
     setSnapping(true);
     setError(null);
     try {
-      setSnap(await api.cameraSnapshot());
+      setSnap(await api.cameraSnapshot(controller.signal));
       setShapes([]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setError(NO_FOOTAGE);
+      else if (err instanceof NoVideo) setError(err.message);
       else if (err instanceof ApiError && err.status === 502) setError("The camera can't be reached right now.");
       else report(err);
     } finally {
@@ -250,6 +255,7 @@ function AddDoorReference({ onClose, onAdded }: { onClose: () => void; onAdded: 
 
   useEffect(() => {
     void takeSnapshot();
+    return () => cancel.current?.abort();
   }, [takeSnapshot]);
 
   async function submit(e: FormEvent) {
