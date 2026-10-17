@@ -1,6 +1,6 @@
 # Results
 
-Door check on the 12 local clips (Oct 15, 2026), default config: blue feature, default zones, threshold 0.01, still interval 1000 ms. Scored against the **draft** labels; to be re-run once Jayson has confirmed them (task 5.2).
+Door check on the 12 local clips (Oct 15, 2026), default config: blue feature, default zones, threshold 0.01, still interval 1000 ms. Scored against the labels Jayson accepted as drafted on 2026-10-16 (task 5.2).
 
 ```
 uv run --group clips python scripts/door_clip_report.py
@@ -25,4 +25,4 @@ uv run --group clips python scripts/door_clip_report.py
 
 Sweep (`--threshold 0.005,0.01,0.02 --interval 500,1000`): every combination gives TP 9, FP 0, FN 0, TN 3. Mean open/close error is about 1.07/0.84 s at thresholds 0.005 and 0.01, and 1.2/1.1 s at 0.02. The 500 ms interval barely helps, because most clips are long enough to hit the still cap.
 
-Caveats: the draft labels for 2009, 2017, 2021, 2023 and 2025 came from stills 3–4 s apart. The default zones were measured on one of these clips. All clips are from one evening.
+Caveats: the labels for 2009, 2017, 2021, 2023 and 2025 came from stills 3–4 s apart. The default zones were measured on one of these clips. All clips are from one evening.

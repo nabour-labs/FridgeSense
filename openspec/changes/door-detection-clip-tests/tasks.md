@@ -27,7 +27,7 @@
 ## 5. Label the real clips
 
 - [x] 5.1 Implement `--dump`/`--dump-dir` in `scripts/door_clip_report.py`, test first: scenarios Dump stills (stub source, temp `tmp/`) and Dump outside tmp refused. Verify the tests pass.
-- [ ] 5.2 Run `uv run python scripts/door_clip_report.py --dump` on the 12 clips. Draft `backend/tests/fixtures/clips/door_labels.json` from the dumped stills, and have Jayson confirm or correct every clip's opened and closed times. Verify that the file loads with the 2.2 loader.
+- [x] 5.2 Run `uv run python scripts/door_clip_report.py --dump` on the 12 clips. Draft `backend/tests/fixtures/clips/door_labels.json` from the dumped stills, and have Jayson confirm or correct every clip's opened and closed times. Verify that the file loads with the 2.2 loader.
 
 ## 6. Accuracy report
 
@@ -37,4 +37,4 @@
 
 ## 7. Integration check
 
-- [ ] 7.1 Run `uv run pytest -m clips` and `uv run python scripts/door_clip_report.py` on the real clips. Record the confusion matrix and timing errors in the change (no tuning in this change). Then run the full `uv run pytest` and `uv run ruff check . && uv run ruff format --check .` in `backend/`. Verify that both are green, and add a friction-log entry if PyAV or anything else hit friction.
+- [x] 7.1 Run `uv run pytest -m clips` and `uv run python scripts/door_clip_report.py` on the real clips. Record the confusion matrix and timing errors in the change (no tuning in this change). Then run the full `uv run pytest` and `uv run ruff check . && uv run ruff format --check .` in `backend/`. Verify that both are green, and add a friction-log entry if PyAV or anything else hit friction.
