@@ -11,6 +11,7 @@ from typing import Any
 
 from PIL import Image
 
+from fridgesense import alignment
 from fridgesense.analysis_config import JPEG_MAGIC, Invalid
 from fridgesense.door_events import (
     FEATURES,
@@ -270,6 +271,9 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
             SetupZone(zone, feature, direction, round(threshold, 4), round(margin, 4), baseline)
         )
 
+    newest_closed = next(
+        img for r, img in zip(reversed(refs), reversed(images), strict=True) if r.status == "closed"
+    )
     table.put(
         {
             "pk": account_pk(account_id),
@@ -287,9 +291,21 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
             ],
             "ran_ms": now_ms,
             "ran_at": iso_utc(now_ms),
+            # What the whole view looks like closed, for lining up later events' frames
+            "anchor": alignment.edges_to_bytes(alignment.edge_map(newest_closed)),
         }
     )
+    alignment.reset(table, account_id, device_id)
     return Setup(tuple(chosen), iso_utc(now_ms), stale=False)
+
+
+def load_anchor(table: FridgeTable, account_id: str, device_id: str) -> bytes | None:
+    """The closed anchor stored by the last setup run (None before setup, or from a run made
+    before anchors existed)."""
+    item = table.get(account_pk(account_id), setup_sk(device_id))
+    if item is None or item.get("anchor") is None:
+        return None
+    return bytes(item["anchor"])
 
 
 def load_setup(table: FridgeTable, account_id: str, device_id: str) -> Setup | None:

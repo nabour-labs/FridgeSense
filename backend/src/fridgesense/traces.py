@@ -55,6 +55,7 @@ class DoorTrace:
     door_sk: str | None = None
     opened_at: str | None = None
     closed_at: str | None = None
+    alignment: dict | None = None  # {"dx", "dy", "error", "ok"} when the bookends were aligned
 
     def results(self) -> dict[int, StillResult]:
         return {n: self.check.result_of(v) for n, v in self.values.items()}
@@ -184,6 +185,8 @@ class TraceWriter:
             "opened_at": trace.opened_at,
             "closed_at": trace.closed_at,
             "rule": self._rule(state, trace.check, prefix),
+            "rules": trace.check.source,
+            "alignment": trace.alignment,
             "stills": stills,
             "open_span": trace.open_span,
             "picked": trace.picked,
