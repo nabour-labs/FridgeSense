@@ -1,0 +1,91 @@
+{
+  "data": {
+    "type": "devices",
+    "id": "ava1.ring.device.D1",
+    "attributes": {
+      "image_url": "https://app-content.ring.com/shared/images/devices/square_device_images/sqf/sqf_3x.png",
+      "name": "Fridge"
+    },
+    "relationships": {
+      "status": {
+        "data": {"type": "device-status", "id": "ava1.ring.device.status.D1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/status"}
+      },
+      "configurations": {
+        "data": {"type": "device-configurations", "id": "ava1.ring.device.configurations.D1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/configurations"}
+      },
+      "capabilities": {
+        "data": {"type": "device-capabilities", "id": "ava1.ring.device.capabilities.D1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/capabilities"}
+      },
+      "location": {
+        "data": {"type": "locations", "id": "ava1.ring.location.L1"},
+        "links": {"related": "/v1/devices/ava1.ring.device.D1/location"}
+      }
+    }
+  },
+  "included": [
+    {
+      "type": "device-status",
+      "id": "ava1.ring.device.status.D1",
+      "attributes": {
+        "reported_at": "2026-10-16T00:41:55Z",
+        "audio": {"snooze": {"active": null, "until": null}},
+        "online": false,
+        "state": null
+      }
+    },
+    {
+      "type": "locations",
+      "id": "ava1.ring.location.L1",
+      "attributes": {"country": "US", "state": "Washington"}
+    },
+    {
+      "type": "device-capabilities",
+      "id": "ava1.ring.device.capabilities.D1",
+      "attributes": {
+        "smoke_detection": null,
+        "co_detection_listener": null,
+        "image_enhancements": {"configurations": ["ir_led_night_vision", "privacy_zones", "snapshot"]},
+        "freeze_detection": null,
+        "audio": {"customizable_slots": null, "supported_actions": null},
+        "motion_detection": {"configurations": ["enabled", "motion_zones"]},
+        "tamper_detection": null,
+        "video": {
+          "configurations": ["resolution_mode"],
+          "codecs": ["AVC"],
+          "ratio": "16:9",
+          "max_resolution": 1440,
+          "supported_resolutions": [1440]
+        },
+        "glass_break_detection": null,
+        "flood_detection": null,
+        "contact_detection": null,
+        "battery_status": null
+      }
+    },
+    {
+      "type": "device-configurations",
+      "id": "ava1.ring.device.configurations.D1",
+      "attributes": {
+        "motion_detection": {
+          "enabled": "on",
+          "motion_zones": [
+            {"id": "zone-1", "vertices": [{"x": 0.3, "y": 0.3}, {"x": 0.6, "y": 0.3}, {"x": 0.6, "y": 1}, {"x": 0.3, "y": 1}]}
+          ]
+        },
+        "e2e_encryption": {"enabled": false},
+        "image_enhancements": {
+          "color_night_vision": "off",
+          "hdr": "off",
+          "ir_led_night_vision": "off",
+          "auto_zoom_track": "off",
+          "privacy_zones": [{"id": "privacy-1", "vertices": [{"x": 0, "y": 0}, {"x": 0.3, "y": 1}]}]
+        },
+        "audio": {"customizable_slots": null, "volume": 8}
+      }
+    }
+  ],
+  "meta": {"time": "2026-10-17T01:34:45Z"}
+}

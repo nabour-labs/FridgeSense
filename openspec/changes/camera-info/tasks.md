@@ -26,7 +26,7 @@
 
 - [x] 5.1 Write failing tests in `tests/test_api_camera.py` (Ring via `httpx.MockTransport`, moto table): "Camera details" as a viewer, "No camera linked" (409), "Ring down" (503 → `ring: "unavailable"`), "Ring token rejected", "First read records the status", "Unchanged status is not recorded again", "Missed webhook is caught up", and `history`/`uptime` in the body
 - [x] 5.2 Implement the route in `handlers/api.py` with `with_device`, one Ring call with `?include=status,capabilities,configurations,location`, poll-on-read and the unreachable fallback. Verify 5.1 passes
-- [ ] 5.3 With Jayson's OK, make one read-only live call (`GET /v1/devices/{id}?include=...`) to confirm the single-device route honors `include`. If it doesn't, switch to the list route (design decision 4) and update the fixture to the real shape (with IDs redacted). Log any friction in `docs/friction-log.md`. Verify 3.1 and 5.1 still pass
+- [x] 5.3 With Jayson's OK, make one read-only live call (`GET /v1/devices/{id}?include=...`) to confirm the single-device route honors `include`. If it doesn't, switch to the list route (design decision 4) and update the fixture to the real shape (with IDs redacted). Log any friction in `docs/friction-log.md`. Verify 3.1 and 5.1 still pass
 
 ## 6. PWA: API client and Camera tab
 

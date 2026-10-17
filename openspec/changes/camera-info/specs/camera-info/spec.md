@@ -17,6 +17,10 @@ Shows what the app knows about the connected fridge camera: its details as Ring 
 - **WHEN** the fixture's capabilities list `color_night_vision`, `hdr`, `ir_led_night_vision` and `privacy_zones`, and its configurations set `hdr: "on"` and the others `"off"`
 - **THEN** `image_enhancements` is `[{name: "color_night_vision", on: false}, {name: "hdr", on: true}, {name: "ir_led_night_vision", on: false}]` (privacy zones are not an on/off setting and are left out)
 
+#### Scenario: Supported capability without an on/off setting
+- **WHEN** Ring answers with the recorded `device_detail_recorded.json` (capabilities `ir_led_night_vision`, `privacy_zones` and `snapshot`; configurations with `ir_led_night_vision: "off"` plus `hdr`, `color_night_vision` and `auto_zoom_track`, which the camera does not list as supported)
+- **THEN** `image_enhancements` is `[{name: "ir_led_night_vision", on: false}]`: `snapshot` has no on/off setting and is left out, and settings the camera does not support are not shown. With no configurations at all, each supported non-zone enhancement is listed with `on: null`
+
 #### Scenario: Motion detection and encryption
 - **WHEN** the fixture's configurations have `motion_detection.enabled: "on"` and `e2e_encryption.enabled: false`
 - **THEN** `motion_detection` is `true` and `e2e_encryption` is `false`
