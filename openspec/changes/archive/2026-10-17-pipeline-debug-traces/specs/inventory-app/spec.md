@@ -3,11 +3,19 @@
 ## MODIFIED Requirements
 
 ### Requirement: Config screen
-The app SHALL offer a Config screen, opened by a "Config" gear button in the header. It has four tabs for the owner: "Reference images" at `#config` (the "Reference images" and "Custom instructions" sub-sections, which guide the item analysis), "Open/close detection" at `#config/doors`, "Fridge area" at `#config/fridge`, and "Debug" at `#config/debug`. Switching tabs SHALL update the hash, and opening any of these hashes SHALL show that tab. The tabs SHALL fit side by side at a 375 px wide screen without horizontal scrolling. For a viewer, the "Debug" tab is not shown, and the other tabs are shown without add, snapshot, delete, run, set or save controls.
+The app SHALL offer a Config screen, opened by a "Config" gear button in the header. Its tabs are "Camera" at `#config` (the default), "Reference images" at `#config/refs`, "Open/close detection" at `#config/doors`, "Fridge area" at `#config/fridge` and, for the owner only, "Debug" at `#config/debug`. Switching tabs SHALL update the hash, and opening any of these hashes SHALL show that tab. The tabs SHALL fit side by side at 375 px without horizontal scrolling. Viewers get no edit controls.
 
 #### Scenario: Open config
 - **WHEN** the signed-in user taps the gear button
-- **THEN** the header title reads "Config", the "Reference images" tab is selected, `GET /api/config` is requested, and the "Reference images" and "Custom instructions" sub-sections are shown
+- **THEN** the header title reads "Config", the "Camera" tab is selected, `GET /api/camera` is requested, and the location hash is `#config`
+
+#### Scenario: Reference images tab
+- **WHEN** the user selects the "Reference images" tab
+- **THEN** the location hash is `#config/refs`, `GET /api/config` is requested, and the "Reference images" and "Custom instructions" sub-sections are shown
+
+#### Scenario: Direct link to reference images
+- **WHEN** the app opens at `#config/refs`
+- **THEN** the "Reference images" tab is selected
 
 #### Scenario: Switch to open/close detection
 - **WHEN** the user taps the "Open/close detection" tab
@@ -29,17 +37,17 @@ The app SHALL offer a Config screen, opened by a "Config" gear button in the hea
 - **WHEN** the app is opened at `#config/fridge`
 - **THEN** the Config screen shows with the "Fridge area" tab selected
 
-#### Scenario: Four tabs fit a phone
-- **WHEN** the owner opens Config on a 375 px wide screen
-- **THEN** all four tabs are visible side by side and the page does not scroll horizontally
+#### Scenario: Owner's tabs
+- **WHEN** the owner opens Config
+- **THEN** the tabs are "Camera", "Reference images", "Open/close detection", "Fridge area" and "Debug", in one row
+
+#### Scenario: Non-owner opens the debug link
+- **WHEN** a viewer or user opens `#config/debug`
+- **THEN** the "Reference images" tab is shown, as before, and no `/api/debug` request is made
 
 #### Scenario: Viewer sees read-only config
-- **WHEN** a viewer opens Config, the config has one reference and instructions, and there are two door references
-- **THEN** the reference thumbnail, its annotation, the instructions and both door references are shown, with no "Add", "Delete", "Run setup" or "Save" controls, and no "Debug" tab
-
-#### Scenario: Viewer opens the debug link
-- **WHEN** a viewer opens the app at `#config/debug`
-- **THEN** the "Reference images" tab is shown and `GET /api/debug/motions` is not requested
+- **WHEN** a viewer opens the "Reference images" tab and the config has one reference and instructions
+- **THEN** the reference thumbnail, its annotation and the instructions are shown, with no "Add", "Delete" or "Save" controls
 
 ## ADDED Requirements
 

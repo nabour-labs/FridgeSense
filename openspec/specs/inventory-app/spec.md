@@ -368,6 +368,26 @@ The app SHALL offer a Config screen, opened by a "Config" gear button in the hea
 - **WHEN** the app opens at `#config/refs`
 - **THEN** the "Reference images" tab is selected
 
+#### Scenario: Switch to open/close detection
+- **WHEN** the user taps the "Open/close detection" tab
+- **THEN** the hash becomes `#config/doors`, `GET /api/door-calibration` is requested, and the door references are shown
+
+#### Scenario: Switch to fridge area
+- **WHEN** the user taps the "Fridge area" tab
+- **THEN** the hash becomes `#config/fridge` and `GET /api/fridge-area` is requested
+
+#### Scenario: Switch to debug
+- **WHEN** the owner taps the "Debug" tab
+- **THEN** the hash becomes `#config/debug` and `GET /api/debug/motions` is requested
+
+#### Scenario: Open the detection tab by link
+- **WHEN** the app is opened at `#config/doors`
+- **THEN** the Config screen shows with the "Open/close detection" tab selected
+
+#### Scenario: Open the fridge area tab by link
+- **WHEN** the app is opened at `#config/fridge`
+- **THEN** the Config screen shows with the "Fridge area" tab selected
+
 #### Scenario: Owner's tabs
 - **WHEN** the owner opens Config
 - **THEN** the tabs are "Camera", "Reference images", "Open/close detection", "Fridge area" and "Debug", in one row
@@ -381,11 +401,27 @@ The app SHALL offer a Config screen, opened by a "Config" gear button in the hea
 - **THEN** the reference thumbnail, its annotation and the instructions are shown, with no "Add", "Delete" or "Save" controls
 
 ### Requirement: Manage reference images
-The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation. It SHALL let the owner add one by choosing or taking a photo and typing an annotation, and delete one after confirming. Before upload, the photo SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
+The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer two sources: "Choose photo" (pick or take a photo on the device) and "Camera snapshot" (`POST /api/camera/snapshot`). Once an image is chosen, the owner SHALL be able to draw on it with a "Box" tool and a "Line" tool, undo the last shape with "Undo", and type the annotation. The shapes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
 
 #### Scenario: Add a reference
-- **WHEN** the owner taps "Add", picks a 4032×3024 photo, types `soda can` and taps "Save"
+- **WHEN** the owner taps "Add", taps "Choose photo", picks a 4032×3024 photo, types `soda can` and taps "Save"
 - **THEN** `POST /api/config/references` is sent with annotation `soda can` and a JPEG of 768×576, and the list shows the new thumbnail labeled "soda can"
+
+#### Scenario: Add a camera snapshot
+- **WHEN** the owner taps "Add", then "Camera snapshot", and the API answers 200 with a 960×540 image
+- **THEN** that image is shown for drawing, and after typing `milk bag` and tapping "Save", the uploaded JPEG is 768×432
+
+#### Scenario: Snapshot with no recent footage
+- **WHEN** the API answers 409 `{"error": "no recent footage"}` to a snapshot
+- **THEN** "No recent footage. Walk past the camera, then try again." is shown and the owner can still choose a photo
+
+#### Scenario: Draw on the image
+- **WHEN** the owner selects "Box", drags from 10%, 10% to 40%, 50% of the image, selects "Line", drags from 50%, 50% to 90%, 90%, and taps "Save"
+- **THEN** the shapes passed to the upload are a box from `(0.1, 0.1)` to `(0.4, 0.5)` and a line from `(0.5, 0.5)` to `(0.9, 0.9)`, in that order, drawn in red into the JPEG
+
+#### Scenario: Undo a shape
+- **WHEN** the owner has drawn two shapes and taps "Undo"
+- **THEN** only the first shape remains, and "Undo" is disabled when no shapes are left
 
 #### Scenario: Annotation required
 - **WHEN** the owner picks a photo but leaves the annotation empty
@@ -566,3 +602,202 @@ The Stats screen SHALL show an "Open time" card with the average, longest and sh
 #### Scenario: Open time in local days
 - **WHEN** an event opened at 2026-10-15T02:30:00Z with `duration_s` 50 and the device is in America/Vancouver (UTC−7)
 - **THEN** it counts toward the Oct 14 open-time stats and not Oct 15
+
+### Requirement: Sign out
+While signed in with any role, the app SHALL show a "Sign out" button in the header on every screen. Tapping it SHALL remove the stored token, role and expiry and show the passcode screen, without an API call.
+
+#### Scenario: Sign out
+- **WHEN** the user is signed in on the Fridge screen and taps "Sign out"
+- **THEN** the passcode screen is shown, `fridgesense.token`, `fridgesense.role` and `fridgesense.expires` are no longer in storage, and no request is sent
+
+#### Scenario: Signed out stays signed out
+- **WHEN** the user taps "Sign out" and the app is reloaded
+- **THEN** the passcode screen is shown and no inventory request is made
+
+### Requirement: Admin-only Debug for the user role
+When the session's role is `user`, the app SHALL behave as for the owner (editable Fridge items, "Add item", Review actions, Config add, delete, run, set and save controls), except that it SHALL NOT show the "Debug" Config tab or the "Debug" links on Activity cards, SHALL show no "Demo · read-only" badge, and opening `#config/debug` SHALL show the "Reference images" tab.
+
+#### Scenario: User sign-in
+- **WHEN** the user signs in and the API returns `role` `"user"`
+- **THEN** the role `user` is stored, the Fridge screen is shown, no "Demo · read-only" badge is visible and "Add item" is shown
+
+#### Scenario: User sees no Debug tab
+- **WHEN** the role is `user` and the user opens Config
+- **THEN** the "Reference images", "Open/close detection" and "Fridge area" tabs are shown, with "Add" controls, and no "Debug" tab
+
+#### Scenario: User opens the debug hash
+- **WHEN** the role is `user` and the app opens at `#config/debug`
+- **THEN** the "Reference images" tab is shown and no `/api/debug` request is made
+
+#### Scenario: No Debug link for users
+- **WHEN** the role is `user` and Activity lists a door opening
+- **THEN** the card has a delete control and no "Debug" link
+
+#### Scenario: User role restored
+- **WHEN** the app opens with a stored, unexpired session whose role is `user`
+- **THEN** the role is `user` (no "Debug" tab in Config)
+
+### Requirement: Open/close detection tab
+The "Open/close detection" tab SHALL list the door references as thumbnails, each with its box drawn on it, an "Open" or "Closed" badge, and its score as a percentage with one decimal (or "–" when it has none), oldest first, with "n of 12" shown. The owner SHALL be able to add a reference: tapping "Add" requests a camera snapshot, the owner drags on it to draw one box (a new drag replaces the box), picks "Open" or "Closed", and taps "Save" to send `POST /api/door-calibration/references`. The owner SHALL be able to delete a reference after confirming. A "Run setup" button SHALL send `POST /api/door-calibration/run`. It is enabled only when there is at least one open and one closed reference. The tab SHALL show the setup state:
+- "Not set up yet. Using default zones." when `setup` is null.
+- One line per setup zone when `setup` exists: "Zone n: <Blue light | Color | Brightness | Change> above (or below) t%, margin m%".
+- "References changed. Run setup again." when `setup.stale` is true.
+
+#### Scenario: References shown
+- **WHEN** the tab loads two references, open with score 0.1 and closed with score 0.0, and a setup with one zone using `color` above 0.05 with margin 0.1
+- **THEN** both thumbnails show their boxes, the badges read "Open" and "Closed", the scores read "10.0%" and "0.0%", "2 of 12" is shown, and the state reads "Zone 1: Color above 5.0%, margin 10.0%"
+
+#### Scenario: Not set up
+- **WHEN** the tab loads with no references and `setup = null`
+- **THEN** "Not set up yet. Using default zones." is shown and "Run setup" is disabled
+
+#### Scenario: Add a door reference
+- **WHEN** the owner taps "Add", the snapshot answers 200, the owner drags from 38%, 32% to 59%, 62% of the image, taps "Open" and taps "Save"
+- **THEN** `POST /api/door-calibration/references` is sent with the snapshot image, box `{"x": 0.38, "y": 0.32, "width": 0.21, "height": 0.3}` and status `open`, and the list shows the new reference
+
+#### Scenario: Box and status required
+- **WHEN** the snapshot is shown but no box is drawn, or no status is picked
+- **THEN** "Save" is disabled and no request is sent
+
+#### Scenario: Redraw replaces the box
+- **WHEN** the owner draws one box and then drags again elsewhere
+- **THEN** only the second box is shown and sent
+
+#### Scenario: Tiny drag ignored
+- **WHEN** the owner drags less than 2% of the image's width or height
+- **THEN** no box is drawn
+
+#### Scenario: Snapshot fails while adding
+- **WHEN** the API answers 409 `{"error": "no recent footage"}` to the snapshot
+- **THEN** "No recent footage. Walk past the camera, then try again." is shown with a "Try again" button that requests a new snapshot
+
+#### Scenario: Delete a door reference
+- **WHEN** the owner taps "Delete" on a reference and confirms
+- **THEN** `DELETE /api/door-calibration/references/{id}` is sent and the reference disappears
+
+#### Scenario: Run setup
+- **WHEN** the owner has one open and one closed reference and taps "Run setup", and the API answers 200
+- **THEN** `POST /api/door-calibration/run` is sent once, the button shows a busy state until the answer, and the new setup state and scores are shown
+
+#### Scenario: Setup fails
+- **WHEN** the API answers 422 `{"error": "zone 1: open and closed references overlap", "references": [...]}`
+- **THEN** that error message is shown, and the scores from the response are shown on the references
+
+#### Scenario: Run setup needs both statuses
+- **WHEN** every reference is "Closed"
+- **THEN** "Run setup" is disabled, with the hint "Add at least one open and one closed reference."
+
+#### Scenario: Stale setup
+- **WHEN** `setup.stale` is true
+- **THEN** "References changed. Run setup again." is shown
+
+#### Scenario: Blue light feature named
+- **WHEN** the setup has one zone using `blue` above 0.05 with margin 0.1
+- **THEN** the state reads "Zone 1: Blue light above 5.0%, margin 10.0%"
+
+### Requirement: Fridge area tab
+The "Fridge area" tab SHALL show the saved fridge area as its snapshot with the box drawn on it and "Saved <date and time>", or "No fridge area yet." when `area` is null. The owner SHALL be able to set the area: tapping "Set area" (or "Change area" when one is saved) requests a camera snapshot, the owner drags on it to draw one box around the fridge (a new drag replaces the box), and taps "Save" to send `PUT /api/fridge-area` with the snapshot image and the box. "Cancel" SHALL close the editor without a request. A viewer SHALL see the saved area with no "Set area", "Change area" or "Save" control.
+
+#### Scenario: Fridge area shown
+- **WHEN** the tab loads an area with box `{"x": 0.2, "y": 0.05, "width": 0.5, "height": 0.9}`
+- **THEN** the snapshot is shown with one box covering 20%–70% across and 5%–95% down, and the button reads "Change area"
+
+#### Scenario: No fridge area
+- **WHEN** the tab loads with `area = null`
+- **THEN** "No fridge area yet." is shown and the button reads "Set area"
+
+#### Scenario: Set the fridge area
+- **WHEN** the owner taps "Set area", the snapshot answers 200, the owner drags from 20%, 5% to 70%, 95% of the image and taps "Save"
+- **THEN** `PUT /api/fridge-area` is sent with the snapshot image and box `{"x": 0.2, "y": 0.05, "width": 0.5, "height": 0.9}`, and the tab shows the saved area
+
+#### Scenario: Box required to save
+- **WHEN** the snapshot is shown and no box is drawn
+- **THEN** "Save" is disabled and no request is sent
+
+#### Scenario: Redraw replaces the fridge box
+- **WHEN** the owner draws one box and then drags again elsewhere
+- **THEN** only the second box is shown and sent
+
+#### Scenario: Cancel setting the area
+- **WHEN** the owner taps "Set area", draws a box and taps "Cancel"
+- **THEN** no `PUT /api/fridge-area` is sent and the saved area (or "No fridge area yet.") is shown again
+
+#### Scenario: Snapshot fails while setting the area
+- **WHEN** the API answers 409 `{"error": "no recent footage"}` to the snapshot
+- **THEN** "No recent footage. Walk past the camera, then try again." is shown with a "Try again" button that requests a new snapshot
+
+#### Scenario: Viewer sees the fridge area read-only
+- **WHEN** a viewer opens the tab and an area is saved
+- **THEN** the snapshot and box are shown, with no "Set area", "Change area" or "Save" control
+
+### Requirement: Debug motion list
+The "Debug" tab SHALL list traced motions for one day (today by default, with the same day picker and "Older"/"Newer" paging as Activity). Each row shows the local time, the outcome ("Door opening", "Not the door", "No stills", "Duplicate"), the best score against its threshold, and for door openings the Nova call count, total input and output tokens, cost in USD and total latency. Tapping a row SHALL open `#config/debug/<id>`.
+
+#### Scenario: Not-door row
+- **WHEN** a motion at 18:02 has `outcome = "not_door"` and `best = {value: 0.0123, threshold: 0.02}`
+- **THEN** its row shows "18:02", "Not the door" and "0.0123 / 0.02", and no Nova figures
+
+#### Scenario: Door opening row
+- **WHEN** a door opening has `nova = {calls: 2, input_tokens: 2380, output_tokens: 186, usd: 0.00162, latency_ms: 4040}`
+- **THEN** its row shows "2 calls", "2,380 in", "186 out", "$0.0016" and "4.0 s"
+
+#### Scenario: No motions
+- **WHEN** no motions were traced on the chosen day
+- **THEN** the tab says no motions were recorded on this day
+
+#### Scenario: Open a motion
+- **WHEN** the owner taps a row with id `abc`
+- **THEN** the hash becomes `#config/debug/abc` and `GET /api/debug/motions/abc` is requested
+
+### Requirement: Debug motion detail
+The detail view at `#config/debug/<id>` SHALL show the door section, then one section per Nova call, with a "Back" control to the list. The door section shows every raw still with its time, open/closed verdict and each zone's value against its threshold, with the zone boxes drawn on it. It also shows the rule source, each zone's feature, direction, threshold, margin and baseline, and the door reference images with their status.
+
+#### Scenario: Door section
+- **WHEN** a trace has 6 stills, stills 3–4 open, setup rule with 1 `change` zone (threshold 0.11, margin 0.07) and 3 references
+- **THEN** 6 still images are shown in order, stills 3 and 4 are marked "Open" and the rest "Closed", each shows its zone 1 value against 0.11, the zone row shows "change", "above", "0.11" and margin "0.07" with its baseline image, and 3 reference images are shown with "open" or "closed"
+
+#### Scenario: Picked stills marked
+- **WHEN** stills 3 and 4 were picked for analysis
+- **THEN** those two raw stills are marked "Sent to analysis"
+
+#### Scenario: Missing still
+- **WHEN** still 5 has `url = null` and `missing_status = 416`
+- **THEN** a placeholder reading "Not downloaded (416)" is shown in its place
+
+#### Scenario: Default rule
+- **WHEN** the trace's `rule.source = "default"`
+- **THEN** the rule is labelled "Default zones" and no baseline or reference images are shown
+
+#### Scenario: Missing detail
+- **WHEN** `GET /api/debug/motions/<id>` answers 404
+- **THEN** the view says the trace has expired or was never recorded, and "Back" returns to the list
+
+### Requirement: Nova call detail
+Each Nova call section SHALL show, in request order, every text block as text and every image (references and stills) as a thumbnail labelled with its role and number, which opens full size when tapped. It then shows the response as formatted JSON with the stop reason, and input, output, cache-read and cache-write tokens, cost, Bedrock latency and wall time.
+
+#### Scenario: Request in order
+- **WHEN** a call sent 2 references and 4 stills
+- **THEN** the section shows the reference header, "Reference 1: …", reference thumbnail 1, "Reference 2: …", reference thumbnail 2, "Image 1 of 4", still thumbnail 1 … still thumbnail 4, then the instruction text
+
+#### Scenario: Numbers shown
+- **WHEN** a call has 1180 input, 96 output, 2000 cache-read and 0 cache-write tokens, `usd = 0.000818`, `latency_ms = 2140` and `wall_ms = 2310`
+- **THEN** the section shows "1,180", "96", "2,000", "0", "$0.000818", "2.14 s" and "2.31 s"
+
+#### Scenario: Failed call
+- **WHEN** a call has `outcome = "error"` and `error_code = "ThrottlingException"`
+- **THEN** the section shows "ThrottlingException" in place of the response and no token figures
+
+#### Scenario: Invalid answer
+- **WHEN** a call has `outcome = "invalid"` and `response.stopReason = "end_turn"`
+- **THEN** the section is marked "Invalid answer" and shows the response JSON with stop reason "end_turn"
+
+### Requirement: Debug link on Activity
+On the Activity screen, each door opening card SHALL show a "Debug" link for the owner that opens `#config/debug/<event id>`. Viewers SHALL NOT see it.
+
+#### Scenario: Owner follows the link
+- **WHEN** the owner taps "Debug" on the card of event `xyz`
+- **THEN** the hash becomes `#config/debug/xyz` and `GET /api/debug/motions/xyz` is requested
+
+#### Scenario: Viewer has no link
+- **WHEN** a viewer opens Activity
+- **THEN** no "Debug" link is shown
