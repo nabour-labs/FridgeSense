@@ -7,9 +7,12 @@ import { Sheet } from "./Sheet";
 
 const ICE_WAIT_MS = 3_000;
 const STATS_EVERY_MS = 1_000;
-const TRACK_WAIT_MS = 15_000;
+/** How long after the answer the camera has to deliver a decoded video frame. */
+const VIDEO_WAIT_MS = 15_000;
 const NO_WEBRTC = "This browser can't play live video.";
 const NO_CONNECTION = "Could not connect to the camera.";
+/** The session connected but no video came: Ring still answers for an unplugged camera. */
+export const NO_VIDEO = "The camera isn't sending video. Check that it's plugged in.";
 const UNAVAILABLE = "The camera is not available right now.";
 const NO_CAMERA = "No camera is linked yet.";
 
@@ -43,6 +46,13 @@ export async function decoderStats(peer: RTCPeerConnection): Promise<DecoderStat
     height: num(video.frameHeight),
     fps: num(video.framesPerSecond),
   };
+}
+
+/** Video frames the browser has decoded so far; 0 before any video report. */
+async function decoderFrames(peer: RTCPeerConnection): Promise<number> {
+  const report = (await peer.getStats()) as Map<string, Record<string, unknown>>;
+  const video = [...report.values()].find((r) => r.type === "inbound-rtp" && r.kind === "video");
+  return typeof video?.framesDecoded === "number" ? video.framesDecoded : 0;
 }
 
 /** A real peer, or null when the browser has no WebRTC. */
@@ -90,7 +100,7 @@ export function openLive(
   if (!peer) return null;
   let sessionId: string | null = null;
   let stopped = false;
-  let trackTimer: ReturnType<typeof setTimeout> | undefined;
+  let videoTimer: ReturnType<typeof setTimeout> | undefined;
   const conn: LiveConnection = {
     peer,
     get stopped() {
@@ -99,7 +109,7 @@ export function openLive(
     stop() {
       if (stopped) return;
       stopped = true;
-      clearTimeout(trackTimer);
+      clearTimeout(videoTimer);
       peer.close();
       if (sessionId) api.stopLive(sessionId).catch(() => {});
     },
@@ -116,7 +126,6 @@ export function openLive(
   let maxSeconds = 0;
   peer.ontrack = (e) => {
     if (stopped || !e.streams[0]) return;
-    clearTimeout(trackTimer);
     callbacks.onStream(e.streams[0], maxSeconds);
   };
 
@@ -131,9 +140,14 @@ export function openLive(
         api.stopLive(live.session_id).catch(() => {});
         return;
       }
+      // Set before the answer: browsers fire the track while it is being applied.
       maxSeconds = live.max_seconds;
+      videoTimer = setTimeout(() => {
+        decoderFrames(peer)
+          .catch(() => 0)
+          .then((frames) => frames === 0 && fail(NO_VIDEO));
+      }, VIDEO_WAIT_MS);
       await peer.setRemoteDescription({ type: "answer", sdp: live.answer });
-      trackTimer = setTimeout(() => fail(NO_CONNECTION), TRACK_WAIT_MS);
     } catch (err) {
       if (!(err instanceof ApiError)) return fail(NO_CONNECTION, err);
       fail(err.status === 409 ? NO_CAMERA : UNAVAILABLE, err);
