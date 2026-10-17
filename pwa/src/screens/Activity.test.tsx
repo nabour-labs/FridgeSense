@@ -18,6 +18,7 @@ function event(overrides: Partial<DoorEvent> = {}): DoorEvent {
     status: "done",
     pending_count: 0,
     stills: [],
+    clip: null,
     changes: [
       { item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.92, applied: true },
       { item: "eggs", category: "dairy", direction: "removed", quantity: 2, confidence: 0.81, applied: true },
@@ -113,9 +114,42 @@ test("the viewer can't step past the first or last still", async () => {
   expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Next still" })).toBeDisabled();
 });
 
+const CLIP = "https://stills.example.com/clip.mp4?sig=x#t=0.5,8.5";
+
+// Clip instead of stills
+test("an event with a clip plays it instead of showing stills", async () => {
+  renderActivity([event({ clip: CLIP, stills: STILLS })]);
+  const video = (await screen.findByLabelText("Door opening at 18:02")) as HTMLVideoElement;
+  expect(video.tagName).toBe("VIDEO");
+  expect(video.getAttribute("src")).toBe(CLIP);
+  expect(video.muted).toBe(true);
+  expect(video.controls).toBe(true);
+  expect(video.hasAttribute("playsinline")).toBe(true);
+  expect(video.autoplay).toBe(false);
+  expect(video.getAttribute("poster")).toBe(STILLS[0]);
+  expect(screen.queryByRole("button", { name: /Still \d of/ })).toBeNull();
+  expect(document.querySelector("[data-stills]")).toBeNull();
+});
+
+// Clip without stills
+test("a clip without stills has no poster", async () => {
+  renderActivity([event({ clip: CLIP, stills: [] })]);
+  const video = await screen.findByLabelText("Door opening at 18:02");
+  expect(video.hasAttribute("poster")).toBe(false);
+});
+
+// Clip fails to load
+test("a clip that fails to load falls back to the stills", async () => {
+  renderActivity([event({ clip: CLIP, stills: STILLS })]);
+  const video = await screen.findByLabelText("Door opening at 18:02");
+  fireEvent.error(video);
+  expect(await screen.findAllByRole("button", { name: /Still \d of 4/ })).toHaveLength(4);
+  expect(screen.queryByLabelText("Door opening at 18:02")).toBeNull();
+});
+
 // No stills
 test("an event without stills shows no still area", async () => {
-  renderActivity([event({ stills: [] })]);
+  renderActivity([event({ stills: [], clip: null })]);
   const card = await screen.findByRole("article");
   expect(within(card).queryByRole("button", { name: /Still/ })).not.toBeInTheDocument();
   expect(card.querySelector("[data-stills]")).toBeNull();
@@ -289,6 +323,36 @@ describe("still links across polls", () => {
     tag = "c";
     await poll(60_000 + 10_000);
     expect(shownSrcs()).toEqual(links("c"));
+  });
+
+  // Poll with a fresh clip link
+  test("a poll with a fresh clip link keeps the clip on screen", async () => {
+    const clip = (tag: string) => `https://stills.example.com/clip.mp4?sig=${tag}#t=0.5,8.5`;
+    const events = vi
+      .fn()
+      .mockResolvedValueOnce({ events: [event({ stills: links("a"), clip: clip("a") })], next: null })
+      .mockResolvedValue({ events: [event({ stills: links("b"), clip: clip("b") })], next: null });
+    renderPolls(events);
+    await act(async () => {});
+    const video = document.querySelector("video")!;
+    expect(video.getAttribute("src")).toBe(clip("a"));
+    await poll();
+    expect(events).toHaveBeenCalledTimes(2);
+    expect(document.querySelector("video")).toBe(video); // not reloaded
+    expect(video.getAttribute("src")).toBe(clip("a"));
+  });
+
+  // Clip appears
+  test("a clip that appears on a later poll is shown", async () => {
+    const events = vi
+      .fn()
+      .mockResolvedValueOnce({ events: [event({ stills: links("a"), clip: null })], next: null })
+      .mockResolvedValue({ events: [event({ stills: links("b"), clip: "https://c/clip.mp4?sig=v1" })], next: null });
+    renderPolls(events);
+    await act(async () => {});
+    expect(document.querySelector("video")).toBeNull();
+    await poll();
+    expect(document.querySelector("video")?.getAttribute("src")).toBe("https://c/clip.mp4?sig=v1");
   });
 
   // Still count changes

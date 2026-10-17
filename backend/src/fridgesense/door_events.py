@@ -7,6 +7,8 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -483,11 +485,13 @@ def clip_frames_checked(
     interval_ms: int,
     sleep: Callable[[float], None],
     clip_dir=None,
+    keep: list[Path] | None = None,
 ) -> tuple[list[Downloaded], list[list["ZoneValue"]]]:
     """The event clip's frames every `interval_ms` (as JPEG `Downloaded`s) and their zone values.
 
     Each frame is scored as it is decoded, so a long clip never sits in memory decoded.
-    The temp clip file is deleted whatever happens. Raises ClipUnavailable.
+    The temp clip file is deleted whatever happens, unless it decoded and `keep` is given:
+    then it is appended to `keep` and the caller deletes it. Raises ClipUnavailable.
     """
     from fridgesense import clip_frames
 
@@ -509,8 +513,11 @@ def clip_frames_checked(
             values.append(check.zone_values(img))
             frames.append(Downloaded(n, window["start_ms"] + offset, _frame_jpeg(img)))
         clip_bytes = path.stat().st_size
+        if keep is not None:
+            keep.append(path)
     finally:
-        path.unlink(missing_ok=True)
+        if keep is None or path not in keep:
+            path.unlink(missing_ok=True)
     log_event(
         "clip_frames",
         device_id=state["device_id"],
@@ -644,7 +651,52 @@ def iso_utc(ms: int) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ms % 1000:03d}Z"
 
 
-def fetch_stills(
+def store_open_clip(
+    s3, bucket: str, state: dict, clip: Path, opened_ms: int, closed_ms: int | None, clip_dir=None
+) -> dict:
+    """Cut the clip to the open span and store it as `clip.mp4` next to the stills.
+
+    Returns the door event's `clip_key` and `clip_span`, or {} when the cut or upload failed
+    (logged as clip_not_stored): a missing clip never costs the door event or its analysis.
+    """
+    from fridgesense import clip_frames
+
+    start_ms = state["window"]["start_ms"]
+    close = None if closed_ms is None else closed_ms - start_ms
+    try:
+        cut, (start_s, end_s) = clip_frames.cut_clip(clip, opened_ms - start_ms, close, clip_dir)
+    except clip_frames.ClipUnavailable:
+        log_event(
+            "clip_not_stored", logging.WARNING, device_id=state["device_id"], reason="cut_failed"
+        )
+        return {}
+    key = stills_prefix(state["account_id"], state["device_id"], start_ms) + "clip.mp4"
+    try:
+        s3.put_object(Bucket=bucket, Key=key, Body=cut.read_bytes(), ContentType="video/mp4")
+    except Exception as e:  # S3 trouble must not drop the door opening
+        log_event(
+            "clip_not_stored",
+            logging.WARNING,
+            device_id=state["device_id"],
+            reason="upload_failed",
+            error=type(e).__name__,
+        )
+        return {}
+    finally:
+        cut.unlink(missing_ok=True)
+    return {"clip_key": key, "clip_span": [Decimal(str(start_s)), Decimal(str(end_s))]}
+
+
+def fetch_stills(*args, **kwargs) -> dict:
+    kept: list[Path] = []  # the downloaded clip, while the open span is cut from it
+    try:
+        return _fetch_stills(*args, kept=kept, **kwargs)
+    finally:
+        for path in kept:
+            path.unlink(missing_ok=True)
+
+
+def _fetch_stills(
     ring: RingClient,
     http: httpx.Client,
     s3,
@@ -662,6 +714,7 @@ def fetch_stills(
     clip_dir=None,
     face_blur: bool = True,
     paused_for: Callable[[str, str], bool] | None = None,
+    kept: list[Path] | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
@@ -672,6 +725,7 @@ def fetch_stills(
     The door check runs on the raw, uncropped stills in memory. For a door opening, up to
     4 stills from the open span are cropped to `crop`, go through `blurrer` (face detection,
     unless blurring is off), and are stored; the span also gives the event's open and close times.
+    A clip's open span is also cut and stored as `clip.mp4` (best effort: see `store_open_clip`).
     Outcomes: door_open (go on to analysis), not_door, no_media, duplicate, and paused when
     `paused_for` says the owner paused the camera (checked before anything is downloaded).
     With a trace `writer`, every outcome also leaves a debug trace of what the check saw.
@@ -690,7 +744,9 @@ def fetch_stills(
         from fridgesense.clip_frames import ClipUnavailable
 
         try:
-            clip = clip_frames_checked(ring, http, check, state, frame_interval_ms, sleep, clip_dir)
+            clip = clip_frames_checked(
+                ring, http, check, state, frame_interval_ms, sleep, clip_dir, keep=kept
+            )
         except ClipUnavailable as e:
             log_event("clip_unavailable", logging.WARNING, device_id=device_id, reason=e.reason)
     if clip is not None:
@@ -708,6 +764,7 @@ def fetch_stills(
     times = [d.at_ms for d in downloaded]
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
+    clip_fields: dict = {}
     status = "no_media"
     rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
     trace = DoorTrace(
@@ -754,6 +811,9 @@ def fetch_stills(
         stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
         still_keys = [k for k, _ in stills]
         trace.stored_keys = still_keys
+        if clip and kept:
+            closed = closed_ms if not results[span[-1]].is_open else None
+            clip_fields = store_open_clip(s3, bucket, state, kept[0], opened_ms, closed, clip_dir)
         if len(stills) >= MIN_STILLS:
             status = "analyzing"
 
@@ -769,6 +829,7 @@ def fetch_stills(
         "closed_at": iso_utc(closed_ms),
         "duration_s": round((closed_ms - opened_ms) / 1000),
         "still_keys": still_keys,
+        **clip_fields,
         "status": status,
     }
     try:

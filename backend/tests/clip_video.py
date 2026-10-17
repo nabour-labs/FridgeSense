@@ -10,14 +10,18 @@ MS = Fraction(1, 1000)
 
 
 def write_mp4(
-    path: Path, frames: list[tuple[int, Rgb]], size: tuple[int, int] = (320, 180)
+    path: Path,
+    frames: list[tuple[int, Rgb]],
+    size: tuple[int, int] = (320, 180),
+    gop: int | None = None,
 ) -> Path:
     """`frames` are (start ms, colour); the clip lasts until 40 ms after the last frame starts."""
-    return write_images(path, [(pts, Image.new("RGB", size, c)) for pts, c in frames])
+    return write_images(path, [(pts, Image.new("RGB", size, c)) for pts, c in frames], gop)
 
 
-def write_images(path: Path, frames: list[tuple[int, Image.Image]]) -> Path:
-    """`frames` are (start ms, image), all the same size."""
+def write_images(path: Path, frames: list[tuple[int, Image.Image]], gop: int | None = None) -> Path:
+    """`frames` are (start ms, image), all the same size. With `gop`, a keyframe every `gop`
+    frames and nowhere else (no extra keyframes at scene changes)."""
     import av
 
     size = frames[0][1].size
@@ -26,6 +30,9 @@ def write_images(path: Path, frames: list[tuple[int, Image.Image]]) -> Path:
         stream.width, stream.height, stream.pix_fmt = *size, "yuv420p"
         stream.codec_context.time_base = MS
         stream.codec_context.bit_rate = 4_000_000  # keeps textured test scenes sharp
+        if gop is not None:
+            stream.codec_context.gop_size = gop
+            stream.codec_context.options = {"sc_threshold": "1000000000"}
         for pts, image in frames:
             frame = av.VideoFrame.from_image(image)
             frame.pts, frame.time_base = pts, MS
@@ -44,6 +51,7 @@ def door_clip(
     closed: Rgb = (128, 128, 128),
     lit: Rgb = (40, 90, 200),
     size: tuple[int, int] = (320, 180),
+    gop: int | None = None,
 ) -> Path:
     """A clip with a frame every `step_ms`, lit (fridge open) inside each [from, to) span."""
     frames = []
@@ -52,4 +60,4 @@ def door_clip(
         frames.append((t, lit if is_open else closed))
     if frames[-1][0] != duration_ms - 40:  # make the clip last exactly duration_ms
         frames.append((duration_ms - 40, frames[-1][1]))
-    return write_mp4(path, frames, size)
+    return write_mp4(path, frames, size, gop)

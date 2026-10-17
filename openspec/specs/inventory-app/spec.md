@@ -84,7 +84,7 @@ The Fridge screen SHALL show a summary card with the number of in-stock items, w
 - **THEN** `PUT /api/items/eggs` is sent with `{"quantity": 12}` and the list shows eggs ×12
 
 ### Requirement: Activity screen
-The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs" with an arrow showing the direction, a marker on unconfirmed changes, and the stills with the first one shown large. Tapping a still SHALL open it full size in a viewer that can step to the previous and next still. The screen SHALL show one day at a time, today by default, 10 openings per page, and SHALL let the owner delete an opening after confirming.
+The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs" with an arrow showing the direction, and a marker on unconfirmed changes. When an event has a `clip` link, the card SHALL show that clip instead of its stills: an inline video, muted, with controls, that plays inline and does not autoplay, with the first still as its poster. Otherwise it SHALL show the stills with the first one shown large, and tapping a still SHALL open it full size in a viewer that can step to the previous and next still. The screen SHALL show one day at a time, today by default, 10 openings per page, and SHALL let the owner delete an opening after confirming.
 
 #### Scenario: Door opening shown
 - **WHEN** an event opened at 18:02 local time for 25 s added 1 milk and removed 2 eggs
@@ -94,8 +94,20 @@ The Activity screen SHALL list door openings newest first with their local time,
 - **WHEN** an event has a change with `applied = false`
 - **THEN** that change shows "to confirm"
 
+#### Scenario: Clip instead of stills
+- **WHEN** an event has a `clip` link ending in `#t=0.5,8.5` and 4 still links
+- **THEN** the card shows one video labelled "Door opening at <time>" whose source is that link, which is muted, has controls, plays inline, does not autoplay and uses the first still as its poster, and no still buttons are shown
+
+#### Scenario: Clip without stills
+- **WHEN** an event has a `clip` link and no still links
+- **THEN** the video is shown with no poster
+
+#### Scenario: Clip fails to load
+- **WHEN** the clip video fires an `error` event and the event has 4 still links
+- **THEN** the card shows the 4 still buttons in place of the video
+
 #### Scenario: Stills
-- **WHEN** an event has 4 still links
+- **WHEN** an event has `clip: null` and 4 still links
 - **THEN** 4 still buttons are shown, the first one is marked as the featured still, and tapping one shows it full size
 
 #### Scenario: Step through stills
@@ -107,8 +119,8 @@ The Activity screen SHALL list door openings newest first with their local time,
 - **THEN** "Previous still" is disabled, and on still 4 of 4 "Next still" is disabled
 
 #### Scenario: No stills
-- **WHEN** an event has no still links
-- **THEN** no still area is shown for it
+- **WHEN** an event has no still links and `clip: null`
+- **THEN** no still or clip area is shown for it
 
 #### Scenario: Failed analysis
 - **WHEN** an event has `status = "analysis_failed"`
@@ -501,11 +513,15 @@ When the user leaves the Ask screen (another tab, or sign-out) while it is liste
 - **THEN** `speechSynthesis.cancel()` is called
 
 ### Requirement: Stable still links on Activity
-The Activity screen SHALL keep showing the still links it first received for a door event across polls for up to 10 minutes after receiving them, as long as the event still has the same number of stills. After 10 minutes, or when the number of stills changes, it SHALL use the links from the latest poll. A poll that only changes still links SHALL NOT reload the images on screen.
+The Activity screen SHALL keep showing the still links and the clip link it first received for a door event across polls for up to 10 minutes after receiving them, as long as the event still has the same number of stills and still has (or still lacks) a clip. After 10 minutes, or when either changes, it SHALL use the links from the latest poll. A poll that only changes links SHALL NOT reload the images or the clip on screen.
 
 #### Scenario: Poll with fresh links
 - **WHEN** Activity shows an event with stills `a1..a4`, and a poll 10 s later returns the same event with new links `b1..b4`
 - **THEN** the still images still use `a1..a4`
+
+#### Scenario: Poll with a fresh clip link
+- **WHEN** Activity shows an event with clip link `v1`, and a poll 10 s later returns the same event with clip link `v2`
+- **THEN** the video still uses `v1` and is not reloaded
 
 #### Scenario: Links refreshed after 10 minutes
 - **WHEN** a poll more than 10 minutes after `a1..a4` were received returns links `c1..c4`
@@ -514,6 +530,10 @@ The Activity screen SHALL keep showing the still links it first received for a d
 #### Scenario: Still count changes
 - **WHEN** an event shown with 2 stills comes back from a poll with 4 stills
 - **THEN** the screen shows the 4 new links
+
+#### Scenario: Clip appears
+- **WHEN** an event shown with `clip: null` comes back from a poll with clip link `v1`
+- **THEN** the card shows the video with `v1`
 
 ### Requirement: Stale poll responses ignored
 A screen that polls SHALL ignore a response from any request that started before a later local change to its data (such as a saved quantity or a confirmed pending change), or before a newer request for the same data. The newest data on screen SHALL never be replaced by older data.

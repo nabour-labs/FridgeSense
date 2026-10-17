@@ -9,11 +9,11 @@ import { Sheet } from "../components/Sheet";
 import { changeLabel, clock, dayLabel } from "../format";
 import { useLoad } from "../useLoad";
 
-/** Presigned still links last 15 min; reuse them for 10 so a poll doesn't reload every image. */
+/** Presigned still and clip links last 15 min; reuse them for 10 so a poll doesn't reload every image. */
 const STILL_LINKS_REUSED_MS = 10 * 60_000;
 const PAGE_SIZE = 10;
 
-type StillLinks = Map<string, { stills: string[]; at: number }>;
+type StillLinks = Map<string, { stills: string[]; clip: string | null; at: number }>;
 
 function startOfDay(d: Date, plusDays = 0): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + plusDays);
@@ -115,10 +115,15 @@ function EventPage({
           events: r.events.map((e) => {
             const now = Date.now();
             const kept = stillLinks.current.get(e.id);
-            if (kept && kept.stills.length === e.stills.length && now - kept.at < STILL_LINKS_REUSED_MS) {
-              return { ...e, stills: kept.stills };
+            if (
+              kept &&
+              kept.stills.length === e.stills.length &&
+              (kept.clip === null) === (e.clip === null) &&
+              now - kept.at < STILL_LINKS_REUSED_MS
+            ) {
+              return { ...e, stills: kept.stills, clip: kept.clip };
             }
-            stillLinks.current.set(e.id, { stills: e.stills, at: now });
+            stillLinks.current.set(e.id, { stills: e.stills, clip: e.clip, at: now });
             return e;
           }),
         })),
@@ -252,6 +257,7 @@ function EventCard({
   debug?: boolean;
 }) {
   const shown = event.changes.filter((c) => !c.rejected);
+  const [clipFailed, setClipFailed] = useState(false);
   const quiet = "text-sm text-slate-500 dark:text-slate-400";
   return (
     <article className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-900/5 ring-1 ring-slate-200 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800">
@@ -301,7 +307,22 @@ function EventCard({
           </ul>
         )}
       </div>
-      {event.stills.length > 0 && <Stills stills={event.stills} onStill={onStill} />}
+      {event.clip && !clipFailed ? (
+        // The door-open span only: the link's #t= fragment starts and stops playback there.
+        <video
+          src={event.clip}
+          poster={event.stills[0]}
+          aria-label={`Door opening at ${clock(event.opened_at)}`}
+          muted
+          playsInline
+          controls
+          preload="metadata"
+          onError={() => setClipFailed(true)}
+          className="mt-3 aspect-video w-full rounded-xl bg-slate-100 object-cover dark:bg-slate-800"
+        />
+      ) : (
+        event.stills.length > 0 && <Stills stills={event.stills} onStill={onStill} />
+      )}
     </article>
   );
 }

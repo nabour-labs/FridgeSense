@@ -94,6 +94,11 @@ def requested_offsets(post) -> list[int]:
     return sorted(json.loads(c.request.content)["timestamp"] - START for c in post.calls)
 
 
+def stored_stills() -> list[str]:
+    """The stored keys other than the open-span clip."""
+    return [k for k in stored_keys() if not k.endswith("/clip.mp4")]
+
+
 def logged(caplog, event: str) -> dict:
     [line] = [r.getMessage() for r in caplog.records if f'"{event}"' in r.getMessage()]
     return json.loads(line)
@@ -147,8 +152,8 @@ def test_four_stills_from_the_open_span(aws, ring_http, tmp_path):
     )
     assert requested_offsets(stills) == [4000, 7000, 9500, 12_500]
     assert seen == [STILL] * 4
-    assert stored_keys() == [f"{PREFIX}still-{n}.jpg" for n in range(1, 5)]
-    assert out["still_keys"] == stored_keys()
+    assert stored_stills() == [f"{PREFIX}still-{n}.jpg" for n in range(1, 5)]
+    assert out["still_keys"] == stored_stills()
 
 
 # Short open span
@@ -158,7 +163,7 @@ def test_short_open_span(aws, ring_http, tmp_path):
     stills = serve_stills()
     run(ring_http, clip_dir=tmp_path)
     assert requested_offsets(stills) == [6000, 6500]
-    assert stored_keys() == [f"{PREFIX}still-1.jpg", f"{PREFIX}still-2.jpg"]
+    assert stored_stills() == [f"{PREFIX}still-1.jpg", f"{PREFIX}still-2.jpg"]
 
 
 # Still missing, frame used
@@ -179,15 +184,15 @@ def test_still_missing_frame_used(aws, ring_http, tmp_path):
     assert b > 150 and r < 90  # the lit frame at 7.0 s
 
 
-# Door opening processed: only blurred stills reach S3, never the clip
+# Door opening processed: blurred stills and only the open-span clip reach S3
 @respx.mock
-def test_door_opening_processed_stores_no_clip(aws, ring_http, tmp_path):
+def test_door_opening_processed_stores_only_the_open_span_clip(aws, ring_http, tmp_path):
     serve_clip(tmp_path, [(4000, 12_500)])
     serve_stills()
     run(ring_http, clip_dir=tmp_path)
     keys = stored_keys()
-    assert keys and all(k.endswith(".jpg") and "/still-" in k for k in keys)
-    assert not any(k.endswith(".mp4") for k in keys)
+    assert [k for k in keys if k.endswith(".mp4")] == [f"{PREFIX}clip.mp4"]
+    assert all(k.endswith(".mp4") or (k.endswith(".jpg") and "/still-" in k) for k in keys)
 
 
 # Temporary file removed (success)

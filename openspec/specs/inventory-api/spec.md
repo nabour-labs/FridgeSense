@@ -106,7 +106,7 @@ A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be r
 - **THEN** the response is `{"items": [], "pending_count": 0}`
 
 ### Requirement: Door event listing
-`GET /api/events` SHALL return `{"events": [...], "next": <id or null>}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, and `stills`: 15-minute download links for its stored stills, or `[]` for events older than 7 days.
+`GET /api/events` SHALL return `{"events": [...], "next": <id or null>}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, `stills` and `clip`. `stills` holds 15-minute download links for its stored stills, or `[]` for events older than 7 days. `clip` is a 15-minute download link for the event's open-span clip, ending in the media fragment `#t=<start_s>,<end_s>` from its `clip_span`. It is `null` when the event has no `clip_key`, when the event is older than 7 days, and always for viewer tokens.
 
 The range is either `days=<n>` (default 7, max 30, ending now) or `from` and `to`, ISO 8601 instants with `from` inclusive, `to` exclusive, `from` before `to` and at most 31 days apart. When `from` is given, `days` is ignored. With `limit=<n>` (1 to 50) at most `n` events are returned and `next` is the id of the last one when older events remain in the range, else null; `cursor=<id>` returns only events older than that event. Without `limit`, every event in range is returned and `next` is null.
 
@@ -114,9 +114,21 @@ The range is either `days=<n>` (default 7, max 30, ending now) or `from` and `to
 - **WHEN** a `done` door event opened 1 hour ago has 4 stored stills
 - **THEN** it is listed with 4 `stills` links that download the images without any other credentials, and with its `changes`
 
+#### Scenario: Recent event with a clip
+- **WHEN** an owner or user token lists a door event opened 1 hour ago with `clip_key` set and `clip_span = [0.5, 8.5]`
+- **THEN** its `clip` is a link that downloads `clip.mp4` without any other credentials and ends in `#t=0.5,8.5`
+
+#### Scenario: Viewer gets no clip
+- **WHEN** a viewer token lists the same event
+- **THEN** its `clip` is `null` and its 4 `stills` links are still listed
+
+#### Scenario: Event without a clip
+- **WHEN** a recent door event has no `clip_key`
+- **THEN** its `clip` is `null`
+
 #### Scenario: Old event
 - **WHEN** a door event opened 8 days ago and `days=30`
-- **THEN** it is listed with `stills: []`
+- **THEN** it is listed with `stills: []` and `clip: null`
 
 #### Scenario: Range limit
 - **WHEN** events exist 2 and 10 days ago and the request has no `days`
