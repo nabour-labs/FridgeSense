@@ -34,6 +34,29 @@ export const toJpeg: Resize = async (file, shapes = []) => {
   return base64(blob);
 };
 
+/** Crops a picked image to a box (fractions of the image), at full resolution. */
+export type Crop = (file: Blob, box: Shape) => Promise<Blob>;
+
+/** The box as whole pixels of a width×height image: at least 1×1 and inside the image. */
+export function cropRect(width: number, height: number, box: Shape) {
+  const x = Math.min(width - 1, Math.round(Math.min(box.x1, box.x2) * width));
+  const y = Math.min(height - 1, Math.round(Math.min(box.y1, box.y2) * height));
+  const right = Math.min(width, Math.round(Math.max(box.x1, box.x2) * width));
+  const bottom = Math.min(height, Math.round(Math.max(box.y1, box.y2) * height));
+  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+}
+
+export const cropJpeg: Crop = async (file, box) => {
+  const bitmap = await createImageBitmap(file);
+  const r = cropRect(bitmap.width, bitmap.height, box);
+  const canvas = document.createElement("canvas");
+  canvas.width = r.width;
+  canvas.height = r.height;
+  canvas.getContext("2d")!.drawImage(bitmap, r.x, r.y, r.width, r.height, 0, 0, r.width, r.height);
+  bitmap.close();
+  return encode(canvas, 0.92);
+};
+
 /** Strokes the shapes in red, about 3 px wide on a 768 px image. */
 export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], width: number, height: number) {
   if (!shapes.length) return;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Resize } from "../image";
-import { toJpeg } from "../image";
+import type { Crop, Resize } from "../image";
+import { cropJpeg, toJpeg } from "../image";
 import { isAdmin, useApp } from "../AppContext";
 import { Warnings } from "../components/Warnings";
 import { Camera } from "./Camera";
@@ -31,7 +31,7 @@ function sectionFromHash(owner: boolean): Section {
 }
 
 /** Config: the camera, what guides the item analysis, and how door openings are detected. */
-export function Config({ resize = toJpeg }: { resize?: Resize }) {
+export function Config({ resize = toJpeg, crop = cropJpeg }: { resize?: Resize; crop?: Crop }) {
   const owner = isAdmin(useApp().role);
   const sections = SECTIONS.filter((s) => owner || !OWNER_ONLY.includes(s.id));
   const [section, setSection] = useState<Section>(() => sectionFromHash(owner));
@@ -72,7 +72,7 @@ export function Config({ resize = toJpeg }: { resize?: Resize }) {
       </div>
       <div role="tabpanel" id={`cfg-panel-${section}`} aria-labelledby={`cfg-tab-${section}`}>
         {section === "camera" && <Camera />}
-        {section === "refs" && <ReferenceImages resize={resize} />}
+        {section === "refs" && <ReferenceImages resize={resize} crop={crop} />}
         {section === "doors" && <DoorDetection />}
         {section === "fridge" && <FridgeArea />}
         {section === "debug" && <Debug />}
