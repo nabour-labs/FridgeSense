@@ -53,7 +53,7 @@ Re-scoring happens only when the camera moved since the last event, and the JPEG
 Sampling and re-tuning run after the claim transaction, each wrapped in try/except so they cannot change the outcome.
 
 ### Warnings endpoint
-`warnings.py` composes three checks: `fetch_device` (Ring), `load_setup`, and `ALIGN` plus `fridge_area.load`. It reuses `camera_info.fetch_device`, so Ring failures are already handled and return None. It is a separate endpoint rather than part of `/api/camera`, so the Fridge screen does one small request, and the Camera tab's contract doesn't change.
+`setup_warnings.py` composes three checks: `fetch_device` (Ring), `load_setup`, and `ALIGN` plus `fridge_area.load`. It reuses `camera_info.fetch_device`, so Ring failures are already handled and return None. It is a separate endpoint rather than part of `/api/camera`, so the Fridge screen does one small request, and the Camera tab's contract doesn't change.
 
 ### PWA
 One `Warnings` component takes the role (owner/viewer) from `AppContext` and renders the banners. It is used at the top of `Fridge.tsx` and of `Config.tsx` (above the tabs). It loads once per screen visit through `useLoad`, not on the Fridge screen's 10 s poll, so polling causes no extra Ring calls.
@@ -77,7 +77,7 @@ One `Warnings` component takes the role (owner/viewer) from `AppContext` and ren
 - **Unit (pytest, `backend/tests/`):**
   - `test_alignment.py`: synthetic 1280×720 test patterns (a grid plus shapes) shifted by known pixels, darkened to 60%, rotated 15°, and with a grey block "person". Covers the shift search, the bookend choice, the error limit, the moved and failure state machine, and the clamped zone shift.
   - `test_self_tuning.py`: open, closed and person samples built from the colors already used in the door-calibration scenarios. Covers keeping 20 samples, adopting tuned rules, skipping on overlap, too few samples, and the reset on run.
-  - `test_warnings.py`: Ring device responses from canned JSON fixtures (`tests/fixtures/ring/device_motion_off.json`, `device_motion_on.json`), plus a timeout and a 500 through a stubbed `RingClient`. Setup, alignment and fridge area states go through moto DynamoDB.
+  - `test_api_warnings.py`: the recorded `ring/device_detail.json` with its motion setting varied, plus a timeout and a 500 through respx. Setup, alignment and fridge area states go through moto DynamoDB.
 - **Contract (API handler tests):** `test_api_warnings.py` for `GET /api/warnings` (shape, order, 401, no device). `test_api_door_calibration.py` is extended for `alignment`, `tuned_at` and `tuned_from`.
 - **Integration (pipeline, moto + stubbed Ring):** `test_door_events.py` gets an encoded test clip of the shifted scene. It is generated in a fixture with PyAV from synthetic frames, so no real clip is committed. Covers `door_open` with an anchor, `not_door` without one, a table error during alignment, a sample-write error, and the trace fields.
 - **PWA (Vitest + Testing Library):** `Warnings.test.tsx` covers each banner, its links, the viewer, empty and 500 cases. `Fridge.test.tsx` and `Config.test.tsx` check the banner is mounted. `DoorDetection.test.tsx` covers the shift, tuned and moved lines.

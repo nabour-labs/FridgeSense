@@ -30,6 +30,7 @@ from fridgesense import (
     inventory,
     live,
     session,
+    setup_warnings,
     traces,
     voice,
 )
@@ -731,6 +732,14 @@ def fridge_area_body(table: FridgeTable, account_id: str, device_id: str) -> dic
             "updated_at": area.updated_at,
         },
     }
+
+
+@route("GET", "/api/warnings")
+def get_warnings(ctx: Context) -> dict:
+    body = setup_warnings.warnings_body(
+        deps.ring_client(now=now), ctx.table, ctx.account_id, _device_id(ctx), int(now() * 1000)
+    )
+    return json_response(200, body)
 
 
 @route("GET", "/api/fridge-area")

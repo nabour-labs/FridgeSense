@@ -35,9 +35,9 @@ Priority if time runs short: groups 1–4 and 6–7 (alignment, moved detection,
 
 ## 6. Setup warnings API
 
-- [ ] 6.1 Add Ring fixtures `tests/fixtures/ring/device_motion_off.json` and `device_motion_on.json`. Write failing tests in `backend/tests/test_warnings.py` for "All set up", "Several warnings in order", "Motion detection off", "Ring unreachable", "Setup never run", "Setup run", "Both need updating", "Fridge area already updated", "No fridge area", "Setup run but fridge area not updated" and "Both updated".
-- [ ] 6.2 Implement `backend/src/fridgesense/warnings.py` (`warnings_body`) composing `camera_info.fetch_device`, `load_setup`, the alignment and `fridge_area.load`. Verify that the 6.1 tests pass.
-- [ ] 6.3 Write failing tests in `test_api_warnings.py` for "No token" and "No camera yet", plus one owner and one viewer read. Add `GET /api/warnings` to `handlers/api.py`. Verify that they pass.
+- [x] 6.1 Write failing tests in `backend/tests/test_api_warnings.py`, varying the motion setting in the recorded `ring/device_detail.json` fixture, for "All set up", "Several warnings in order", "Motion detection off", "Ring unreachable", "Setup never run", "Setup run", "Both need updating", "Fridge area already updated", "No fridge area", "Setup run but fridge area not updated" and "Both updated".
+- [x] 6.2 Implement `backend/src/fridgesense/setup_warnings.py` (`warnings_body`) composing `camera_info.fetch_device`, `load_setup`, the alignment and `fridge_area.load`. Verify that the 6.1 tests pass.
+- [x] 6.3 Write failing tests in `test_api_warnings.py` for "No token" and "No camera yet", plus one owner and one viewer read. Add `GET /api/warnings` to `handlers/api.py`. Verify that they pass.
 
 ## 7. PWA
 
