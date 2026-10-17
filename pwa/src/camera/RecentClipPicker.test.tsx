@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "../api/client";
-import type { DoorEvent } from "../api/types";
+import type { Mock } from "vitest";
+import type { DoorEvent, Snapshot } from "../api/types";
 import { RecentClipPicker } from "./RecentClipPicker";
 
 function at(daysAgo: number, hour: number, minute: number): string {
@@ -34,13 +35,15 @@ const EVENTS = [
 ];
 const BLURRED = { image: "BLURRED", captured_at: "2026-10-17T18:02:00.000Z" };
 
-function renderPicker(
-  { events = EVENTS, cameraFrame = vi.fn().mockResolvedValue(BLURRED), grab = vi.fn(async () => "RAWFRAME") } = {} as {
-    events?: DoorEvent[];
-    cameraFrame?: ReturnType<typeof vi.fn>;
-    grab?: ReturnType<typeof vi.fn>;
-  },
-) {
+function renderPicker({
+  events = EVENTS,
+  cameraFrame = vi.fn(async (_image: string) => BLURRED),
+  grab = vi.fn(async (_video: HTMLVideoElement) => "RAWFRAME"),
+}: {
+  events?: DoorEvent[];
+  cameraFrame?: Mock<(image: string) => Promise<Snapshot>>;
+  grab?: Mock<(video: HTMLVideoElement) => Promise<string>>;
+} = {}) {
   const api = { events: vi.fn().mockResolvedValue({ events }), cameraFrame };
   const onPick = vi.fn();
   const onCancel = vi.fn();
@@ -107,7 +110,7 @@ it("says so when the clip won't load, and Use this frame is disabled", async () 
 // Frame can't be grabbed
 it("says so when the frame can't be drawn, and sends nothing", async () => {
   const { api, onPick } = renderPicker({
-    grab: vi.fn(async () => {
+    grab: vi.fn(async (_video: HTMLVideoElement): Promise<string> => {
       throw new DOMException("tainted", "SecurityError");
     }),
   });
@@ -122,7 +125,9 @@ it("says so when the frame can't be drawn, and sends nothing", async () => {
 // Faces can't be blurred
 it("says so when faces can't be blurred, and returns no image", async () => {
   const { onPick, report } = renderPicker({
-    cameraFrame: vi.fn().mockRejectedValue(new ApiError(502, "camera unavailable")),
+    cameraFrame: vi.fn(async (_image: string): Promise<Snapshot> => {
+      throw new ApiError(502, "camera unavailable");
+    }),
   });
   await screen.findByRole("combobox", { name: "Clip" });
   loaded();
@@ -134,7 +139,11 @@ it("says so when faces can't be blurred, and returns no image", async () => {
 
 it("reports any other error", async () => {
   const boom = new Error("boom");
-  const { report } = renderPicker({ cameraFrame: vi.fn().mockRejectedValue(boom) });
+  const { report } = renderPicker({
+    cameraFrame: vi.fn(async (_image: string): Promise<Snapshot> => {
+      throw boom;
+    }),
+  });
   await screen.findByRole("combobox", { name: "Clip" });
   loaded();
   await userEvent.click(screen.getByRole("button", { name: "Use this frame" }));
