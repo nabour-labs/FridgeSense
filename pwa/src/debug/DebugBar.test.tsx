@@ -84,15 +84,15 @@ it("Reference image from a clip: the frame is used and the camera is not asked",
   expect(fetchMock).toHaveBeenCalledWith("/__dev/videos");
 });
 
-it("Door reference from a clip: Add opens the picker and the frame is shown for boxing", async () => {
+it("Door zone from a clip: Add zone opens the picker and the frame is shown for boxing", async () => {
   switchOn();
   signedIn();
   location.hash = "#config/doors";
   const api = fakeApi();
   render(<App api={api} />);
-  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Add zone" }));
   await useFrame();
-  expect(await screen.findByRole("img", { name: "Snapshot to box the door on" })).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "Snapshot to box the zone on" })).toBeInTheDocument();
   expect(api.cameraSnapshot).not.toHaveBeenCalled();
 });
 
@@ -130,7 +130,7 @@ it("Switch off: a live view is opened once and no picker opens", async () => {
 });
 
 it.each([
-  ["Open/close detection", "#config/doors", "Add"],
+  ["Open/close detection", "#config/doors", "Add zone"],
   ["Fridge area", "#config/fridge", "Set area"],
 ])("Switch off: %s takes its snapshot from a live view", async (_, hash, button) => {
   vi.stubGlobal("RTCPeerConnection", StubPeer);
@@ -165,7 +165,7 @@ it("Closing the door sheet ends the live view and sends no frame", async () => {
   });
   const errors = vi.spyOn(console, "error");
   render(<App api={api} />);
-  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Add zone" }));
   await waitFor(() => expect(api.startLive).toHaveBeenCalledTimes(1));
   await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Close" }));
   await waitFor(() => expect(api.stopLive).toHaveBeenCalledWith("S1"));

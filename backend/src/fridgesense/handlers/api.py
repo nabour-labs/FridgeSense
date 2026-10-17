@@ -664,16 +664,32 @@ def _alignment_body(table: FridgeTable, account_id: str, device_id: str) -> dict
 def door_setup_body(
     table: FridgeTable, account_id: str, device_id: str, scores: dict | None = None
 ) -> dict:
+    zones = door_calibration.list_zones(table, account_id, device_id)
     refs = door_calibration.list_references(table, account_id, device_id)
     setup = door_calibration.load_setup(table, account_id, device_id)
     if scores is None:
         scores = door_calibration.reference_scores(refs, setup)
     defaults = DoorCheck.from_config(os.environ.get("DOOR_ZONES"), os.environ.get("DOOR_THRESHOLD"))
+
+    def count(zone_sk: str, status: str) -> int:
+        return sum(1 for r in refs if r.zone_id == zone_sk and r.status == status)
+
     return {
         "device_id": device_id,
+        "zones": [
+            {
+                "id": encode_id(z.sk),
+                "name": z.name,
+                "box": door_calibration.box_json(z.box),
+                "open": count(z.sk, "open"),
+                "closed": count(z.sk, "closed"),
+            }
+            for z in zones
+        ],
         "references": [
             {
                 "id": encode_id(r.sk),
+                "zone_id": encode_id(r.zone_id),
                 "image": base64.b64encode(r.image).decode(),
                 "box": door_calibration.box_json(r.box),
                 "status": r.status,
@@ -687,6 +703,8 @@ def door_setup_body(
         else {
             "zones": [
                 {
+                    "id": encode_id(z.zone_id) if z.zone_id else None,
+                    "name": z.name or None,
                     **door_calibration.box_json(z.box),
                     "feature": z.feature,
                     "direction": z.direction,
@@ -718,19 +736,76 @@ def get_door_setup(ctx: Context, device_id: str) -> dict:
 @with_device
 def post_door_reference(ctx: Context, device_id: str) -> dict:
     body = _json_body(ctx.req) or {}
+    raw_zone = body.get("zone_id")
+    zone_sk = (
+        decode_id(raw_zone, door_calibration.zone_prefix(device_id))
+        if isinstance(raw_zone, str)
+        else None
+    )
     try:
         image = door_calibration.decode_image(body.get("image"))
-        box = door_calibration.validate_box(body.get("box"))
         status = door_calibration.validate_status(body.get("status"))
+        door_calibration.add_reference(
+            ctx.table, ctx.account_id, device_id, image, zone_sk, status, now_ms=int(now() * 1000)
+        )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})
-    try:
-        door_calibration.add_reference(
-            ctx.table, ctx.account_id, device_id, image, box, status, now_ms=int(now() * 1000)
-        )
     except door_calibration.TooMany:
         limit = door_calibration.MAX_REFERENCES
         return json_response(409, {"error": f"at most {limit} door references"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("POST", "/api/door-calibration/zones", write=True)
+@with_device
+def post_door_zone(ctx: Context, device_id: str) -> dict:
+    body = _json_body(ctx.req) or {}
+    try:
+        door_calibration.add_zone(
+            ctx.table,
+            ctx.account_id,
+            device_id,
+            body.get("name"),
+            body.get("box"),
+            now_ms=int(now() * 1000),
+        )
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    except door_calibration.TooManyZones:
+        return json_response(409, {"error": f"at most {door_calibration.MAX_ZONES} door zones"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("PATCH", "/api/door-calibration/zones/{id}", write=True)
+@with_device
+def patch_door_zone(ctx: Context, device_id: str) -> dict:
+    body = _json_body(ctx.req) or {}
+    sk = decode_id(ctx.params["id"], door_calibration.zone_prefix(device_id))
+    try:
+        found = sk is not None and door_calibration.update_zone(
+            ctx.table,
+            ctx.account_id,
+            device_id,
+            sk,
+            now_ms=int(now() * 1000),
+            name=body.get("name"),
+            box=body.get("box"),
+        )
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    if not found:
+        return json_response(404, {"error": "not found"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("DELETE", "/api/door-calibration/zones/{id}", write=True)
+@with_device
+def delete_door_zone(ctx: Context, device_id: str) -> dict:
+    sk = decode_id(ctx.params["id"], door_calibration.zone_prefix(device_id))
+    if sk is None or not door_calibration.delete_zone(
+        ctx.table, ctx.account_id, device_id, sk, now_ms=int(now() * 1000)
+    ):
+        return json_response(404, {"error": "not found"})
     return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
 
 

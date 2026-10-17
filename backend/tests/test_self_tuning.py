@@ -110,8 +110,9 @@ def test_sample_uses_the_shifted_zone(aws):
 
 def set_up():
     table = FridgeTable()
-    dc.add_reference(table, ACCOUNT, DEVICE, block(0.06), LEFT, "open", T0)
-    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, LEFT, "closed", T0 + 1)
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0).sk
+    dc.add_reference(table, ACCOUNT, DEVICE, block(0.06), z, "open", T0)
+    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1)
     dc.run(table, ACCOUNT, DEVICE, T0 + 2)
 
 

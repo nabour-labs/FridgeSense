@@ -215,8 +215,9 @@ def test_setup_rule(aws):
     closed_ref = color_jpeg(GREY, size=(200, 100))
     t0 = 1792092000000
     table = FridgeTable()
-    r1 = dc.add_reference(table, ACCOUNT, DEVICE, open_ref, left, "open", now_ms=t0)
-    r2 = dc.add_reference(table, ACCOUNT, DEVICE, closed_ref, left, "closed", now_ms=t0 + 1)
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", left, now_ms=t0).sk
+    r1 = dc.add_reference(table, ACCOUNT, DEVICE, open_ref, z, "open", now_ms=t0)
+    r2 = dc.add_reference(table, ACCOUNT, DEVICE, closed_ref, z, "closed", now_ms=t0 + 1)
     dc.run(table, ACCOUNT, DEVICE, now_ms=t0 + 60_000)
     check = dc.setup_check(table, ACCOUNT, DEVICE)
 

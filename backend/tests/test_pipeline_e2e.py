@@ -404,8 +404,9 @@ def run_setup_for(device: str) -> None:
 
     right = {"x": 0.6, "y": 0.0, "width": 0.4, "height": 1.0}
     lit = color_jpeg((128, 128, 128), [((0.6, 0.0, 0.4, 1.0), (40, 90, 200))])
-    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, lit, right, "open", 1)
-    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, CLOSED, right, "closed", 2)
+    z = door_calibration.add_zone(FridgeTable(), ACCOUNT, device, "Doors", right, 1).sk
+    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, lit, z, "open", 1)
+    door_calibration.add_reference(FridgeTable(), ACCOUNT, device, CLOSED, z, "closed", 2)
     door_calibration.run(FridgeTable(), ACCOUNT, device, now_ms=3)
 
 

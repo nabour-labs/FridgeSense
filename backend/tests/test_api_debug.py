@@ -258,15 +258,9 @@ def test_setup_rule_links(owner):
     from fridgesense.door_events import DoorCheck, ZoneRule, baseline_of
 
     whole = (0.0, 0.0, 1.0, 1.0)
-    dc.add_reference(
-        FridgeTable(),
-        ACCOUNT,
-        DEVICE,
-        CLOSED,
-        {"x": 0, "y": 0, "width": 1, "height": 1},
-        "closed",
-        now_ms=1,
-    )
+    whole_box = {"x": 0, "y": 0, "width": 1, "height": 1}
+    z = dc.add_zone(FridgeTable(), ACCOUNT, DEVICE, "Doors", whole_box, now_ms=1).sk
+    dc.add_reference(FridgeTable(), ACCOUNT, DEVICE, CLOSED, z, "closed", now_ms=1)
     rule = ZoneRule(whole, "change", "above", 0.1, baseline_of([CLOSED], whole), margin=0.05)
     check = DoorCheck(rules=(rule,), source="setup", ran_at="2026-08-01T00:00:00.000Z")
     start = recent(1)
