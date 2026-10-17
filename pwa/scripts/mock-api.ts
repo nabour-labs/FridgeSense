@@ -300,6 +300,18 @@ export function mockApi(): Plugin {
         // Live view needs a real camera: answer as if Ring were down, so the dialog's error path shows.
         if (req.method === "POST" && url === "/camera/live") return send(502, { error: "camera unavailable" });
         if (req.method === "DELETE" && url.startsWith("/camera/live/")) return send(200, { ok: true });
+        // Live frame: nothing to blur in the mock, so the frame comes straight back.
+        if (req.method === "POST" && url === "/camera/frame") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const image = (JSON.parse(body || "{}") as { image?: unknown }).image;
+            if (typeof image !== "string") return send(400, { error: "bad image" });
+            send(200, { image, captured_at: new Date().toISOString() });
+          });
+          return;
+        }
         // Door setup: snapshots alternate shut/open so both kinds of reference are easy to add.
         if (req.method === "POST" && url === "/camera/snapshot") {
           if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });

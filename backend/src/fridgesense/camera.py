@@ -1,5 +1,7 @@
 """Camera snapshots for setup: one still from the fridge camera, faces blurred, never stored."""
 
+import base64
+import binascii
 import io
 import logging
 import time
@@ -79,6 +81,37 @@ def snapshot(
     if blurred is None:
         raise SnapshotFailed()
     return shrink(blurred), ts
+
+
+MAX_FRAME_BYTES = 2_000_000
+
+
+def frame_jpeg(image: object) -> bytes | None:
+    """The JPEG bytes of a base64 frame from the app, or None if it is not one."""
+    if not isinstance(image, str):
+        return None
+    try:
+        data = base64.b64decode(image, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if len(data) > MAX_FRAME_BYTES:
+        return None
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            if img.format != "JPEG":
+                return None
+            img.verify()
+    except (OSError, SyntaxError, Image.DecompressionBombError):
+        return None
+    return data
+
+
+def blur_frame(blurrer: FaceBlurrer, jpeg: bytes) -> bytes:
+    """A live frame from the app, shrunk and with every face blurred; never stored."""
+    blurred = blurrer.blur(shrink(jpeg), {"still": "frame"})
+    if blurred is None:
+        raise SnapshotFailed()
+    return shrink(blurred)
 
 
 def _latest_motion_ms(ring: RingClient, device_id: str) -> int | None:

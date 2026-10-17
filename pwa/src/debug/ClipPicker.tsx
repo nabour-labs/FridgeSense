@@ -1,8 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { Snapshot } from "../api/types";
+import { grabFrame, type GrabFrame } from "../image";
 import { Select } from "../components/Select";
 import { Sheet } from "../components/Sheet";
 import { PRIMARY } from "../screens/configStyles";
+
+export { grabFrame };
 
 export interface Clip {
   name: string;
@@ -10,8 +13,6 @@ export interface Clip {
   url: string;
 }
 
-/** Same width limit as a camera snapshot from the backend (camera.MAX_WIDTH). */
-const MAX_WIDTH = 960;
 export const NO_CLIPS = "No clips in the videos folder";
 const UPLOAD_NOTICE = "Frames are not face-blurred and will be uploaded if you save them.";
 
@@ -43,26 +44,6 @@ export function ClipSelect({ clips, value, onChange }: { clips: Clip[]; value: s
     </div>
   );
 }
-
-export type GrabFrame = (video: HTMLVideoElement) => Promise<string>;
-
-/** The frame the video shows now, as a base64 JPEG at most 960 px wide. */
-export const grabFrame: GrabFrame = async (video) => {
-  const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(video.videoWidth * scale);
-  canvas.height = Math.round(video.videoHeight * scale);
-  canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-  if (!blob) throw new Error("frame could not be encoded");
-  const url = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-  return url.slice(url.indexOf(",") + 1);
-};
 
 /** Debug: pick a frame from a local recording in place of a camera snapshot. */
 export function ClipPicker({

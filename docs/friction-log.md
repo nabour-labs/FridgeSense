@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-17 · Ring Partner API · No way to get a still of the camera "now"
+
+- **Task:** take a current picture of the fridge for the setup screens (door references, fridge area).
+- **Steps:** `POST /v1/devices/{id}/media/image/download` with `{"type": "at_timestamp", "timestamp": <now − 3 s>, "image_options": {"format": "jpeg"}}`, retried once after 2 s, from the deployed API whenever the owner tapped **Add**.
+- **Expected:** a still of what the camera sees now. The docs describe the image as the nearest frame within ±10 s, which reads like it works at any time.
+- **Actual:** every request with nobody moving in front of the camera got `416` and was logged as `{"event": "still_missing", "status": 416}` (four times between 13:15 and 13:18 UTC). The Indoor Cam only records on motion, so there is no frame near "now" unless something is moving, and the app showed "No recent footage" every time.
+- **Severity:** Medium
+- **Workaround:** fall back to a still at the middle of the newest motion event from `GET /v1/history/devices/{id}/events?event_types=motion`, and take setup snapshots from a frame of a short WHEP live view instead, with faces blurred on the backend.
+- **Suggestion:** offer a "snapshot now" endpoint (the device lists a `snapshot` capability), or say in the image download docs that `at_timestamp` only finds frames inside recorded events.
+
 ### 2026-10-17 · Ring Partner API · Clip download answers 303 even when there is no clip
 
 - **Task:** run the door check on frames from the motion event's clip instead of 30 separate stills.
