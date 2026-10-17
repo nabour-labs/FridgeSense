@@ -22,6 +22,7 @@ NOW = 1792092010.0  # 2026-10-15T19:20:10Z
 DEVICE = "ava1.ring.device.D1"
 DOWNLOAD = f"{API_BASE}/v1/devices/{DEVICE}/media/image/download"
 LINK = "https://dl.example.com/snap"
+HISTORY = f"{API_BASE}/v1/history/devices/{DEVICE}/events"
 
 
 @pytest.fixture
@@ -136,16 +137,79 @@ def test_face_blurred_in_the_snapshot(aws, rekognition):
     assert ImageStat.Stat(face).stddev[0] < 10
 
 
+def requested_times(post) -> list[int]:
+    return [json.loads(c.request.content)["timestamp"] for c in post.calls]
+
+
+# Snapshot from the latest motion event
+@respx.mock
+def test_snapshot_from_the_latest_motion_event(aws, rekognition):
+    latest = 1786715608500
+
+    def answer(request):
+        if json.loads(request.content)["timestamp"] == latest:
+            return httpx.Response(303, headers={"Location": LINK})
+        return httpx.Response(416, json={"errors": [{"code": "MEDIA_NOT_FOUND"}]})
+
+    post = respx.post(DOWNLOAD).mock(side_effect=answer)
+    history = respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
+    respx.get(LINK).respond(200, content=color_jpeg(size=(960, 540)))
+    faces_found(rekognition[1], {"FaceDetails": []})
+    image, captured_ms = take(rekognition)
+    assert requested_times(post) == [1792092007000, 1792092007000, latest]
+    assert history.calls.last.request.url.params["event_types"] == "motion"
+    assert captured_ms == latest
+    assert size(image) == (960, 540)
+
+
+@respx.mock
+def test_latest_event_without_end_uses_its_start(aws, rekognition):
+    attrs = {"event_type": "motion", "start": 1786715596000}
+    events = {"data": [{"id": "e1", "attributes": attrs}]}
+    post = respx.post(DOWNLOAD).mock(
+        side_effect=lambda r: (
+            httpx.Response(303, headers={"Location": LINK})
+            if json.loads(r.content)["timestamp"] == 1786715596000
+            else httpx.Response(416)
+        )
+    )
+    respx.get(HISTORY).respond(200, json=events)
+    respx.get(LINK).respond(200, content=color_jpeg(size=(960, 540)))
+    faces_found(rekognition[1], {"FaceDetails": []})
+    _, captured_ms = take(rekognition)
+    assert captured_ms == 1786715596000
+    assert requested_times(post)[-1] == 1786715596000
+
+
 # No recent footage
 @respx.mock
 @pytest.mark.parametrize("status", [416, 425])
 def test_no_recent_footage(aws, rekognition, status):
     post = respx.post(DOWNLOAD).respond(status, json={"errors": [{"status": str(status)}]})
+    respx.get(HISTORY).respond(200, json={"data": []})
     sleeps = Sleeps()
     with pytest.raises(NoFootage):
         take(rekognition, sleeps)
     assert post.call_count == 2
     assert sleeps == [2]
+
+
+@respx.mock
+@pytest.mark.parametrize("history_status", [500, 503])
+def test_no_recent_footage_when_history_unreadable(aws, rekognition, history_status):
+    respx.post(DOWNLOAD).respond(416)
+    respx.get(HISTORY).respond(history_status)
+    with pytest.raises(NoFootage):
+        take(rekognition)
+
+
+@respx.mock
+def test_no_recent_footage_when_latest_event_has_no_still(aws, rekognition):
+    post = respx.post(DOWNLOAD).respond(416)
+    respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
+    with pytest.raises(NoFootage):
+        take(rekognition)
+    assert requested_times(post)[-1] == 1786715608500
 
 
 @respx.mock
