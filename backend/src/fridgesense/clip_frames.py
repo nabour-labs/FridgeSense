@@ -1,6 +1,6 @@
 """The motion event's clip: downloaded once from Ring, then sampled into frames for the door check.
 
-The clip only ever lives in Lambda /tmp (or memory) and is never stored in S3.
+The full clip only ever lives in Lambda /tmp (or memory). Only its cut to the open span is stored.
 """
 
 import os
@@ -23,7 +23,7 @@ CHUNK_BYTES = 1 << 20
 
 class ClipUnavailable(Exception):
     """The clip can't be used; `reason` says why (status_<code>, download_failed, too_large,
-    decode_failed, no_frames)."""
+    decode_failed, no_frames, cut_failed)."""
 
     def __init__(self, reason: str):
         super().__init__(reason)
@@ -150,3 +150,53 @@ def frames_at(path: Path, offsets_ms: Iterable[int]) -> Iterator[tuple[int, Imag
 def sample_frames(path: Path, interval_ms: int) -> Iterator[tuple[int, Image.Image]]:
     """The frame shown at 0, interval, 2 x interval, ... up to the clip's end."""
     return frames_at(path, range(0, clip_duration_ms(path), interval_ms))
+
+
+def cut_clip(
+    path: Path, open_ms: int, close_ms: int | None, directory: Path | None = None
+) -> tuple[Path, tuple[float, float]]:
+    """The clip from the last keyframe at or before `open_ms` through the frame at `close_ms`
+    (or the clip's end when None), copied without re-encoding into a new temp MP4.
+
+    Returns (the cut, (start_s, end_s)): where the open span starts and ends in the cut, in
+    seconds rounded to 0.1. The caller deletes the cut. Raises ClipUnavailable("cut_failed").
+    """
+    import av
+
+    fd, name = tempfile.mkstemp(suffix=".mp4", dir=directory)
+    os.close(fd)
+    out_path = Path(name)
+    try:
+        with (
+            av.open(str(path)) as source,
+            av.open(str(out_path), "w", format="mp4", options={"movflags": "faststart"}) as out,
+        ):
+            video = source.streams.video[0]
+            copy = out.add_stream_from_template(video)
+            tb = video.time_base
+            source.seek(round(open_ms / 1000 / tb), stream=video, backward=True, any_frame=False)
+            first = None
+            for packet in source.demux(video):
+                if packet.pts is None or packet.dts is None:
+                    continue  # the demuxer's empty flush packet
+                if first is None:
+                    if not packet.is_keyframe:
+                        continue
+                    first = packet.pts
+                if close_ms is not None and packet.pts * tb * 1000 > close_ms:
+                    break
+                packet.pts -= first
+                packet.dts -= first
+                packet.stream = copy
+                out.mux(packet)
+            if first is None:
+                raise ClipUnavailable("cut_failed")
+            first_ms = float(first * tb * 1000)
+            end_ms = close_ms if close_ms is not None else source.duration * 1000 / av.time_base
+    except (av.FFmpegError, IndexError, ClipUnavailable):
+        out_path.unlink(missing_ok=True)
+        raise ClipUnavailable("cut_failed") from None
+    except BaseException:
+        out_path.unlink(missing_ok=True)
+        raise
+    return out_path, (round((open_ms - first_ms) / 1000, 1), round((end_ms - first_ms) / 1000, 1))

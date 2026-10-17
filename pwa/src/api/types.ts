@@ -40,6 +40,8 @@ export interface DoorEvent {
   changes: Change[];
   pending_count: number;
   stills: string[];
+  /** The open-span clip (link ending in `#t=start,end`); null for viewers and when there is none. */
+  clip: string | null;
 }
 
 export interface EventPage {
