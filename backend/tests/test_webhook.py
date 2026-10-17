@@ -276,9 +276,11 @@ def test_status_recorder_fails(aws, motion, monkeypatch):
         def record(self, *args):
             raise RuntimeError("table down")
 
+    working = http.status_recorder
     monkeypatch.setattr(http, "status_recorder", lambda: Broken())
     assert post(OFFLINE)["statusCode"] == 500
-    monkeypatch.undo()
+    # Restore only the recorder: monkeypatch.undo() would also drop the aws fixture's region.
+    monkeypatch.setattr(http, "status_recorder", working)
     monkeypatch.setattr(http, "now", lambda: NOW)
     # The request id was forgotten, so Ring's retry is recorded.
     assert post(OFFLINE)["statusCode"] == 200
