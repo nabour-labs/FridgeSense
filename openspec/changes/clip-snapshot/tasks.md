@@ -11,13 +11,13 @@
 
 ## 3. Recent clip picker (PWA)
 
-- [ ] 3.1 Write failing tests in `camera/RecentClipPicker.test.tsx` for "Recent clips listed", "No recent clips", "Recent clip won't load", "Frame can't be grabbed", "Faces can't be blurred" and "Cancel the recent clip picker", plus "Use this frame" sending the grabbed frame to `cameraFrame` and returning the blurred snapshot. Verify that they fail because the module is missing
-- [ ] 3.2 Implement `RecentClipPicker` on `FramePicker`, using `api.events(7)`, `dayLabel`/`clock` labels, `crossOrigin="anonymous"` and `api.cameraFrame`. Verify that the 3.1 tests pass
+- [x] 3.1 Write failing tests in `camera/RecentClipPicker.test.tsx` for "Recent clips listed", "No recent clips", "Recent clip won't load", "Frame can't be grabbed", "Faces can't be blurred" and "Cancel the recent clip picker", plus "Use this frame" sending the grabbed frame to `cameraFrame` and returning the blurred snapshot. Verify that they fail because the module is missing
+- [x] 3.2 Implement `RecentClipPicker` on `FramePicker`, using `api.events(7)`, `dayLabel`/`clock` labels, `crossOrigin="anonymous"` and `api.cameraFrame`. Verify that the 3.1 tests pass
 
 ## 4. Reference sheet (PWA)
 
-- [ ] 4.1 Write a failing test in `Config.test.tsx` for "Add a reference from a recent clip" (the "Recent clip" button, the frame shown for drawing, a 768×432 upload). Verify that it fails
-- [ ] 4.2 Add the "Recent clip" button and sheet to `AddReference` in `screens/ReferenceImages.tsx`. Verify that the 4.1 test and every existing reference-image test pass
+- [x] 4.1 Write a failing test in `Config.test.tsx` for "Add a reference from a recent clip" (the "Recent clip" button, the frame shown for drawing, a 768×432 upload). Verify that it fails
+- [x] 4.2 Add the "Recent clip" button and sheet to `AddReference` in `screens/ReferenceImages.tsx`. Verify that the 4.1 test and every existing reference-image test pass
 
 ## 5. Wrap up
 

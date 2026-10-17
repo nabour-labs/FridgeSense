@@ -1,6 +1,7 @@
-import { Camera, ImagePlus, Trash2, Undo2 } from "lucide-react";
+import { Camera, Clapperboard, ImagePlus, Trash2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { CameraOffline, NoVideo } from "../camera/liveSnapshot";
+import { RecentClipPicker } from "../camera/RecentClipPicker";
 import { ApiError } from "../api/client";
 import type { Config as ConfigData } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
@@ -200,6 +201,7 @@ function AddReference({
   const [annotation, setAnnotation] = useState("");
   const [busy, setBusy] = useState(false);
   const [snapping, setSnapping] = useState(false);
+  const [pickingClip, setPickingClip] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const valid = source !== null && annotation.trim().length > 0;
 
@@ -280,6 +282,17 @@ function AddReference({
               <Camera aria-hidden className="size-4" />
               {snapping ? "Taking snapshot…" : "Camera snapshot"}
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setPickingClip(true);
+              }}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-brand-50 px-3.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-950 dark:text-brand-300"
+            >
+              <Clapperboard aria-hidden className="size-4" />
+              Recent clip
+            </button>
           </div>
           {preview && (
             <>
@@ -332,6 +345,17 @@ function AddReference({
           Save
         </button>
       </form>
+      {pickingClip && (
+        <RecentClipPicker
+          api={api}
+          report={report}
+          onCancel={() => setPickingClip(false)}
+          onPick={(snap) => {
+            setPickingClip(false);
+            use(jpegBlob(snap.image), `data:image/jpeg;base64,${snap.image}`);
+          }}
+        />
+      )}
     </Sheet>
   );
 }
