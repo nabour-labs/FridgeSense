@@ -221,6 +221,10 @@ set -a; source .env; set +a; read -rs "ADMIN?Admin passcode: "; echo; read -rs "
 
 The app asks for the passcode again every 24 hours, whatever the role. It notices the expiry on its own, even offline. Changing a passcode signs out every device that used it.
 
+### Pause FridgeSense
+
+Cleaning, servicing or renovating means lots of door openings that are not real stock changes. Turn off the **FridgeSense** switch at the top of **Config → Camera** to pause (`PUT /api/camera/monitoring` with `{"paused": true}`). While paused, motion webhooks still get 200 but start no run (logged as `motion_paused`), and a run already waiting stops before downloading anything (outcome `paused`). So no stills, face detection, Nova calls, door events, inventory changes or stats are recorded. Live view, snapshots and manual item edits keep working. A banner on the Fridge and Config screens reminds you until you turn the switch back on. The demo passcode sees the state but can't change it.
+
 ### Live view
 
 **Activity → Livestream** plays the camera live for up to 60 seconds (Ring's limit per session on plug-in cameras), then offers **Watch again**. The video goes from Ring straight to the browser over WebRTC; the app API only passes the connection offer and answer (`POST /api/camera/live`, `DELETE /api/camera/live/{session_id}`), so the Ring token stays on the server and nothing is recorded or stored. **Faces are not blurred in live video**, unlike stills, and every signed-in passcode can open it, the demo passcode included.

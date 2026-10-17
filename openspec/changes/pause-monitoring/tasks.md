@@ -36,5 +36,5 @@
 
 ## 7. Docs and full suite
 
-- [ ] 7.1 Add a short "Pausing FridgeSense" note to `README.md` (what it stops, where the switch is)
-- [ ] 7.2 Run the full suites and linters green: `cd backend && uv run pytest && uv run ruff check . && uv run ruff format --check .`, `cd pwa && npm test && npm run lint` (if defined), `cd infra && npm test`; report the commands and results
+- [x] 7.1 Add a short "Pausing FridgeSense" note to `README.md` (what it stops, where the switch is)
+- [x] 7.2 Run the full suites and linters green: `cd backend && uv run pytest && uv run ruff check . && uv run ruff format --check .`, `cd pwa && npm test && npm run lint` (if defined), `cd infra && npm test`; report the commands and results
