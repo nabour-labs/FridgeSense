@@ -227,3 +227,56 @@ def test_both_updated(tokens):
     set_up_door(at=NOW_MS - HOUR_MS)
     save_area(NOW_MS - HOUR_MS + 5)
     assert warnings(tokens["owner"]) == []
+
+
+# --- monitoring paused (fridge-monitoring) ---
+
+PAUSED_MS = 1792332300000  # 2026-10-18T14:05:00Z
+PAUSED = {
+    "code": "monitoring_paused",
+    "message": "FridgeSense is paused, so door openings are not recorded.",
+    "since": "2026-10-18T14:05:00.000Z",
+}
+
+
+def pause():
+    from fridgesense import monitoring
+
+    monitoring.set_paused(FridgeTable(), ACCOUNT, DEVICE, True, PAUSED_MS)
+
+
+# Scenario: Paused
+@respx.mock
+def test_monitoring_paused(tokens):
+    ring_motion("on")
+    set_up_door()
+    pause()
+    assert warnings(tokens["viewer"]) == [PAUSED]
+
+
+# Scenario: Paused with other problems
+@respx.mock
+def test_paused_with_other_problems(tokens):
+    ring_motion("on")
+    pause()
+    assert warnings(tokens["owner"]) == [PAUSED, SETUP_MISSING]
+
+
+@respx.mock
+def test_paused_listed_when_ring_unreachable(tokens):
+    ring_motion(status=500)
+    set_up_door()
+    pause()
+    assert warnings(tokens["owner"]) == [PAUSED]
+
+
+# Scenario: Active
+@respx.mock
+def test_active_has_no_paused_warning(tokens):
+    from fridgesense import monitoring
+
+    ring_motion("on")
+    set_up_door()
+    pause()
+    monitoring.set_paused(FridgeTable(), ACCOUNT, DEVICE, False, PAUSED_MS + 1000)
+    assert warnings(tokens["owner"]) == []

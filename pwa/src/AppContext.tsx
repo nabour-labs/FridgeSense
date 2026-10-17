@@ -22,6 +22,7 @@ export type Api = Pick<
   | "addReference"
   | "deleteReference"
   | "camera"
+  | "setMonitoring"
   | "cameraSnapshot"
   | "cameraFrame"
   | "faceBlur"

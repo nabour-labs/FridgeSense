@@ -133,6 +133,13 @@ export interface CameraInfo {
   uptime: { window_days: number; percent: number | null; since: string | null };
   checked_at: string;
   ring?: "unavailable";
+  monitoring: Monitoring;
+}
+
+/** Whether FridgeSense records door openings for the camera; `since` is when this state began. */
+export interface Monitoring {
+  paused: boolean;
+  since: string | null;
 }
 
 export interface Snapshot {
@@ -207,6 +214,7 @@ export interface Alignment {
 }
 
 export type SetupWarning =
+  | { code: "monitoring_paused"; message: string; since: string }
   | { code: "motion_detection_off" | "door_setup_missing"; message: string }
   | { code: "camera_moved"; message: string; since: string; update: ("door_references" | "fridge_area")[] };
 

@@ -288,3 +288,13 @@ test("one debug motion is read by id", async () => {
   expect(fetch.mock.calls[0][0]).toBe("/api/debug/motions/a%2Fb");
   expect(fetch.mock.calls[0][1].method).toBe("GET");
 });
+
+test("setMonitoring sends the paused state", async () => {
+  const fetch = respond(200, { paused: true, since: "2026-10-18T14:05:00.000Z" });
+  const result = await new ApiClient(() => "t", fetch).setMonitoring(true);
+  expect(result).toEqual({ paused: true, since: "2026-10-18T14:05:00.000Z" });
+  const [url, init] = fetch.mock.calls[0];
+  expect(url).toBe("/api/camera/monitoring");
+  expect(init.method).toBe("PUT");
+  expect(JSON.parse(init.body)).toEqual({ paused: true });
+});

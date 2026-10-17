@@ -4,6 +4,7 @@ import { ApiError } from "../api/client";
 import type { CameraInfo, Role } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { fakeApi } from "../test-utils";
+import { clock, dayLabel } from "../format";
 import { Camera } from "./Camera";
 
 const INFO: CameraInfo = {
@@ -24,6 +25,7 @@ const INFO: CameraInfo = {
   history: [],
   uptime: { window_days: 30, percent: null, since: null },
   checked_at: "2026-10-16T12:00:00.000Z",
+  monitoring: { paused: false, since: null },
 };
 
 function renderCamera(
@@ -122,15 +124,17 @@ test("the camera details have no edit controls for anyone", async () => {
   expect(screen.queryByRole("button", { name: /save|delete|add/i })).not.toBeInTheDocument();
 });
 
-// Scenario: Only the blur switch is editable
-test("for the owner the blur switch is the only control that changes data", async () => {
+// Scenario: Only the two switches are editable
+test("for the owner the FridgeSense and blur switches are the only controls that change data", async () => {
   renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "owner");
   await screen.findByRole("heading", { name: "Fridge Cam" });
   expect(screen.queryByRole("button", { name: /save|delete|add/i })).not.toBeInTheDocument();
-  const [toggle] = await screen.findAllByRole("switch");
-  expect(screen.getAllByRole("switch")).toHaveLength(1);
-  expect(toggle).toHaveAccessibleName("Blur faces");
-  await waitFor(() => expect(toggle).toBeEnabled());
+  await screen.findAllByRole("switch");
+  const switches = screen.getAllByRole("switch");
+  expect(switches).toHaveLength(2);
+  expect(switches[0]).toHaveAccessibleName("FridgeSense");
+  expect(switches[1]).toHaveAccessibleName("Blur faces");
+  await waitFor(() => switches.forEach((s) => expect(s).toBeEnabled()));
 });
 
 // Scenario: Owner sees it on by default
@@ -279,4 +283,56 @@ test("a failed check leaves the decoder card unchanged", async () => {
   peers[0].fail();
   closeDialog();
   expect(screen.getByText(CHECK_HINT)).toBeInTheDocument();
+});
+
+describe("FridgeSense monitoring switch", () => {
+  const PAUSED = { paused: true, since: "2026-10-18T14:05:00.000Z" };
+  const pausedText = () => `Paused since ${dayLabel(PAUSED.since)} ${clock(PAUSED.since)}`;
+  const card = () => screen.getByRole("region", { name: "FridgeSense" });
+
+  // Scenario: Active camera
+  test("active camera shows Active and the switch on", async () => {
+    renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "owner");
+    expect(await within(await screen.findByRole("region", { name: "FridgeSense" })).findByText("Active")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "FridgeSense" })).toHaveAttribute("aria-checked", "true");
+    expect(
+      within(card()).getByText("Pause while you clean, service or renovate. Door openings are not recorded or analyzed while paused."),
+    ).toBeInTheDocument();
+  });
+
+  // Scenario: Pause from the tab
+  test("pause from the tab", async () => {
+    const setMonitoring = vi.fn().mockResolvedValue(PAUSED);
+    renderCamera(vi.fn().mockResolvedValue(INFO), { setMonitoring }, undefined, "owner");
+    await userEvent.click(await screen.findByRole("switch", { name: "FridgeSense" }));
+    expect(setMonitoring).toHaveBeenCalledWith(true);
+    expect(await within(card()).findByText(pausedText())).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "FridgeSense" })).toHaveAttribute("aria-checked", "false");
+  });
+
+  // Scenario: Resume from the tab
+  test("resume from the tab", async () => {
+    const setMonitoring = vi.fn().mockResolvedValue({ paused: false, since: "2026-10-18T16:30:00.000Z" });
+    renderCamera(vi.fn().mockResolvedValue({ ...INFO, monitoring: PAUSED }), { setMonitoring }, undefined, "user");
+    await userEvent.click(await screen.findByRole("switch", { name: "FridgeSense" }));
+    expect(setMonitoring).toHaveBeenCalledWith(false);
+    expect(await within(card()).findByText("Active")).toBeInTheDocument();
+  });
+
+  // Scenario: Change fails
+  test("a failed change puts the switch back", async () => {
+    const setMonitoring = vi.fn().mockRejectedValue(new ApiError(500));
+    renderCamera(vi.fn().mockResolvedValue(INFO), { setMonitoring }, undefined, "owner");
+    await userEvent.click(await screen.findByRole("switch", { name: "FridgeSense" }));
+    expect(await within(card()).findByText("Could not change it. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "FridgeSense" })).toHaveAttribute("aria-checked", "true");
+    expect(within(card()).getByText("Active")).toBeInTheDocument();
+  });
+
+  // Scenario: Viewer
+  test("a viewer sees the state without the switch", async () => {
+    renderCamera(vi.fn().mockResolvedValue({ ...INFO, monitoring: PAUSED }));
+    expect(await within(await screen.findByRole("region", { name: "FridgeSense" })).findByText(pausedText())).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "FridgeSense" })).not.toBeInTheDocument();
+  });
 });

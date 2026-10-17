@@ -1,11 +1,12 @@
 """Setup problems that silently stop door openings from being recorded or detected well, each
 with what fixes it."""
 
-from fridgesense import alignment, camera_info, door_calibration, fridge_area
+from fridgesense import alignment, camera_info, door_calibration, fridge_area, monitoring
 from fridgesense.door_events import iso_utc
 from fridgesense.ring import RingClient
 from fridgesense.table import FridgeTable
 
+PAUSED = "FridgeSense is paused, so door openings are not recorded."
 MOTION_OFF = (
     "Motion detection is off on the camera, so no door openings are recorded. "
     "Turn it on in the Ring app."
@@ -41,6 +42,9 @@ def warnings_body(
     """`GET /api/warnings`. A Ring failure only leaves out the motion-detection check."""
     found: list[dict] = []
     if device_id is not None:
+        state = monitoring.load(table, account_id, device_id)
+        if state.paused:
+            found.append({"code": "monitoring_paused", "message": PAUSED, "since": state.since})
         details = camera_info.fetch_device(ring, device_id)
         if details is not None and details["motion_detection"] is False:
             found.append({"code": "motion_detection_off", "message": MOTION_OFF})

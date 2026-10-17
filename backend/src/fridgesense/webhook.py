@@ -6,6 +6,7 @@ every call gets a 200, even ones we can't use.
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -76,6 +77,17 @@ class WebhookLog:
         self.table.delete_item(Key={"pk": account_pk(account_id), "sk": f"WEBHOOK#{request_id}"})
 
 
+def _is_paused(paused: Callable[[str, str], bool] | None, event: MotionEvent) -> bool:
+    """A failed read counts as active: the stills step checks again before any download."""
+    if paused is None:
+        return False
+    try:
+        return paused(event.account_id, event.device_id)
+    except Exception as e:
+        log_event("monitoring_check_failed", logging.WARNING, error=type(e).__name__)
+        return False
+
+
 def handle_webhook(
     req: Request,
     cfg: AppConfig,
@@ -83,6 +95,7 @@ def handle_webhook(
     motion: MotionHandler,
     now: float,
     status: StatusRecorder | None = None,
+    paused: Callable[[str, str], bool] | None = None,
 ) -> dict:
     if not cfg.hmac_key:
         log_event("webhook_not_configured", logging.ERROR)
@@ -117,6 +130,9 @@ def handle_webhook(
         except (KeyError, TypeError, ValueError) as e:
             log_event("webhook_malformed", logging.WARNING, error=type(e).__name__)
             return json_response(200, {"ok": True})
+        if _is_paused(paused, event):
+            log_event("motion_paused", **event.__dict__)
+            return json_response(200, {"ok": True, "paused": True})
         try:
             motion.handle(event)
         except Exception as e:

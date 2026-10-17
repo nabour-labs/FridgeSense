@@ -102,3 +102,24 @@ test("a failed request shows nothing and reports no error", async () => {
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(report).not.toHaveBeenCalled();
 });
+
+const PAUSED: SetupWarning = {
+  code: "monitoring_paused",
+  message: "FridgeSense is paused, so door openings are not recorded.",
+  since: "2026-10-18T14:05:00.000Z",
+};
+
+// setup-warnings, Scenario: Banner link
+test("paused banner links back to the Camera tab", async () => {
+  renderWarnings([PAUSED, SETUP_MISSING]);
+  const [paused] = await screen.findAllByRole("alert");
+  expect(paused).toHaveTextContent(PAUSED.message);
+  expect(within(paused).getByRole("link", { name: "Resume on Camera tab" })).toHaveAttribute("href", "#config");
+});
+
+test("a viewer sees the paused banner without the link", async () => {
+  renderWarnings([PAUSED], "viewer");
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent(PAUSED.message);
+  expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
+});

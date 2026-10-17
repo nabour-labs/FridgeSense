@@ -107,6 +107,7 @@ export function mockApi(): Plugin {
   let refsChangedAt = 0;
   let snapshots = 0;
   let fridgeArea: { image: string; box: unknown; updated_at: string } | null = null;
+  let monitoring: { paused: boolean; since: string | null } = { paused: false, since: null };
   const doorBody = (scored = false) => ({
     device_id: "mock.device.D1",
     zones: doorZones.map((z) => ({
@@ -310,7 +311,19 @@ export function mockApi(): Plugin {
             ],
             uptime: { window_days: 30, percent: Math.round((1 - 2 / (9 * 24)) * 1000) / 10, since: at(9 * 24 * HOUR) },
             checked_at: at(0),
+            monitoring,
           });
+        }
+        if (req.method === "PUT" && url === "/camera/monitoring") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { paused } = JSON.parse(body);
+            if (paused !== monitoring.paused || !monitoring.since) monitoring = { paused, since: new Date().toISOString() };
+            send(200, monitoring);
+          });
+          return;
         }
         // Live view needs a real camera: answer as if Ring were down, so the dialog's error path shows.
         if (req.method === "POST" && url === "/camera/live") return send(502, { error: "camera unavailable" });
@@ -338,6 +351,7 @@ export function mockApi(): Plugin {
         if (url === "/warnings" && req.method === "GET") {
           const all = !!process.env.FRIDGESENSE_MOCK_WARNINGS;
           const warnings = [
+            ...(monitoring.paused ? [{ code: "monitoring_paused", message: "FridgeSense is paused, so door openings are not recorded.", since: monitoring.since }] : []),
             ...(all ? [{ code: "motion_detection_off", message: "Motion detection is off on the camera, so no door openings are recorded. Turn it on in the Ring app." }] : []),
             ...(doorSetup ? [] : [{ code: "door_setup_missing", message: "Open/close detection is not set up, so the default zones are used and openings may be missed." }]),
             ...(all

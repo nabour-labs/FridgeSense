@@ -14,6 +14,7 @@ from fridgesense import (
     door_events,
     face_blur,
     inventory,
+    monitoring,
     traces,
 )
 from fridgesense.analysis import NovaAnalyzer
@@ -89,6 +90,9 @@ def handler(event, context):
             ),
             writer=_trace_writer(),
             face_blur=blur,
+            paused_for=lambda account_id, device_id: (
+                monitoring.load(FridgeTable(), account_id, device_id).paused
+            ),
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())
