@@ -8,11 +8,22 @@ import { EmptyState } from "../components/EmptyState";
 import { NoData } from "../components/NoData";
 import { Select } from "../components/Select";
 import { Sheet } from "../components/Sheet";
+import { Warnings } from "../components/Warnings";
 import { ago, plural, titleCase } from "../format";
 import { itemIcon } from "../itemIcon";
 import { useLoad } from "../useLoad";
 
+/** The fridge, with any setup warnings above it (loaded once, not on the inventory poll). */
 export function Fridge() {
+  return (
+    <div className="space-y-5">
+      <Warnings />
+      <FridgeItems />
+    </div>
+  );
+}
+
+function FridgeItems() {
   const { api, report, go, role } = useApp();
   const editable = canEdit(role);
   const { data: inventory, setData: setInventory, failed } = useLoad(

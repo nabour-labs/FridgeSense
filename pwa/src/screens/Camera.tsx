@@ -1,8 +1,8 @@
 import { Cpu, Video } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/client";
-import type { CameraInfo, StatusChange } from "../api/types";
-import { useApp } from "../AppContext";
+import type { CameraInfo, Monitoring as MonitoringState, StatusChange } from "../api/types";
+import { canEdit, isAdmin, useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
 import { LiveStream, type DecoderStats } from "../components/LiveStream";
 import { NoData } from "../components/NoData";
@@ -42,7 +42,7 @@ function locationText(location: Record<string, string> | null) {
 
 /** The connected camera: Ring's details, its status now, and its recorded online history. */
 export function Camera({ createPeer }: { createPeer?: () => RTCPeerConnection | null } = {}) {
-  const { api } = useApp();
+  const { api, role } = useApp();
   const { data, failed } = useLoad(
     useCallback(
       () =>
@@ -55,19 +55,160 @@ export function Camera({ createPeer }: { createPeer?: () => RTCPeerConnection | 
     60_000,
   );
 
-  if (data === NO_CAMERA) return <EmptyState Icon={Video} title="No camera is linked yet." />;
-  if (!data) {
-    if (failed) return <NoData />;
-    return <div aria-hidden data-testid="loading" className="h-64 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />;
+  let camera;
+  if (data === NO_CAMERA) camera = <EmptyState Icon={Video} title="No camera is linked yet." />;
+  else if (!data) {
+    camera = failed ? (
+      <NoData />
+    ) : (
+      <div aria-hidden data-testid="loading" className="h-64 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />
+    );
+  } else {
+    camera = (
+      <>
+        <Monitoring state={data.monitoring} />
+        <Overview info={data} />
+        <Details info={data} />
+        <History info={data} />
+        {canEdit(role) && <Decoder createPeer={createPeer} />}
+      </>
+    );
   }
 
   return (
     <div className="space-y-5">
-      <Overview info={data} />
-      <Details info={data} />
-      <History info={data} />
-      <Decoder createPeer={createPeer} />
+      {camera}
+      <BlurFaces />
     </div>
+  );
+}
+
+/** The FridgeSense on/off switch: paused, door openings are neither recorded nor analyzed. */
+function Monitoring({ state: loaded }: { state: MonitoringState }) {
+  const { api, role } = useApp();
+  const [state, setState] = useState(loaded);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setState(loaded), [loaded]); // each poll brings the stored state
+
+  async function toggle() {
+    setBusy(true);
+    setFailed(false);
+    try {
+      setState(await api.setMonitoring(!state.paused));
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const active = !state.paused;
+  return (
+    <section aria-label="FridgeSense" className={`${CARD} space-y-1.5 p-4`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-bold tracking-tight">FridgeSense</h2>
+          <p className={`text-sm font-semibold ${active ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}`}>
+            {active ? "Active" : state.since ? `Paused since ${dayLabel(state.since)} ${clock(state.since)}` : "Paused"}
+          </p>
+        </div>
+        {canEdit(role) && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={active}
+            aria-label="FridgeSense"
+            disabled={busy}
+            onClick={toggle}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+              active ? "bg-brand-600" : "bg-slate-300 dark:bg-slate-700"
+            }`}
+          >
+            <span
+              aria-hidden
+              className={`absolute top-0.5 size-6 rounded-full bg-white shadow transition-[left] ${active ? "left-[1.375rem]" : "left-0.5"}`}
+            />
+          </button>
+        )}
+      </div>
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        Pause while you clean, service or renovate. Door openings are not recorded or analyzed while paused.
+      </p>
+      {failed && <p className="text-sm font-medium text-rose-700 dark:text-rose-300">Could not change it. Try again.</p>}
+    </section>
+  );
+}
+
+/** The owner's face-blur switch; everyone else sees it read-only. On until the API says otherwise. */
+function BlurFaces() {
+  const { api, role, report } = useApp();
+  const [enabled, setEnabled] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    api.faceBlur().then(
+      (body) => {
+        if (!live) return;
+        setEnabled(body.enabled);
+        setLoaded(true);
+      },
+      (err: unknown) => live && report(err),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, report]);
+
+  const toggle = () => {
+    const previous = enabled;
+    setEnabled(!previous);
+    setSaving(true);
+    api.setFaceBlur(!previous).then(
+      (body) => setEnabled(body.enabled),
+      (err: unknown) => {
+        setEnabled(previous);
+        report(err);
+      },
+    ).finally(() => setSaving(false));
+  };
+
+  const canChange = isAdmin(role) && loaded && !saving;
+  return (
+    <section aria-labelledby="camera-blur" className="space-y-2">
+      <h3 id="camera-blur" className={HEADING}>
+        Privacy
+      </h3>
+      <div className={`${CARD} space-y-2 p-4`}>
+        <div className="flex items-center justify-between gap-4">
+          <span id="camera-blur-label" className="font-semibold">
+            Blur faces
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-labelledby="camera-blur-label"
+            disabled={!canChange}
+            onClick={toggle}
+            className={`relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+              enabled ? "bg-brand-600" : "bg-slate-300 dark:bg-slate-700"
+            }`}
+          >
+            <span
+              aria-hidden
+              className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-[left] ${enabled ? "left-[1.125rem]" : "left-0.5"}`}
+            />
+          </button>
+        </div>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Blurs faces in stored stills, snapshots and debug traces. Livestream is never blurred.
+        </p>
+        {!enabled && <p className="text-sm font-medium text-warm-600 dark:text-warm-400">Faces are stored as recorded for 7 days.</p>}
+      </div>
+    </section>
   );
 }
 

@@ -23,6 +23,36 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-17 · Ring Partner API · Still at a clip frame's time shows a different moment
+
+- **Task:** store sharp stills of a door opening for Nova, at the times the door check found the door open in the event clip.
+- **Steps:** downloaded the clip with `POST /v1/devices/{id}/media/video/download` (`{"timestamp": <start_ms>, "duration": <end_ms − start_ms>}`), scored a frame every 500 ms (frame time = `start_ms` + offset), then for 4 frames from the open span asked `POST /v1/devices/{id}/media/image/download` with `{"type": "at_timestamp", "timestamp": <frame time>, "image_options": {"format": "jpeg"}}`.
+- **Expected:** the still at that timestamp shows the same moment as the clip frame.
+- **Actual:** on the 2026-10-17 21:13:37Z event the clip frames scored the door open from 21:13:49.9Z to 21:14:01.9Z (`door_event_recorded` with `"source": "clip"`), all 4 still requests returned an image, and all 4 images show both doors closed with people walking past. Nova then reported an item added from closed-door stills.
+- **Severity:** Medium
+- **Workaround:** store the picked clip frames themselves (already 2560×1440, the same size as the stills) and stop requesting stills on the clip path.
+- **Suggestion:** say in the image download docs how far `at_timestamp` can be from the requested time (the docs say "nearest frame within ±10 s"), return the actual frame time in the response, or offer an exact-time mode.
+
+### 2026-10-17 · Ring Partner API · Live session "connects" for an unplugged camera but sends no video
+
+- **Task:** take setup snapshots from a frame of the WHEP live view, and play the Livestream dialog.
+- **Steps:** with the Indoor Cam's power cable unplugged, `GET /v1/devices/{id}?include=status,...` through our `GET /api/camera`, then `POST /v1/devices/{id}/media/streaming/whep/sessions` with a recvonly video+audio offer from Chrome, `setRemoteDescription` with the answer, and `getStats()` every 3 s for 42 s.
+- **Expected:** the device shown offline, or the session refused with an error.
+- **Actual:** the device status said `"online": true`. Ring answered the session with a normal SDP (`H264/90000 profile-level-id=64001f`, `OPUS/48000/2`, host candidates). ICE and DTLS reached `connected` in about 0.2 s and the browser fired the video track, but no RTP ever arrived: 26 transport packets in 24 s, no `inbound-rtp` stats, `framesDecoded` never above 0. The connection went to `disconnected` after about 27 s and `failed` after about 39 s. The app showed a black picture with a countdown.
+- **Severity:** Medium
+- **Workaround:** treat "no decoded video frame within 15 s of the answer" as "camera not sending video" and tell the user to check it's plugged in.
+- **Suggestion:** refuse the WHEP session (for example 503 with a device-offline code) when the camera can't stream, and update the device's `online` status sooner.
+
+### 2026-10-17 · Ring Partner API · No way to get a still of the camera "now"
+
+- **Task:** take a current picture of the fridge for the setup screens (door references, fridge area).
+- **Steps:** `POST /v1/devices/{id}/media/image/download` with `{"type": "at_timestamp", "timestamp": <now − 3 s>, "image_options": {"format": "jpeg"}}`, retried once after 2 s, from the deployed API whenever the owner tapped **Add**.
+- **Expected:** a still of what the camera sees now. The docs describe the image as the nearest frame within ±10 s, which reads like it works at any time.
+- **Actual:** every request with nobody moving in front of the camera got `416` and was logged as `{"event": "still_missing", "status": 416}` (four times between 13:15 and 13:18 UTC). The Indoor Cam only records on motion, so there is no frame near "now" unless something is moving, and the app showed "No recent footage" every time.
+- **Severity:** Medium
+- **Workaround:** fall back to a still at the middle of the newest motion event from `GET /v1/history/devices/{id}/events?event_types=motion`, and take setup snapshots from a frame of a short WHEP live view instead, with faces blurred on the backend.
+- **Suggestion:** offer a "snapshot now" endpoint (the device lists a `snapshot` capability), or say in the image download docs that `at_timestamp` only finds frames inside recorded events.
+
 ### 2026-10-17 · Ring Partner API · Clip download answers 303 even when there is no clip
 
 - **Task:** run the door check on frames from the motion event's clip instead of 30 separate stills.

@@ -18,6 +18,7 @@ function event(daysAgo: number, hour: number, duration_s: number): DoorEvent {
     changes: [],
     pending_count: 0,
     stills: [],
+    clip: null,
   };
 }
 

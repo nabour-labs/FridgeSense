@@ -6,6 +6,7 @@ import type { Snapshot } from "./api/types";
 import { ClipPicker } from "./debug/ClipPicker";
 import { DebugBar } from "./debug/DebugBar";
 import { DebugContext } from "./debug/DebugContext";
+import { isAbort, liveSnapshot } from "./camera/liveSnapshot";
 import { PickCancelled, withSnapshot } from "./debug/debug";
 import { loadMockVideo, saveMockVideo } from "./debug/mockVideo";
 import { Activity } from "./screens/Activity";
@@ -41,12 +42,13 @@ export default function App({ api: injected }: { api?: Api }) {
   const debug = import.meta.env.DEV;
   const [mockVideo, setMockVideo] = useState(() => debug && loadMockVideo());
   const [picking, setPicking] = useState<{ resolve: (s: Snapshot) => void; reject: (e: Error) => void } | null>(null);
-  // Debug mode with Mock video on: snapshots come from a local clip the owner picks.
+  // Snapshots come from a live frame (the Ring still as fallback); in debug mode with Mock
+  // video on, from a local clip the owner picks.
   const screenApi = useMemo<Api>(
     () =>
       debug && mockVideo
         ? withSnapshot(api, () => new Promise<Snapshot>((resolve, reject) => setPicking({ resolve, reject })))
-        : api,
+        : withSnapshot(api, (signal) => liveSnapshot(api, { signal })),
     [api, debug, mockVideo],
   );
   const [tab, setTab] = useState<Tab>(tabFromHash);
@@ -80,8 +82,8 @@ export default function App({ api: injected }: { api?: Api }) {
   }, [notice]);
 
   const report = useCallback((error: unknown) => {
-    if (debug && error instanceof PickCancelled) {
-      // The owner closed the clip picker: nothing to report.
+    if ((debug && error instanceof PickCancelled) || isAbort(error)) {
+      // The owner closed the clip picker or the snapshot's sheet: nothing to report.
     } else if (error instanceof Unauthorized) {
       clearSession();
       setSession(null);

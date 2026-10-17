@@ -43,10 +43,23 @@ describe("API throttling", () => {
   // Passcode routes throttled
   it("limits the passcode routes to 1 request/s with a burst of 3", () => {
     const tight = { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 };
+    const settings = defaultStage().Properties.RouteSettings as Record<string, unknown>;
+    expect(settings["POST /api/session"]).toEqual(tight);
+    expect(settings["POST /ring/link"]).toEqual(tight);
+  });
+
+  // Webhook route throttled
+  it("gives POST /ring/webhook its own limit of 50 requests/s with a burst of 100", () => {
     expect(defaultStage().Properties.RouteSettings).toEqual({
-      "POST /api/session": tight,
-      "POST /ring/link": tight,
+      "POST /api/session": { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 },
+      "POST /ring/link": { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 },
+      "POST /ring/webhook": { ThrottlingRateLimit: 50, ThrottlingBurstLimit: 100 },
     });
+  });
+
+  // Webhook route exists before its limit
+  it("creates the webhook route before the stage", () => {
+    expect(defaultStage().DependsOn ?? []).toContain(routeId("POST /ring/webhook"));
   });
 
   // Session route reaches the app API
@@ -115,6 +128,56 @@ describe("cost and failure alerts", () => {
       EvaluationPeriods: 1,
       TreatMissingData: "notBreaching",
       AlarmActions: [{ Ref: topics[0] }],
+    });
+  });
+
+  const alarmShape = {
+    Statistic: "Sum",
+    Period: 300,
+    Threshold: 1,
+    ComparisonOperator: "GreaterThanOrEqualToThreshold",
+    EvaluationPeriods: 1,
+    TreatMissingData: "notBreaching",
+  };
+  const alertTopic = () => Object.keys(resourcesOf("AWS::SNS::Topic"))[0];
+
+  // Alarm on timed-out executions
+  it("alarms on any timed-out door-event execution through the alert topic", () => {
+    const [machineId] = Object.entries(resourcesOf("AWS::StepFunctions::StateMachine")).find(
+      ([, r]) => r.Properties.StateMachineName === "fridgesense-door-events",
+    )!;
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "fridgesense-door-events-timed-out",
+      Namespace: "AWS/States",
+      MetricName: "ExecutionsTimedOut",
+      Dimensions: [{ Name: "StateMachineArn", Value: { Ref: machineId } }],
+      ...alarmShape,
+      AlarmActions: [{ Ref: alertTopic() }],
+    });
+  });
+
+  // Metric filter on rejected refreshes
+  it("counts token_refresh_rejected log lines from the token-refresh job", () => {
+    const [logGroupId] = Object.entries(resourcesOf("AWS::Logs::LogGroup")).find(
+      ([, r]) => r.Properties.LogGroupName === "/fridgesense/token-refresh",
+    )!;
+    template.hasResourceProperties("AWS::Logs::MetricFilter", {
+      LogGroupName: { Ref: logGroupId },
+      FilterPattern: '"token_refresh_rejected"',
+      MetricTransformations: [
+        { MetricNamespace: "FridgeSense", MetricName: "TokenRefreshRejected", MetricValue: "1" },
+      ],
+    });
+  });
+
+  // Alarm on rejected refreshes
+  it("alarms on a rejected Ring token refresh through the alert topic", () => {
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "fridgesense-ring-relink-needed",
+      Namespace: "FridgeSense",
+      MetricName: "TokenRefreshRejected",
+      ...alarmShape,
+      AlarmActions: [{ Ref: alertTopic() }],
     });
   });
 

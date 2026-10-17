@@ -104,7 +104,9 @@ def stills_open_at(numbers: set[int], count: int = 25) -> list[bytes]:
     ]
 
 
-def run(ring_http, state=STATE, blurrer=None, check=CHECK, crop=None, setup_for=None):
+def run(
+    ring_http, state=STATE, blurrer=None, check=CHECK, crop=None, setup_for=None, paused_for=None
+):
     ring, http = ring_http
     return fetch_stills(
         ring,
@@ -118,6 +120,7 @@ def run(ring_http, state=STATE, blurrer=None, check=CHECK, crop=None, setup_for=
         sleep=lambda s: None,
         crop=crop,
         setup_for=setup_for,
+        paused_for=paused_for,
     )
 
 
@@ -520,3 +523,34 @@ def test_stored_color_setup_still_works(aws, ring_http):
     ring_serves([color_jpeg(GREY, [((0.2, 0.2, 0.3, 0.33), PLATE)])])
     out = run(ring_http, setup_for=setup(ZoneRule(WHOLE, "color", "above", 0.05)))
     assert out["outcome"] == "door_open"
+
+
+# --- paused camera (fridge-monitoring) ---
+
+
+# Scenario: Paused after the run started
+@respx.mock
+def test_paused_after_the_run_started(aws, ring_http):
+    download = respx.post(DOWNLOAD).respond(403)
+    blurred = []
+    asked = []
+    out = run(
+        ring_http,
+        blurrer=FakeBlurrer(blurred=lambda data: blurred.append(data) or data),
+        paused_for=lambda account_id, device_id: asked.append((account_id, device_id)) or True,
+    )
+    assert out == {**STATE, "outcome": "paused"}
+    assert asked == [(ACCOUNT, "ava1.ring.device.D1")]
+    assert not download.called
+    assert blurred == []
+    assert door_events() == []
+    assert stored_keys() == []
+
+
+# Scenario: Resumed before the stills step
+@respx.mock
+def test_resumed_before_the_stills_step(aws, ring_http):
+    ring_serves(stills_open_at(set(range(6, 16))))
+    out = run(ring_http, paused_for=lambda account_id, device_id: False)
+    assert out["outcome"] == "door_open"
+    assert len(door_events()) == 1

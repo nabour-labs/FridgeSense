@@ -1,5 +1,7 @@
 """Camera snapshots for setup: one still from the fridge camera, faces blurred, never stored."""
 
+import base64
+import binascii
 import io
 import logging
 import time
@@ -9,10 +11,11 @@ import httpx
 from botocore.exceptions import BotoCoreError, ClientError
 from PIL import Image
 
-from fridgesense.door_events import NOT_READY, fetch_still
+from fridgesense.door_events import NOT_READY, _ms, fetch_still
 from fridgesense.faces import FaceBlurrer
 from fridgesense.logs import log_event
-from fridgesense.ring import RingClient
+from fridgesense.oauth import OAuthRejected, OAuthUnavailable
+from fridgesense.ring import RingAuthError, RingClient
 
 SNAPSHOT_LAG_MS = 3000  # the newest seconds of footage are often not indexed yet
 SNAPSHOT_RETRY_DELAYS_S = (2,)
@@ -58,10 +61,17 @@ def snapshot(
     now_ms: int,
     sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[bytes, int]:
-    """(blurred JPEG, its timestamp ms) for the camera at now − 3 s."""
+    """(blurred JPEG, its timestamp ms) for the camera at now − 3 s, else at the latest motion."""
     ts = now_ms - SNAPSHOT_LAG_MS
     try:
         data, status = fetch_still(ring, http, device_id, ts, sleep, SNAPSHOT_RETRY_DELAYS_S)
+        if data is None and status in NOT_READY:
+            # The camera only records on motion: fall back to its newest recording.
+            latest = _latest_motion_ms(ring, device_id)
+            if latest is None:
+                raise NoFootage()
+            ts = latest
+            data, status = fetch_still(ring, http, device_id, ts, sleep, ())
     except (ClientError, BotoCoreError) as e:  # e.g. a refreshed token the API may not save
         log_event("snapshot_failed", logging.WARNING, device_id=device_id, error=type(e).__name__)
         raise SnapshotFailed() from e
@@ -71,3 +81,56 @@ def snapshot(
     if blurred is None:
         raise SnapshotFailed()
     return shrink(blurred), ts
+
+
+MAX_FRAME_BYTES = 2_000_000
+
+
+def frame_jpeg(image: object) -> bytes | None:
+    """The JPEG bytes of a base64 frame from the app, or None if it is not one."""
+    if not isinstance(image, str):
+        return None
+    try:
+        data = base64.b64decode(image, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if len(data) > MAX_FRAME_BYTES:
+        return None
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            if img.format != "JPEG":
+                return None
+            img.verify()
+    except (OSError, SyntaxError, Image.DecompressionBombError):
+        return None
+    return data
+
+
+def blur_frame(blurrer: FaceBlurrer, jpeg: bytes) -> bytes:
+    """A live frame from the app, shrunk and with every face blurred; never stored."""
+    blurred = blurrer.blur(shrink(jpeg), {"still": "frame"})
+    if blurred is None:
+        raise SnapshotFailed()
+    return shrink(blurred)
+
+
+def _latest_motion_ms(ring: RingClient, device_id: str) -> int | None:
+    """Middle of the device's newest motion event (its start when it has no end), or None."""
+    try:
+        resp = ring.get(f"/v1/history/devices/{device_id}/events", params={"event_types": "motion"})
+    except (httpx.HTTPError, RingAuthError, OAuthRejected, OAuthUnavailable) as e:
+        log_event("history_unavailable", logging.WARNING, error=type(e).__name__)
+        return None
+    if resp.status_code != 200:
+        log_event("history_unavailable", logging.WARNING, status=resp.status_code)
+        return None
+    spans = []
+    for event in resp.json().get("data", []):
+        attrs = event.get("attributes", {})
+        start = _ms(attrs.get("start"))
+        if start is not None:
+            spans.append((start, _ms(attrs.get("end"))))
+    if not spans:
+        return None
+    start, end = max(spans)
+    return start if end is None or end < start else (start + end) // 2

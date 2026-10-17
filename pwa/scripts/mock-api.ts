@@ -98,16 +98,32 @@ export function mockApi(): Plugin {
     }
     return out;
   }
-  type DoorRef = { id: string; image: string; box: { x: number; y: number; width: number; height: number }; status: "open" | "closed"; created_at: string };
+  type Box = { x: number; y: number; width: number; height: number };
+  type DoorZone = { id: string; name: string; box: Box };
+  type DoorRef = { id: string; zone_id: string; image: string; status: "open" | "closed"; created_at: string };
+  let doorZones: DoorZone[] = [];
   let doorRefs: DoorRef[] = [];
   let doorSetup: { zones: Record<string, unknown>[]; ran_at: string } | null = null;
   let refsChangedAt = 0;
   let snapshots = 0;
   let fridgeArea: { image: string; box: unknown; updated_at: string } | null = null;
+  let monitoring: { paused: boolean; since: string | null } = { paused: false, since: null };
   const doorBody = (scored = false) => ({
     device_id: "mock.device.D1",
-    references: doorRefs.map((r) => ({ ...r, score: doorSetup || scored ? (r.status === "open" ? 0.12 : 0.003) : null })),
-    setup: doorSetup && { ...doorSetup, stale: refsChangedAt > Date.parse(doorSetup.ran_at) },
+    zones: doorZones.map((z) => ({
+      ...z,
+      open: doorRefs.filter((r) => r.zone_id === z.id && r.status === "open").length,
+      closed: doorRefs.filter((r) => r.zone_id === z.id && r.status === "closed").length,
+    })),
+    references: doorRefs.map((r) => ({
+      ...r,
+      box: doorZones.find((z) => z.id === r.zone_id)!.box,
+      score: doorSetup || scored ? (r.status === "open" ? 0.12 : 0.003) : null,
+    })),
+    setup: doorSetup && { ...doorSetup, stale: refsChangedAt > Date.parse(doorSetup.ran_at), tuned_at: null, tuned_from: null },
+    alignment: doorSetup && {
+      dx: 0.016, dy: 0, error: 0.031, failures: 0, moved: false, moved_at: null, last_moved_at: null, checked_at: iso(5 * MIN),
+    },
     defaults: { zones: [{ x: 0.38, y: 0.32, width: 0.21, height: 0.3 }, { x: 0.455, y: 0.6, width: 0.12, height: 0.18 }], threshold: 0.02 },
   });
   // Two traced motions for the Debug tab: the milk opening (e0) and a walk-past.
@@ -295,11 +311,35 @@ export function mockApi(): Plugin {
             ],
             uptime: { window_days: 30, percent: Math.round((1 - 2 / (9 * 24)) * 1000) / 10, since: at(9 * 24 * HOUR) },
             checked_at: at(0),
+            monitoring,
           });
+        }
+        if (req.method === "PUT" && url === "/camera/monitoring") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { paused } = JSON.parse(body);
+            if (paused !== monitoring.paused || !monitoring.since) monitoring = { paused, since: new Date().toISOString() };
+            send(200, monitoring);
+          });
+          return;
         }
         // Live view needs a real camera: answer as if Ring were down, so the dialog's error path shows.
         if (req.method === "POST" && url === "/camera/live") return send(502, { error: "camera unavailable" });
         if (req.method === "DELETE" && url.startsWith("/camera/live/")) return send(200, { ok: true });
+        // Live frame: nothing to blur in the mock, so the frame comes straight back.
+        if (req.method === "POST" && url === "/camera/frame") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const image = (JSON.parse(body || "{}") as { image?: unknown }).image;
+            if (typeof image !== "string") return send(400, { error: "bad image" });
+            send(200, { image, captured_at: new Date().toISOString() });
+          });
+          return;
+        }
         // Door setup: snapshots alternate shut/open so both kinds of reference are easy to add.
         if (req.method === "POST" && url === "/camera/snapshot") {
           if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
@@ -307,14 +347,64 @@ export function mockApi(): Plugin {
           return send(200, { image: photo(snapshots % 2 ? "snapshot-closed" : "snapshot-open"), captured_at: new Date().toISOString() });
         }
         if (url === "/door-calibration" && req.method === "GET") return send(200, doorBody());
+        // FRIDGESENSE_MOCK_WARNINGS=1 adds motion detection off and a moved camera.
+        if (url === "/warnings" && req.method === "GET") {
+          const all = !!process.env.FRIDGESENSE_MOCK_WARNINGS;
+          const warnings = [
+            ...(monitoring.paused ? [{ code: "monitoring_paused", message: "FridgeSense is paused, so door openings are not recorded.", since: monitoring.since }] : []),
+            ...(all ? [{ code: "motion_detection_off", message: "Motion detection is off on the camera, so no door openings are recorded. Turn it on in the Ring app." }] : []),
+            ...(doorSetup ? [] : [{ code: "door_setup_missing", message: "Open/close detection is not set up, so the default zones are used and openings may be missed." }]),
+            ...(all
+              ? [{ code: "camera_moved", message: "The camera has moved or changed angle. Update the references so detection stays accurate.", since: iso(2 * HOUR), update: ["door_references", ...(fridgeArea ? ["fridge_area"] : [])] }]
+              : []),
+          ];
+          return send(200, { warnings, checked_at: iso(0) });
+        }
         if (url.startsWith("/door-calibration/") && process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
-        if (req.method === "POST" && url === "/door-calibration/references") {
+        const readBody = (then: (body: Record<string, unknown>) => void) => {
           let body = "";
           req.on("data", (c) => (body += c));
-          req.on("end", () => {
-            const { image, box, status } = JSON.parse(body);
-            if (doorRefs.length >= 12) return send(409, { error: "at most 12 door references" });
-            doorRefs = [...doorRefs, { id: `door${Date.now()}`, image, box, status, created_at: new Date().toISOString() }];
+          req.on("end", () => then(JSON.parse(body || "{}")));
+        };
+        const badName = (name: unknown) => typeof name !== "string" || !name.trim() || name.trim().length > 30;
+        if (req.method === "POST" && url === "/door-calibration/zones") {
+          readBody(({ name, box }) => {
+            if (badName(name)) return send(400, { error: "name must be 1 to 30 characters" });
+            if (doorZones.length >= 6) return send(409, { error: "at most 6 door zones" });
+            doorZones = [...doorZones, { id: `zone${Date.now()}`, name: (name as string).trim(), box: box as Box }];
+            refsChangedAt = Date.now();
+            send(200, doorBody());
+          });
+          return;
+        }
+        const doorZone = url.match(/^\/door-calibration\/zones\/(.+)$/);
+        if (doorZone && (req.method === "PATCH" || req.method === "DELETE")) {
+          const id = decodeURIComponent(doorZone[1]);
+          if (!doorZones.some((z) => z.id === id)) return send(404, { error: "not found" });
+          if (req.method === "DELETE") {
+            doorZones = doorZones.filter((z) => z.id !== id);
+            doorRefs = doorRefs.filter((r) => r.zone_id !== id);
+            refsChangedAt = Date.now();
+            return send(200, doorBody());
+          }
+          readBody(({ name, box }) => {
+            if (name !== undefined && badName(name)) return send(400, { error: "name must be 1 to 30 characters" });
+            doorZones = doorZones.map((z) =>
+              z.id === id ? { ...z, ...(name !== undefined && { name: (name as string).trim() }), ...(box !== undefined && { box: box as Box }) } : z,
+            );
+            refsChangedAt = Date.now();
+            send(200, doorBody());
+          });
+          return;
+        }
+        if (req.method === "POST" && url === "/door-calibration/references") {
+          readBody(({ image, zone_id, status }) => {
+            if (!doorZones.some((z) => z.id === zone_id)) return send(400, { error: "pick a door zone" });
+            if (doorRefs.length >= 24) return send(409, { error: "at most 24 door references" });
+            doorRefs = [
+              ...doorRefs,
+              { id: `door${Date.now()}`, zone_id: zone_id as string, image: image as string, status: status as DoorRef["status"], created_at: new Date().toISOString() },
+            ];
             refsChangedAt = Date.now();
             send(200, doorBody());
           });
@@ -328,12 +418,13 @@ export function mockApi(): Plugin {
           return doorRefs.length < before ? send(200, doorBody()) : send(404, { error: "not found" });
         }
         if (req.method === "POST" && url === "/door-calibration/run") {
-          const statuses = new Set(doorRefs.map((r) => r.status));
-          if (statuses.size < 2) {
-            return send(422, { error: "zone 1 needs an open and a closed reference", references: doorBody(true).references });
+          if (doorZones.length === 0) return send(422, { error: "add a door zone first", references: [] });
+          const short = doorZones.find((z) => new Set(doorRefs.filter((r) => r.zone_id === z.id).map((r) => r.status)).size < 2);
+          if (short) {
+            return send(422, { error: `${short.name} needs an open and a closed reference`, references: doorBody(true).references });
           }
           doorSetup = {
-            zones: [{ ...doorRefs[0].box, feature: "color", direction: "above", threshold: 0.061, margin: 0.118 }],
+            zones: doorZones.map((z) => ({ id: z.id, name: z.name, ...z.box, feature: "color", direction: "above", threshold: 0.061, margin: 0.118 })),
             ran_at: new Date().toISOString(),
           };
           return send(200, doorBody());

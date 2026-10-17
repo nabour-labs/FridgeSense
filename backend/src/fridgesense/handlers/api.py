@@ -17,6 +17,7 @@ import boto3
 from botocore.config import Config
 
 from fridgesense import (
+    alignment,
     analysis,
     analysis_config,
     ask,
@@ -25,10 +26,13 @@ from fridgesense import (
     camera_info,
     deps,
     door_calibration,
+    face_blur,
     fridge_area,
     inventory,
     live,
+    monitoring,
     session,
+    setup_warnings,
     traces,
     voice,
 )
@@ -53,6 +57,7 @@ class Context:
     role: str
     params: dict[str, str]
     table: FridgeTable
+    link_status: str = "linked"
 
 
 @dataclass(frozen=True)
@@ -101,7 +106,9 @@ def handler(event, context):
         tokens = TokenStore().load()
         if tokens is None:
             return json_response(409, {"error": "no camera linked"})
-        ctx = Context(req, tokens.account_id, role, match.groupdict(), FridgeTable())
+        ctx = Context(
+            req, tokens.account_id, role, match.groupdict(), FridgeTable(), tokens.link_status
+        )
         return r.handle(ctx)
     return json_response(404, {"error": "not found"})
 
@@ -224,6 +231,19 @@ def get_events(ctx: Context) -> dict:
     now_ms = int(now() * 1000)
     stills_since = iso_utc(now_ms - STILLS_DAYS * DAY_MS)
     s3, bucket = _s3(), os.environ.get("STILLS_BUCKET", "")
+
+    def link(key: str) -> str:
+        return s3.generate_presigned_url(
+            "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=STILL_LINK_TTL_S
+        )
+
+    def clip_of(e: dict) -> str | None:
+        """The open-span clip, played from open to close; never for viewers (not face-blurred)."""
+        if ctx.role == "viewer" or not e.get("clip_key"):
+            return None
+        start_s, end_s = (float(t) for t in e["clip_span"])
+        return f"{link(e['clip_key'])}#t={start_s:g},{end_s:g}"
+
     events = []
     for e in found:
         recent = e.get("opened_at", "") >= stills_since
@@ -236,14 +256,8 @@ def get_events(ctx: Context) -> dict:
                 "status": e.get("status"),
                 "changes": e.get("changes", []),
                 "pending_count": e.get("pending_count", 0),
-                "stills": [
-                    s3.generate_presigned_url(
-                        "get_object",
-                        Params={"Bucket": bucket, "Key": key},
-                        ExpiresIn=STILL_LINK_TTL_S,
-                    )
-                    for key in (e.get("still_keys", []) if recent else [])
-                ],
+                "stills": [link(key) for key in (e.get("still_keys", []) if recent else [])],
+                "clip": clip_of(e) if recent else None,
             }
         )
     return json_response(200, {"events": events, "next": events[-1]["id"] if more else None})
@@ -511,6 +525,21 @@ def delete_reference(ctx: Context) -> dict:
     return json_response(200, config_body(ctx.table, ctx.account_id))
 
 
+@route("GET", "/api/settings/face-blur")
+def get_face_blur(ctx: Context) -> dict:
+    return json_response(200, {"enabled": face_blur.load(ctx.table, ctx.account_id)})
+
+
+@route("PUT", "/api/settings/face-blur", owner=True)
+def put_face_blur(ctx: Context) -> dict:
+    enabled = (_json_body(ctx.req) or {}).get("enabled")
+    if type(enabled) is not bool:
+        return json_response(400, {"error": "bad setting"})
+    face_blur.save(ctx.table, ctx.account_id, enabled, int(now() * 1000))
+    log_event("face_blur_changed", account_id=ctx.account_id, enabled=enabled)
+    return json_response(200, {"enabled": enabled})
+
+
 def rekognition_client():
     return boto3.client(
         "rekognition",
@@ -547,7 +576,19 @@ def get_camera(ctx: Context) -> dict:
         devices[0].name,
         int(now() * 1000),
     )
+    body["monitoring"] = monitoring.load(ctx.table, ctx.account_id, devices[0].device_id).to_body()
     return json_response(200, body)
+
+
+@route("PUT", "/api/camera/monitoring", write=True)
+@with_device
+def put_monitoring(ctx: Context, device_id: str) -> dict:
+    paused = (_json_body(ctx.req) or {}).get("paused")
+    if not isinstance(paused, bool):
+        return json_response(400, {"error": "paused must be true or false"})
+    state = monitoring.set_paused(ctx.table, ctx.account_id, device_id, paused, int(now() * 1000))
+    log_event("monitoring_changed", account_id=ctx.account_id, device_id=device_id, paused=paused)
+    return json_response(200, state.to_body())
 
 
 @route("POST", "/api/camera/snapshot", write=True)
@@ -558,7 +599,9 @@ def post_snapshot(ctx: Context, device_id: str) -> dict:
         image, ts = camera.snapshot(
             deps.ring_client(now=now),
             deps.http_client(),
-            FaceBlurrer(rekognition_client(), price),
+            face_blur.blurrer(
+                ctx.table, ctx.account_id, lambda: FaceBlurrer(rekognition_client(), price)
+            ),
             device_id,
             int(now() * 1000),
             sleep,
@@ -572,11 +615,30 @@ def post_snapshot(ctx: Context, device_id: str) -> dict:
     )
 
 
+@route("POST", "/api/camera/frame", write=True)
+def post_frame(ctx: Context) -> dict:
+    jpeg = camera.frame_jpeg((_json_body(ctx.req) or {}).get("image"))
+    if jpeg is None:
+        return json_response(400, {"error": "bad image"})
+    price = float(os.environ.get("FACE_DETECT_PRICE") or DEFAULT_PRICE)
+    try:
+        blurrer = face_blur.blurrer(
+            ctx.table, ctx.account_id, lambda: FaceBlurrer(rekognition_client(), price)
+        )
+        blurred = camera.blur_frame(blurrer, jpeg)
+    except camera.SnapshotFailed:
+        return json_response(502, {"error": "camera unavailable"})
+    return json_response(
+        200,
+        {"image": base64.b64encode(blurred).decode(), "captured_at": iso_utc(int(now() * 1000))},
+    )
+
+
 MAX_OFFER_CHARS = 20_000
 SESSION_ID = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
 
 
-@route("POST", "/api/camera/live")
+@route("POST", "/api/camera/live", write=True)  # live video is never face-blurred
 @with_device
 def post_live(ctx: Context, device_id: str) -> dict:
     offer = (_json_body(ctx.req) or {}).get("offer")
@@ -591,7 +653,7 @@ def post_live(ctx: Context, device_id: str) -> dict:
     )
 
 
-@route("DELETE", "/api/camera/live/{session_id}")
+@route("DELETE", "/api/camera/live/{session_id}", write=True)
 @with_device
 def delete_live(ctx: Context, device_id: str) -> dict:
     session_id = ctx.params["session_id"]
@@ -604,19 +666,53 @@ def delete_live(ctx: Context, device_id: str) -> dict:
     return json_response(200, {"ok": True})
 
 
+def _alignment_body(table: FridgeTable, account_id: str, device_id: str) -> dict:
+    s = alignment.load_alignment(table, account_id, device_id) or alignment.AlignState()
+
+    def at(ms: int | None) -> str | None:
+        return None if ms is None else iso_utc(ms)
+
+    return {
+        "dx": round(s.dx, 3),
+        "dy": round(s.dy, 3),
+        "error": None if s.error is None else round(s.error, 3),
+        "failures": s.failures,
+        "moved": s.moved,
+        "moved_at": at(s.moved_at_ms),
+        "last_moved_at": at(s.last_moved_at_ms),
+        "checked_at": at(s.checked_at_ms),
+    }
+
+
 def door_setup_body(
     table: FridgeTable, account_id: str, device_id: str, scores: dict | None = None
 ) -> dict:
+    zones = door_calibration.list_zones(table, account_id, device_id)
     refs = door_calibration.list_references(table, account_id, device_id)
     setup = door_calibration.load_setup(table, account_id, device_id)
     if scores is None:
         scores = door_calibration.reference_scores(refs, setup)
     defaults = DoorCheck.from_config(os.environ.get("DOOR_ZONES"), os.environ.get("DOOR_THRESHOLD"))
+
+    def count(zone_sk: str, status: str) -> int:
+        return sum(1 for r in refs if r.zone_id == zone_sk and r.status == status)
+
     return {
         "device_id": device_id,
+        "zones": [
+            {
+                "id": encode_id(z.sk),
+                "name": z.name,
+                "box": door_calibration.box_json(z.box),
+                "open": count(z.sk, "open"),
+                "closed": count(z.sk, "closed"),
+            }
+            for z in zones
+        ],
         "references": [
             {
                 "id": encode_id(r.sk),
+                "zone_id": encode_id(r.zone_id),
                 "image": base64.b64encode(r.image).decode(),
                 "box": door_calibration.box_json(r.box),
                 "status": r.status,
@@ -630,6 +726,8 @@ def door_setup_body(
         else {
             "zones": [
                 {
+                    "id": encode_id(z.zone_id) if z.zone_id else None,
+                    "name": z.name or None,
                     **door_calibration.box_json(z.box),
                     "feature": z.feature,
                     "direction": z.direction,
@@ -640,7 +738,10 @@ def door_setup_body(
             ],
             "ran_at": setup.ran_at,
             "stale": setup.stale,
+            "tuned_at": setup.tuned_at,
+            "tuned_from": setup.tuned_from,
         },
+        "alignment": None if setup is None else _alignment_body(table, account_id, device_id),
         "defaults": {
             "zones": [door_calibration.box_json(z) for z in defaults.zones],
             "threshold": defaults.threshold,
@@ -658,19 +759,76 @@ def get_door_setup(ctx: Context, device_id: str) -> dict:
 @with_device
 def post_door_reference(ctx: Context, device_id: str) -> dict:
     body = _json_body(ctx.req) or {}
+    raw_zone = body.get("zone_id")
+    zone_sk = (
+        decode_id(raw_zone, door_calibration.zone_prefix(device_id))
+        if isinstance(raw_zone, str)
+        else None
+    )
     try:
         image = door_calibration.decode_image(body.get("image"))
-        box = door_calibration.validate_box(body.get("box"))
         status = door_calibration.validate_status(body.get("status"))
+        door_calibration.add_reference(
+            ctx.table, ctx.account_id, device_id, image, zone_sk, status, now_ms=int(now() * 1000)
+        )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})
-    try:
-        door_calibration.add_reference(
-            ctx.table, ctx.account_id, device_id, image, box, status, now_ms=int(now() * 1000)
-        )
     except door_calibration.TooMany:
         limit = door_calibration.MAX_REFERENCES
         return json_response(409, {"error": f"at most {limit} door references"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("POST", "/api/door-calibration/zones", write=True)
+@with_device
+def post_door_zone(ctx: Context, device_id: str) -> dict:
+    body = _json_body(ctx.req) or {}
+    try:
+        door_calibration.add_zone(
+            ctx.table,
+            ctx.account_id,
+            device_id,
+            body.get("name"),
+            body.get("box"),
+            now_ms=int(now() * 1000),
+        )
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    except door_calibration.TooManyZones:
+        return json_response(409, {"error": f"at most {door_calibration.MAX_ZONES} door zones"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("PATCH", "/api/door-calibration/zones/{id}", write=True)
+@with_device
+def patch_door_zone(ctx: Context, device_id: str) -> dict:
+    body = _json_body(ctx.req) or {}
+    sk = decode_id(ctx.params["id"], door_calibration.zone_prefix(device_id))
+    try:
+        found = sk is not None and door_calibration.update_zone(
+            ctx.table,
+            ctx.account_id,
+            device_id,
+            sk,
+            now_ms=int(now() * 1000),
+            name=body.get("name"),
+            box=body.get("box"),
+        )
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    if not found:
+        return json_response(404, {"error": "not found"})
+    return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
+
+
+@route("DELETE", "/api/door-calibration/zones/{id}", write=True)
+@with_device
+def delete_door_zone(ctx: Context, device_id: str) -> dict:
+    sk = decode_id(ctx.params["id"], door_calibration.zone_prefix(device_id))
+    if sk is None or not door_calibration.delete_zone(
+        ctx.table, ctx.account_id, device_id, sk, now_ms=int(now() * 1000)
+    ):
+        return json_response(404, {"error": "not found"})
     return json_response(200, door_setup_body(ctx.table, ctx.account_id, device_id))
 
 
@@ -709,6 +867,19 @@ def fridge_area_body(table: FridgeTable, account_id: str, device_id: str) -> dic
             "updated_at": area.updated_at,
         },
     }
+
+
+@route("GET", "/api/warnings")
+def get_warnings(ctx: Context) -> dict:
+    body = setup_warnings.warnings_body(
+        deps.ring_client(now=now),
+        ctx.table,
+        ctx.account_id,
+        _device_id(ctx),
+        int(now() * 1000),
+        link_status=ctx.link_status,
+    )
+    return json_response(200, body)
 
 
 @route("GET", "/api/fridge-area")

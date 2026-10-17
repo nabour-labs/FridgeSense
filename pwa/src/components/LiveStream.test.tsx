@@ -26,13 +26,21 @@ class FakePeer {
   async setLocalDescription(d: RTCSessionDescriptionInit) {
     this.localDescription = d;
   }
+  /** Fire the video track while the answer is applied, as browsers do. */
+  trackOnAnswer = false;
   async setRemoteDescription(d: RTCSessionDescriptionInit) {
     this.remoteDescription = d;
+    if (this.trackOnAnswer) {
+      this.framesDecoded = 1;
+      this.ontrack?.({ streams: [{ id: "stream" } as unknown as MediaStream] });
+    }
   }
   close() {
     this.closed += 1;
   }
   statsCalls = 0;
+  /** Video frames the browser has decoded; 0 while the camera sends nothing. */
+  framesDecoded = 0;
   async getStats() {
     this.statsCalls += 1;
     return new Map<string, Record<string, unknown>>([
@@ -47,14 +55,20 @@ class FakePeer {
           frameWidth: 1920,
           frameHeight: 1080,
           framesPerSecond: 15,
+          framesDecoded: this.framesDecoded,
         },
       ],
       ["C1", { type: "codec", mimeType: "video/H264" }],
       ["C2", { type: "codec", mimeType: "audio/opus" }],
     ]);
   }
-  /** Video arrives. */
+  /** Video arrives and decodes. */
   track() {
+    this.framesDecoded = 1;
+    act(() => this.ontrack?.({ streams: [{ id: "stream" } as unknown as MediaStream] }));
+  }
+  /** The track arrives but the camera sends no video (unplugged). */
+  trackWithoutVideo() {
     act(() => this.ontrack?.({ streams: [{ id: "stream" } as unknown as MediaStream] }));
   }
   fail() {
@@ -62,6 +76,10 @@ class FakePeer {
     act(() => this.onconnectionstatechange?.());
   }
 }
+
+/** `GET /api/camera` for a camera Ring reports online; only `online` matters here. */
+const ONLINE = { name: "Fridge", online: true };
+const OFFLINE_MESSAGE = "The camera is offline. Check that it's plugged in and connected to Wi-Fi.";
 
 const SESSION: LiveSession = { answer: "v=0\r\nanswer\r\n", session_id: "S1", max_seconds: 60 };
 
@@ -86,7 +104,11 @@ function renderLive(
   onStats?: (stats: DecoderStats) => void,
 ) {
   const peers: FakePeer[] = [];
-  const api = fakeApi({ startLive: vi.fn().mockResolvedValue(SESSION), ...overrides });
+  const api = fakeApi({
+    camera: vi.fn().mockResolvedValue(ONLINE),
+    startLive: vi.fn().mockResolvedValue(SESSION),
+    ...overrides,
+  });
   const report = vi.fn();
   const make =
     createPeer ??
@@ -129,6 +151,7 @@ test("Live video plays", async () => {
   expect(video.muted).toBe(true);
   expect(video).toHaveAttribute("playsinline");
   expect(screen.getByText("60 s left")).toBeInTheDocument();
+  fireEvent.playing(video);
   expect(screen.queryByText("Connecting…")).not.toBeInTheDocument();
 });
 
@@ -219,14 +242,42 @@ test("No camera", async () => {
   expect(screen.getByText("No camera is linked yet.")).toBeInTheDocument();
 });
 
+const NO_VIDEO = "The camera isn't sending video. Check that it's plugged in.";
+
 test("Video never arrives", async () => {
   const { api, peers } = renderLive();
   await settle();
+  peers[0].trackWithoutVideo();
+  expect(screen.getByText("60 s left")).toBeInTheDocument();
   await wait(15_000);
   expect(peers[0].closed).toBe(1);
   expect(api.stopLive).toHaveBeenCalledWith("S1");
-  expect(screen.getByText("Could not connect to the camera.")).toBeInTheDocument();
+  expect(screen.getByText(NO_VIDEO)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+});
+
+test("Video never arrives, not even a track", async () => {
+  const { peers } = renderLive();
+  await settle();
+  await wait(15_000);
+  expect(peers[0].closed).toBe(1);
+  expect(screen.getByText(NO_VIDEO)).toBeInTheDocument();
+});
+
+test("Video track arrives before the answer is applied", async () => {
+  const peers: FakePeer[] = [];
+  renderLive({}, () => {
+    const p = new FakePeer();
+    p.trackOnAnswer = true;
+    peers.push(p);
+    return p as unknown as RTCPeerConnection;
+  });
+  await settle();
+  expect(screen.getByText("60 s left")).toBeInTheDocument();
+  await wait(20_000);
+  expect(peers[0].closed).toBe(0);
+  expect(screen.getByText("40 s left")).toBeInTheDocument();
+  expect(screen.queryByText("Could not connect to the camera.")).not.toBeInTheDocument();
 });
 
 test("Connection fails", async () => {
@@ -298,4 +349,75 @@ test("decoder stats stop when the dialog closes", async () => {
   expect(calls).toBeGreaterThan(0);
   await wait(3_000);
   expect(peers[0].statsCalls).toBe(calls);
+});
+
+// Online check before a live view
+test("Camera offline", async () => {
+  const { api, peers, report } = renderLive({ camera: vi.fn().mockResolvedValue({ ...ONLINE, online: false }) });
+  await settle();
+  expect(screen.getByText(OFFLINE_MESSAGE)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  expect(peers).toHaveLength(0);
+  expect(api.startLive).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("live-video")).not.toBeInTheDocument();
+  expect(report).not.toHaveBeenCalled();
+});
+
+test("Camera online", async () => {
+  const { api } = renderLive();
+  expect(screen.getByText("Connecting…")).toBeInTheDocument();
+  await settle();
+  expect(api.camera).toHaveBeenCalledTimes(1);
+  expect(api.startLive).toHaveBeenCalledWith("v=0\r\noffer\r\n");
+});
+
+test.each([
+  ["online null", vi.fn().mockResolvedValue({ name: "Fridge", online: null, ring: "unavailable" })],
+  ["502", vi.fn().mockRejectedValue(new ApiError(502, "camera unavailable"))],
+  ["network error", vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))],
+])("Status unknown (%s) starts the live view", async (_, camera) => {
+  const { api, report } = renderLive({ camera });
+  await settle();
+  expect(api.startLive).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(OFFLINE_MESSAGE)).not.toBeInTheDocument();
+  expect(report).not.toHaveBeenCalled();
+});
+
+test("Try again after offline", async () => {
+  const camera = vi.fn().mockResolvedValueOnce({ ...ONLINE, online: false }).mockResolvedValue(ONLINE);
+  const { api } = renderLive({ camera });
+  await settle();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await settle();
+  expect(camera).toHaveBeenCalledTimes(2);
+  expect(api.startLive).toHaveBeenCalledTimes(1);
+});
+
+test("Closed during the check", async () => {
+  let answer!: (info: unknown) => void;
+  const { api, peers } = renderLive({ camera: vi.fn().mockReturnValue(new Promise((r) => (answer = r))) });
+  await settle();
+  closeDialog();
+  await act(async () => answer(ONLINE));
+  await settle();
+  expect(peers).toHaveLength(0);
+  expect(api.startLive).not.toHaveBeenCalled();
+});
+
+// No black picture while connecting
+test("Track arrived, video not playing yet", async () => {
+  const { peers } = renderLive();
+  await settle();
+  peers[0].track();
+  expect(screen.getByTestId("live-video")).toBeInTheDocument();
+  expect(screen.getByText("Connecting…")).toBeInTheDocument();
+  expect(screen.getByText("60 s left")).toBeInTheDocument();
+});
+
+test("Video plays", async () => {
+  const { peers } = renderLive();
+  await settle();
+  peers[0].track();
+  fireEvent.playing(screen.getByTestId("live-video"));
+  expect(screen.queryByText("Connecting…")).not.toBeInTheDocument();
 });

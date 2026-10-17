@@ -6,11 +6,27 @@ Gives the signed-in user's app HTTP access to the fridge inventory, door events,
 ## Requirements
 
 ### Requirement: Passcode sign-in returns a session token
-`POST /api/session` with `{"passcode": "<passcode>"}` SHALL return 200 `{"token": "<token>", "expires_at": "<ISO 8601>", "role": "owner" | "viewer"}` when the passcode matches the configured owner passcode (role `owner`) or the optional configured demo passcode (role `viewer`), with a token valid for 24 hours. Changing either passcode SHALL invalidate the existing tokens of that role only. When no demo passcode is configured, only the owner passcode SHALL sign in. Tokens issued under the earlier 30-day scheme SHALL no longer be accepted.
+`POST /api/session` with `{"passcode": "<passcode>"}` SHALL return 200 `{"token": "<token>", "expires_at": "<ISO 8601>", "role": "owner" | "user" | "viewer"}` when the passcode matches the configured owner passcode (role `owner`), the optional configured user passcode (role `user`) or the optional configured demo passcode (role `viewer`), with a token valid for 24 hours. When two configured passcodes are equal, the first role in the order `owner`, `user`, `viewer` SHALL be returned. Changing any passcode SHALL invalidate the existing tokens of that role only. A role whose passcode is not configured SHALL not sign in. Tokens issued under the earlier 30-day scheme SHALL no longer be accepted.
 
 #### Scenario: Correct passcode
 - **WHEN** the configured passcode is `open-sesame` and the body is `{"passcode": "open-sesame"}`
 - **THEN** the response is 200 with a non-empty `token`, an `expires_at` 24 hours from now and `role` `"owner"`
+
+#### Scenario: User passcode
+- **WHEN** the configured user passcode is `come-in` and the body is `{"passcode": "come-in"}`
+- **THEN** the response is 200 with a non-empty `token`, an `expires_at` 24 hours from now and `role` `"user"`
+
+#### Scenario: No user passcode configured
+- **WHEN** no user passcode and no demo passcode are configured and the body is `{"passcode": "come-in"}`
+- **THEN** the response is 401 `{"error": "wrong passcode"}`
+
+#### Scenario: Equal passcodes
+- **WHEN** the user passcode and the demo passcode are both `come-in` and the body is `{"passcode": "come-in"}`
+- **THEN** the response has `role` `"user"`
+
+#### Scenario: User passcode changed
+- **WHEN** an owner token and a user token were issued and the user passcode then changes
+- **THEN** a request with the old user token gets 401 and a request with the owner token still succeeds
 
 #### Scenario: Demo passcode
 - **WHEN** the configured demo passcode is `look-only` and the body is `{"passcode": "look-only"}`
@@ -90,7 +106,7 @@ A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be r
 - **THEN** the response is `{"items": [], "pending_count": 0}`
 
 ### Requirement: Door event listing
-`GET /api/events` SHALL return `{"events": [...], "next": <id or null>}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, and `stills`: 15-minute download links for its stored stills, or `[]` for events older than 7 days.
+`GET /api/events` SHALL return `{"events": [...], "next": <id or null>}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, `stills` and `clip`. `stills` holds 15-minute download links for its stored stills, or `[]` for events older than 7 days. `clip` is a 15-minute download link for the event's open-span clip, ending in the media fragment `#t=<start_s>,<end_s>` from its `clip_span`. It is `null` when the event has no `clip_key`, when the event is older than 7 days, and always for viewer tokens.
 
 The range is either `days=<n>` (default 7, max 30, ending now) or `from` and `to`, ISO 8601 instants with `from` inclusive, `to` exclusive, `from` before `to` and at most 31 days apart. When `from` is given, `days` is ignored. With `limit=<n>` (1 to 50) at most `n` events are returned and `next` is the id of the last one when older events remain in the range, else null; `cursor=<id>` returns only events older than that event. Without `limit`, every event in range is returned and `next` is null.
 
@@ -98,9 +114,21 @@ The range is either `days=<n>` (default 7, max 30, ending now) or `from` and `to
 - **WHEN** a `done` door event opened 1 hour ago has 4 stored stills
 - **THEN** it is listed with 4 `stills` links that download the images without any other credentials, and with its `changes`
 
+#### Scenario: Recent event with a clip
+- **WHEN** an owner or user token lists a door event opened 1 hour ago with `clip_key` set and `clip_span = [0.5, 8.5]`
+- **THEN** its `clip` is a link that downloads `clip.mp4` without any other credentials and ends in `#t=0.5,8.5`
+
+#### Scenario: Viewer gets no clip
+- **WHEN** a viewer token lists the same event
+- **THEN** its `clip` is `null` and its 4 `stills` links are still listed
+
+#### Scenario: Event without a clip
+- **WHEN** a recent door event has no `clip_key`
+- **THEN** its `clip` is `null`
+
 #### Scenario: Old event
 - **WHEN** a door event opened 8 days ago and `days=30`
-- **THEN** it is listed with `stills: []`
+- **THEN** it is listed with `stills: []` and `clip: null`
 
 #### Scenario: Range limit
 - **WHEN** events exist 2 and 10 days ago and the request has no `days`
@@ -301,3 +329,14 @@ When the app is served through the CDN, every `/api/*` response SHALL reach the 
 #### Scenario: Delete without a token
 - **WHEN** `DELETE /api/items/eggs` is called without an `Authorization` header
 - **THEN** the response is 401 `{"error": "sign in"}` and `eggs` still exists
+
+### Requirement: User tokens write but are not admin
+A token with role `user` SHALL be accepted on every route an owner token is accepted on, including every write route, except the owner-only routes `GET /api/debug/motions` and `GET /api/debug/motions/{id}`, which SHALL answer 403 `{"error": "admin only"}`.
+
+#### Scenario: User writes
+- **WHEN** a user token calls `PUT /api/items/milk` with `{"quantity": 2}` while milk exists
+- **THEN** the response is 200 and `GET /api/inventory` shows milk with quantity 2
+
+#### Scenario: User refused debug traces
+- **WHEN** a user token calls `GET /api/debug/motions` or `GET /api/debug/motions/{id}`
+- **THEN** each response is 403 `{"error": "admin only"}`

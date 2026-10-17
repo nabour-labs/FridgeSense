@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Resize } from "../image";
 import { toJpeg } from "../image";
 import { isAdmin, useApp } from "../AppContext";
+import { Warnings } from "../components/Warnings";
 import { Camera } from "./Camera";
 import { Debug } from "./Debug";
 import { DoorDetection } from "./DoorDetection";
@@ -43,6 +44,7 @@ export function Config({ resize = toJpeg }: { resize?: Resize }) {
 
   return (
     <div className="space-y-5">
+      <Warnings />
       <div role="tablist" aria-label="Config" className={`grid ${sections.length === 5 ? "grid-cols-5" : "grid-cols-4"} gap-1 rounded-2xl bg-slate-200/70 p-1 dark:bg-slate-800/70`}>
         {sections.map((s) => (
           <button

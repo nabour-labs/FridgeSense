@@ -4,6 +4,8 @@ const MARKUP_RED = "#ef4444";
 /** Reference photos are shrunk in the browser before upload. */
 export const MAX_SIDE = 768;
 export const MAX_BYTES = 200_000;
+/** Same width limit as a camera snapshot from the backend (camera.MAX_WIDTH). */
+const FRAME_MAX_WIDTH = 960;
 
 /** The size that fits within `max` on its longer side, keeping the aspect ratio; never enlarges. */
 export function fitWithin(width: number, height: number, max: number) {
@@ -65,3 +67,17 @@ async function base64(blob: Blob): Promise<string> {
   });
   return url.slice(url.indexOf(",") + 1);
 }
+
+export type GrabFrame = (video: HTMLVideoElement) => Promise<string>;
+
+/** The frame the video shows now, as a base64 JPEG at most 960 px wide. */
+export const grabFrame: GrabFrame = async (video) => {
+  const scale = Math.min(1, FRAME_MAX_WIDTH / video.videoWidth);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  if (!blob) throw new Error("frame could not be encoded");
+  return base64(blob);
+};

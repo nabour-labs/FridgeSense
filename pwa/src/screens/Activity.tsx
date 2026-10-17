@@ -9,11 +9,11 @@ import { Sheet } from "../components/Sheet";
 import { changeLabel, clock, dayLabel } from "../format";
 import { useLoad } from "../useLoad";
 
-/** Presigned still links last 15 min; reuse them for 10 so a poll doesn't reload every image. */
+/** Presigned still and clip links last 15 min; reuse them for 10 so a poll doesn't reload every image. */
 const STILL_LINKS_REUSED_MS = 10 * 60_000;
 const PAGE_SIZE = 10;
 
-type StillLinks = Map<string, { stills: string[]; at: number }>;
+type StillLinks = Map<string, { stills: string[]; clip: string | null; at: number }>;
 
 function startOfDay(d: Date, plusDays = 0): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + plusDays);
@@ -25,6 +25,7 @@ function dateValue(d: Date): string {
 }
 
 export function Activity() {
+  const { role } = useApp();
   const stillLinks = useRef<StillLinks>(new Map());
   const [day, setDay] = useState(() => startOfDay(new Date()));
   /** The cursor of each page so far; the last one is the page shown. */
@@ -58,13 +59,16 @@ export function Activity() {
           onChange={(e) => pickDay(e.target.value)}
           className="h-11 min-w-0 flex-1 scroll-mt-24 rounded-xl border border-slate-300 bg-white px-3 font-semibold outline-none [color-scheme:light] focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950 dark:[color-scheme:dark]"
         />
-        <button
-          onClick={() => setWatching(true)}
-          className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-600 px-4 font-semibold text-white transition hover:bg-brand-700 active:scale-[0.98]"
-        >
-          <Video aria-hidden className="size-5" />
-          Livestream
-        </button>
+        {/* Live video is never face-blurred, so the read-only demo role doesn't get it. */}
+        {canEdit(role) && (
+          <button
+            onClick={() => setWatching(true)}
+            className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-600 px-4 font-semibold text-white transition hover:bg-brand-700 active:scale-[0.98]"
+          >
+            <Video aria-hidden className="size-5" />
+            Livestream
+          </button>
+        )}
       </div>
       {watching && <LiveStream onClose={() => setWatching(false)} />}
       <EventPage
@@ -111,10 +115,15 @@ function EventPage({
           events: r.events.map((e) => {
             const now = Date.now();
             const kept = stillLinks.current.get(e.id);
-            if (kept && kept.stills.length === e.stills.length && now - kept.at < STILL_LINKS_REUSED_MS) {
-              return { ...e, stills: kept.stills };
+            if (
+              kept &&
+              kept.stills.length === e.stills.length &&
+              (kept.clip === null) === (e.clip === null) &&
+              now - kept.at < STILL_LINKS_REUSED_MS
+            ) {
+              return { ...e, stills: kept.stills, clip: kept.clip };
             }
-            stillLinks.current.set(e.id, { stills: e.stills, at: now });
+            stillLinks.current.set(e.id, { stills: e.stills, clip: e.clip, at: now });
             return e;
           }),
         })),
@@ -248,6 +257,7 @@ function EventCard({
   debug?: boolean;
 }) {
   const shown = event.changes.filter((c) => !c.rejected);
+  const [clipFailed, setClipFailed] = useState(false);
   const quiet = "text-sm text-slate-500 dark:text-slate-400";
   return (
     <article className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-900/5 ring-1 ring-slate-200 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800">
@@ -297,7 +307,22 @@ function EventCard({
           </ul>
         )}
       </div>
-      {event.stills.length > 0 && <Stills stills={event.stills} onStill={onStill} />}
+      {event.clip && !clipFailed ? (
+        // The door-open span only: the link's #t= fragment starts and stops playback there.
+        <video
+          src={event.clip}
+          poster={event.stills[0]}
+          aria-label={`Door opening at ${clock(event.opened_at)}`}
+          muted
+          playsInline
+          controls
+          preload="metadata"
+          onError={() => setClipFailed(true)}
+          className="mt-3 aspect-video w-full rounded-xl bg-slate-100 object-cover dark:bg-slate-800"
+        />
+      ) : (
+        event.stills.length > 0 && <Stills stills={event.stills} onStill={onStill} />
+      )}
     </article>
   );
 }

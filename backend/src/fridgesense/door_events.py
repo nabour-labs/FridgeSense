@@ -5,8 +5,10 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -334,6 +336,15 @@ class DoorCheck:
         """The still furthest past (or closest to) its zone's threshold."""
         return max(results, key=lambda r: self.rules[r.zone - 1].excess(r.value))
 
+    def shifted(self, dx: float, dy: float) -> "DoorCheck":
+        """The same rules with every zone moved by (dx, dy), kept inside the image."""
+        if not dx and not dy:
+            return self
+        from fridgesense.alignment import shift_box  # alignment imports this module
+
+        rules = tuple(replace(r, box=shift_box(r.box, dx, dy)) for r in self.rules)
+        return replace(self, rules=rules)
+
     def evaluate(self, stills: list[bytes]) -> tuple[bool, float, int]:
         """(door open?, best still's value, its 1-based zone) over all stills."""
         best = self.best(self.results(stills))
@@ -474,11 +485,13 @@ def clip_frames_checked(
     interval_ms: int,
     sleep: Callable[[float], None],
     clip_dir=None,
+    keep: list[Path] | None = None,
 ) -> tuple[list[Downloaded], list[list["ZoneValue"]]]:
     """The event clip's frames every `interval_ms` (as JPEG `Downloaded`s) and their zone values.
 
     Each frame is scored as it is decoded, so a long clip never sits in memory decoded.
-    The temp clip file is deleted whatever happens. Raises ClipUnavailable.
+    The temp clip file is deleted whatever happens, unless it decoded and `keep` is given:
+    then it is appended to `keep` and the caller deletes it. Raises ClipUnavailable.
     """
     from fridgesense import clip_frames
 
@@ -500,8 +513,11 @@ def clip_frames_checked(
             values.append(check.zone_values(img))
             frames.append(Downloaded(n, window["start_ms"] + offset, _frame_jpeg(img)))
         clip_bytes = path.stat().st_size
+        if keep is not None:
+            keep.append(path)
     finally:
-        path.unlink(missing_ok=True)
+        if keep is None or path not in keep:
+            path.unlink(missing_ok=True)
     log_event(
         "clip_frames",
         device_id=state["device_id"],
@@ -511,23 +527,6 @@ def clip_frames_checked(
         clip_decode_ms=round((time.monotonic() - started) * 1000) - downloaded_ms,
     )
     return frames, values
-
-
-def stills_at(
-    ring: RingClient,
-    http: httpx.Client,
-    device_id: str,
-    frames: list[Downloaded],
-    sleep: Callable[[float], None],
-) -> list[bytes]:
-    """A Ring still at each frame's time (sharper than video), or the frame where none comes."""
-
-    def fetch(frame: Downloaded) -> bytes:
-        data, _ = fetch_still(ring, http, device_id, frame.at_ms, sleep)
-        return frame.data if data is None else data
-
-    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
-        return list(pool.map(fetch, frames))
 
 
 def _device_check(
@@ -549,12 +548,138 @@ def _device_check(
     return found or default
 
 
+@dataclass(frozen=True)
+class FollowPlan:
+    """What the door check needs to follow the camera: the closed anchor and the stored shift."""
+
+    anchor: bytes
+    dx: float
+    dy: float
+
+
+def _follow_plan(
+    table: FridgeTable, account_id: str, device_id: str, check: "DoorCheck"
+) -> FollowPlan | None:
+    """None for default rules, a setup made before anchors existed, or a table hiccup."""
+    if check.source == "default":
+        return None
+    from fridgesense import alignment, door_calibration  # both import this module
+
+    try:
+        anchor = door_calibration.load_anchor(table, account_id, device_id)
+        if anchor is None:
+            return None
+        stored = alignment.load_alignment(table, account_id, device_id)
+    except Exception as e:  # a table hiccup must not drop a door opening
+        log_event(
+            "door_alignment_unavailable",
+            logging.WARNING,
+            device_id=device_id,
+            error=type(e).__name__,
+        )
+        return None
+    return FollowPlan(anchor, stored.dx if stored else 0.0, stored.dy if stored else 0.0)
+
+
+def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
+    """Line the bookends up with the anchor and store the result; None if that fails."""
+    from fridgesense import alignment
+
+    try:
+        return alignment.align_event(
+            table, account_id, device_id, plan.anchor, first, last, window["start_ms"]
+        )
+    except Exception as e:
+        log_event(
+            "door_alignment_unavailable",
+            logging.WARNING,
+            device_id=device_id,
+            error=type(e).__name__,
+        )
+        return None
+
+
+def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, window) -> None:
+    """Sample an aligned event and re-tune the rules; a failure here never changes the
+    event's outcome."""
+    if aligned is None or not aligned.ok:
+        return
+    from fridgesense import self_tuning  # it imports this module
+
+    try:
+        frames = [data for _, data in raw]
+        if self_tuning.learn(
+            table, account_id, device_id, check, frames, aligned, window["start_ms"]
+        ):
+            self_tuning.retune(table, account_id, device_id, window["start_ms"])
+    except Exception as e:
+        log_event(
+            "door_sample_failed", logging.WARNING, device_id=device_id, error=type(e).__name__
+        )
+
+
+def _alignment_json(aligned) -> dict | None:
+    if aligned is None:
+        return None
+    return {
+        "dx": round(aligned.dx, 4),
+        "dy": round(aligned.dy, 4),
+        "error": round(aligned.error, 4),
+        "ok": aligned.ok,
+    }
+
+
 def iso_utc(ms: int) -> str:
     dt = datetime.fromtimestamp(ms // 1000, UTC)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ms % 1000:03d}Z"
 
 
-def fetch_stills(
+def store_open_clip(
+    s3, bucket: str, state: dict, clip: Path, opened_ms: int, closed_ms: int | None, clip_dir=None
+) -> dict:
+    """Cut the clip to the open span and store it as `clip.mp4` next to the stills.
+
+    Returns the door event's `clip_key` and `clip_span`, or {} when the cut or upload failed
+    (logged as clip_not_stored): a missing clip never costs the door event or its analysis.
+    """
+    from fridgesense import clip_frames
+
+    start_ms = state["window"]["start_ms"]
+    close = None if closed_ms is None else closed_ms - start_ms
+    try:
+        cut, (start_s, end_s) = clip_frames.cut_clip(clip, opened_ms - start_ms, close, clip_dir)
+    except clip_frames.ClipUnavailable:
+        log_event(
+            "clip_not_stored", logging.WARNING, device_id=state["device_id"], reason="cut_failed"
+        )
+        return {}
+    key = stills_prefix(state["account_id"], state["device_id"], start_ms) + "clip.mp4"
+    try:
+        s3.put_object(Bucket=bucket, Key=key, Body=cut.read_bytes(), ContentType="video/mp4")
+    except Exception as e:  # S3 trouble must not drop the door opening
+        log_event(
+            "clip_not_stored",
+            logging.WARNING,
+            device_id=state["device_id"],
+            reason="upload_failed",
+            error=type(e).__name__,
+        )
+        return {}
+    finally:
+        cut.unlink(missing_ok=True)
+    return {"clip_key": key, "clip_span": [Decimal(str(start_s)), Decimal(str(end_s))]}
+
+
+def fetch_stills(*args, **kwargs) -> dict:
+    kept: list[Path] = []  # the downloaded clip, while the open span is cut from it
+    try:
+        return _fetch_stills(*args, kept=kept, **kwargs)
+    finally:
+        for path in kept:
+            path.unlink(missing_ok=True)
+
+
+def _fetch_stills(
     ring: RingClient,
     http: httpx.Client,
     s3,
@@ -570,29 +695,42 @@ def fetch_stills(
     writer=None,
     frame_interval_ms: int | None = None,
     clip_dir=None,
+    face_blur: bool = True,
+    paused_for: Callable[[str, str], bool] | None = None,
+    kept: list[Path] | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
     With `frame_interval_ms`, the check first runs on the event clip's frames at that spacing
-    and stills are downloaded only at the times picked from the open span; if the clip can't
-    be used it falls back to sampling stills across the window (the only path without it).
+    and the frames picked from the open span are the stills (no Ring still is requested); if
+    the clip can't be used it falls back to sampling stills across the window (the only path
+    without it).
 
     The door check runs on the raw, uncropped stills in memory. For a door opening, up to
-    4 stills from the open span are cropped to `crop`, pay for face detection, and have
-    their blurred stills stored; the span also gives the event's open and close times.
-    Outcomes: door_open (go on to analysis), not_door, no_media, duplicate.
+    4 stills from the open span are cropped to `crop`, go through `blurrer` (face detection,
+    unless blurring is off), and are stored; the span also gives the event's open and close times.
+    A clip's open span is also cut and stored as `clip.mp4` (best effort: see `store_open_clip`).
+    Outcomes: door_open (go on to analysis), not_door, no_media, duplicate, and paused when
+    `paused_for` says the owner paused the camera (checked before anything is downloaded).
     With a trace `writer`, every outcome also leaves a debug trace of what the check saw.
     """
     from fridgesense.traces import DoorTrace  # traces imports this module
 
     account_id, device_id, window = state["account_id"], state["device_id"], state["window"]
-    check = _device_check(check, setup_for, account_id, device_id)
+    if paused_for is not None and paused_for(account_id, device_id):
+        log_event("door_check_paused", account_id=account_id, device_id=device_id)
+        return {**state, "outcome": "paused"}
+    base = _device_check(check, setup_for, account_id, device_id)
+    plan = _follow_plan(table, account_id, device_id, base)
+    check = base.shifted(plan.dx, plan.dy) if plan else base
     clip = None
     if frame_interval_ms is not None:
         from fridgesense.clip_frames import ClipUnavailable
 
         try:
-            clip = clip_frames_checked(ring, http, check, state, frame_interval_ms, sleep, clip_dir)
+            clip = clip_frames_checked(
+                ring, http, check, state, frame_interval_ms, sleep, clip_dir, keep=kept
+            )
         except ClipUnavailable as e:
             log_event("clip_unavailable", logging.WARNING, device_id=device_id, reason=e.reason)
     if clip is not None:
@@ -600,12 +738,23 @@ def fetch_stills(
     else:
         downloaded = download_all_stills(ring, http, state, sleep, interval_ms)
     raw = [(d.n, d.data) for d in downloaded if d.data is not None]
+    aligned = None
+    if plan is not None and len(raw) >= 2:
+        aligned = _align(table, account_id, device_id, plan, raw[0][1], raw[-1][1], window)
+        if aligned is not None and aligned.ok and (aligned.dx, aligned.dy) != (plan.dx, plan.dy):
+            check = base.shifted(aligned.dx, aligned.dy)
+            if clip is not None:  # frames were scored with the stored shift: score them again
+                clip_values = [check.zone_values(data) for _, data in raw]
     times = [d.at_ms for d in downloaded]
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
+    clip_fields: dict = {}
     status = "no_media"
     rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
-    trace = DoorTrace(stills=downloaded, values={}, check=check, outcome="no_media")
+    trace = DoorTrace(
+        stills=downloaded, values={}, check=check, outcome="no_media", face_blur=face_blur
+    )
+    trace.alignment = _alignment_json(aligned)
 
     def done(result: dict) -> dict:
         if writer is not None:
@@ -629,6 +778,7 @@ def fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
+            _learn(table, account_id, device_id, check, raw, aligned, window)
             return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
         opened_ms = times[raw[span[0]][0] - 1]
         if not results[span[-1]].is_open:  # the first closed still after the opening
@@ -636,15 +786,15 @@ def fetch_stills(
         picks = pick(span)
         trace.open_span = [raw[i][0] for i in span]
         trace.picked = [raw[i][0] for i in picks]
-        chosen = [downloaded[raw[i][0] - 1] for i in picks]
-        if clip:
-            datas = stills_at(ring, http, device_id, chosen, sleep)
-        else:
-            datas = [d.data for d in chosen]
-        picked = [(k, crop_still(data, crop)) for k, data in enumerate(datas, start=1)]
+        # On the clip path these are the scored frames themselves: a Ring still at the same
+        # time can show another moment (it is the nearest frame within ±10 s).
+        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(picks, start=1)]
         stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
         still_keys = [k for k, _ in stills]
         trace.stored_keys = still_keys
+        if clip and kept:
+            closed = closed_ms if not results[span[-1]].is_open else None
+            clip_fields = store_open_clip(s3, bucket, state, kept[0], opened_ms, closed, clip_dir)
         if len(stills) >= MIN_STILLS:
             status = "analyzing"
 
@@ -660,6 +810,7 @@ def fetch_stills(
         "closed_at": iso_utc(closed_ms),
         "duration_s": round((closed_ms - opened_ms) / 1000),
         "still_keys": still_keys,
+        **clip_fields,
         "status": status,
     }
     try:
@@ -684,6 +835,7 @@ def fetch_stills(
             return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
+    _learn(table, account_id, device_id, check, raw, aligned, window)
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
     )

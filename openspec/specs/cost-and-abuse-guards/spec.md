@@ -6,7 +6,7 @@ Deploy-time guards that cap abuse of the public API and warn the owner early abo
 ## Requirements
 
 ### Requirement: Default API request limit
-The HTTP API's default stage SHALL limit every route to a steady rate of 10 requests per second with a burst of 20, unless a route has its own lower limit.
+The HTTP API's default stage SHALL limit every route to a steady rate of 10 requests per second with a burst of 20, unless a route has its own limit.
 
 #### Scenario: Default stage throttled
 - **WHEN** the stack is synthesized
@@ -47,3 +47,32 @@ The alert email address SHALL come from the CDK context value `alertEmail`. No e
 #### Scenario: Address missing
 - **WHEN** the stack is synthesized without an `alertEmail` context value
 - **THEN** synthesis throws an error whose message contains `alertEmail`
+
+### Requirement: Webhook route limited separately
+`POST /ring/webhook` SHALL have its own limit of 50 requests per second with a burst of 100, so unsigned traffic at the default limit can't starve Ring's deliveries into 429s. The stage SHALL depend on the webhook route so CloudFormation creates the route first.
+
+#### Scenario: Webhook route throttled
+- **WHEN** the stack is synthesized
+- **THEN** the `$default` stage's `RouteSettings` has an entry for `POST /ring/webhook` with `ThrottlingRateLimit = 50` and `ThrottlingBurstLimit = 100`, and the `POST /api/session` and `POST /ring/link` entries are still 1 and 3
+
+#### Scenario: Webhook route exists before its limit
+- **WHEN** the stack is synthesized
+- **THEN** the `$default` stage depends on the `POST /ring/webhook` route
+
+### Requirement: Timed-out door-event alarm
+The stack SHALL create a CloudWatch alarm that goes into alarm when the `fridgesense-door-events` state machine has at least one timed-out execution in a 5-minute period, and SHALL send it to the same SNS alert topic as the failed-run alarm.
+
+#### Scenario: Alarm on timed-out executions
+- **WHEN** the stack is synthesized with `alertEmail = "owner@example.test"`
+- **THEN** an alarm named `fridgesense-door-events-timed-out` watches `AWS/States` `ExecutionsTimedOut` for the door-events state machine ARN with statistic `Sum`, period 300, threshold 1, `ComparisonOperator = "GreaterThanOrEqualToThreshold"`, 1 evaluation period and `TreatMissingData = "notBreaching"`, and its alarm action is the alert SNS topic
+
+### Requirement: Rejected token refresh alarm
+The stack SHALL count `token_refresh_rejected` log events from the token-refresh job as a CloudWatch metric, and SHALL create an alarm that goes into alarm when that metric is at least 1 in a 5-minute period, sending to the alert SNS topic.
+
+#### Scenario: Metric filter on rejected refreshes
+- **WHEN** the stack is synthesized
+- **THEN** a metric filter on the `/fridgesense/token-refresh` log group with filter pattern `"token_refresh_rejected"` publishes metric `TokenRefreshRejected` in namespace `FridgeSense` with value `1`
+
+#### Scenario: Alarm on rejected refreshes
+- **WHEN** the stack is synthesized with `alertEmail = "owner@example.test"`
+- **THEN** an alarm named `fridgesense-ring-relink-needed` watches `FridgeSense` `TokenRefreshRejected` with statistic `Sum`, period 300, threshold 1, `ComparisonOperator = "GreaterThanOrEqualToThreshold"`, 1 evaluation period and `TreatMissingData = "notBreaching"`, and its alarm action is the alert SNS topic

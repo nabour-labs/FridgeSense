@@ -81,9 +81,11 @@ def mark_failed_task(table: FridgeTable, state: dict) -> dict:
         logging.ERROR,
         reason=str(state.get("error", {}).get("Error", "unknown")),
         account_id=state["account_id"],
-        door_sk=state["door_sk"],
+        door_sk=state.get("door_sk"),
     )
-    _set_status(table, state["account_id"], state["door_sk"], "analysis_failed")
+    # A window or stills failure comes before the door event is recorded.
+    if "door_sk" in state:
+        _set_status(table, state["account_id"], state["door_sk"], "analysis_failed")
     return {**state, "outcome": "analysis_failed"}
 
 
@@ -191,8 +193,60 @@ def stock_age(current: dict, quantity: int, when: str) -> dict:
     }
 
 
+MAX_WRITE_ATTEMPTS = 5
+
+
+class ItemChanged(Exception):
+    """The item changed between reading and writing it; read it again and retry."""
+
+
+def unchanged(current: dict | None) -> dict:
+    """Condition for a write based on `current`: the item is still as it was read
+    (still missing, if `current` is None)."""
+    if current is None:
+        return {"ConditionExpression": "attribute_not_exists(sk)"}
+    names = {"#q": "quantity", "#t": "last_changed_at"}
+    values = {":q": current.get("quantity", 0)}
+    if "last_changed_at" in current:
+        values[":t"] = current["last_changed_at"]
+        expr = "#q = :q AND #t = :t"
+    else:
+        expr = "#q = :q AND attribute_not_exists(#t)"
+    return {
+        "ConditionExpression": expr,
+        "ExpressionAttributeNames": names,
+        "ExpressionAttributeValues": values,
+    }
+
+
+def item_write(pk: str, key: str, current: dict | None, item: dict | None) -> dict:
+    """A transaction entry: put `item`, or (for nothing to write) check the item is
+    still as read, either way only if nobody changed it since."""
+    if item is not None:
+        return {"Put": {"Item": item, **unchanged(current)}}
+    return {"ConditionCheck": {"Key": {"pk": pk, "sk": f"ITEM#{key}"}, **unchanged(current)}}
+
+
+def retrying(write):
+    """Run `write` again while it raises ItemChanged, up to MAX_WRITE_ATTEMPTS times."""
+    for _ in range(MAX_WRITE_ATTEMPTS - 1):
+        try:
+            return write()
+        except ItemChanged:
+            continue
+    return write()
+
+
+def _lost_race(reasons: list[str]) -> bool:
+    return any(r in ("ConditionalCheckFailed", "TransactionConflict") for r in reasons)
+
+
 def save_task(table: FridgeTable, state: dict) -> dict:
     """Apply one door event's changes to the inventory, exactly once."""
+    return retrying(lambda: _save_once(table, state))
+
+
+def _save_once(table: FridgeTable, state: dict) -> dict:
     account_id, door_sk = state["account_id"], state["door_sk"]
     pk = account_pk(account_id)
     door = table.get(pk, door_sk)
@@ -225,8 +279,7 @@ def save_task(table: FridgeTable, state: dict) -> dict:
     for key, d in deltas.items():
         current = table.get(pk, f"ITEM#{key}")
         item = quantity_put(current, pk, key, d["name"], d["category"], d["delta"], when)
-        if item is not None:
-            writes.append({"Put": {"Item": item}})
+        writes.append(item_write(pk, key, current, item))
     for n, p in enumerate(pending, start=1):
         writes.append(
             {
@@ -261,6 +314,8 @@ def save_task(table: FridgeTable, state: dict) -> dict:
     except TransactionConflict as e:
         if e.reasons and e.reasons[0] == "ConditionalCheckFailed":
             return {**state, "outcome": "already_saved"}
+        if _lost_race(e.reasons[1 : 1 + len(deltas)]):
+            raise ItemChanged from None
         raise
     log_event(
         "door_event_saved",
@@ -291,7 +346,9 @@ def _pending(table: FridgeTable, pk: str, pending_sk: str) -> dict:
 
 
 def _resolve(table: FridgeTable, pk: str, pending_sk: str, door_update: dict | None, writes: list):
-    """Delete the pending item (it must still exist) together with the other writes."""
+    """Delete the pending item (it must still exist) together with the other writes.
+
+    ItemChanged if one of `writes` found its item changed."""
     ops = [
         {
             "Delete": {
@@ -308,6 +365,8 @@ def _resolve(table: FridgeTable, pk: str, pending_sk: str, door_update: dict | N
     except TransactionConflict as e:
         if e.reasons and e.reasons[0] == "ConditionalCheckFailed":
             raise PendingNotFound(pending_sk) from None
+        if _lost_race(e.reasons[1 : 1 + len(writes)]):
+            raise ItemChanged from None
         raise
 
 
@@ -350,12 +409,16 @@ def confirm_pending(
         raise ValueError("quantity must be at least 1")
     delta = qty if pending["direction"] == "added" else -qty
     when = now or _now_iso()
-    current = table.get(pk, f"ITEM#{key}")
-    put = quantity_put(current, pk, key, display, pending["category"], delta, when)
     door_update = _door_change_update(
         pk, pending, {"applied": True, "item": key, "name": display, "quantity": qty}
     )
-    _resolve(table, pk, pending_sk, door_update, [{"Put": {"Item": put}}] if put else [])
+
+    def write():
+        current = table.get(pk, f"ITEM#{key}")
+        put = quantity_put(current, pk, key, display, pending["category"], delta, when)
+        _resolve(table, pk, pending_sk, door_update, [item_write(pk, key, current, put)])
+
+    retrying(write)
     log_event("pending_confirmed", account_id=account_id, item=key, quantity=qty)
 
 
@@ -383,10 +446,18 @@ def set_quantity(
     pk = account_pk(account_id)
     key, display = normalize_name(item)
     when = now or _now_iso()
-    current = table.get(pk, f"ITEM#{key}") or {}
-    name = current.get("name", display)
-    category = category or current.get("category", "other")
-    table.put(_hand_row(current, pk, key, name, category, quantity, when))
+
+    def write():
+        read = table.get(pk, f"ITEM#{key}")
+        current = read or {}
+        name = current.get("name", display)
+        row = _hand_row(
+            current, pk, key, name, category or current.get("category", "other"), quantity, when
+        )
+        if not table.put_if(row, unchanged(read)):
+            raise ItemChanged
+
+    retrying(write)
     log_event("quantity_set", account_id=account_id, item=key, quantity=quantity)
 
 
@@ -403,9 +474,15 @@ def add_item(
     category = check_category(category)
     quantity = _whole_quantity(quantity, 1)
     pk = account_pk(account_id)
-    current = table.get(pk, f"ITEM#{key}")
-    put = quantity_put(current, pk, key, display, category, quantity, now or _now_iso())
-    table.put({**put, "category": category})
+    when = now or _now_iso()
+
+    def write():
+        current = table.get(pk, f"ITEM#{key}")
+        put = quantity_put(current, pk, key, display, category, quantity, when)
+        if not table.put_if({**put, "category": category}, unchanged(current)):
+            raise ItemChanged
+
+    retrying(write)
     log_event("item_added", account_id=account_id, item=key, quantity=quantity)
 
 
@@ -428,35 +505,42 @@ def edit_item(
         check_category(category)
     if quantity is not None:
         _whole_quantity(quantity, 0)
-    current = table.get(pk, f"ITEM#{key}")
-    if current is None:
-        raise ItemNotFound(key)
-    qty = current["quantity"] if quantity is None else quantity
     when = now or _now_iso()
-    name = display or current.get("name", key)
-    category = category or current.get("category", "other")
-    row = _hand_row(current, pk, new_key, name, category, qty, when)
-    if new_key == key:
-        table.put(row)
-    else:
+
+    def write() -> int:
+        current = table.get(pk, f"ITEM#{key}")
+        if current is None:
+            raise ItemNotFound(key)
+        qty = current["quantity"] if quantity is None else quantity
+        row = _hand_row(
+            current,
+            pk,
+            new_key,
+            display or current.get("name", key),
+            category or current.get("category", "other"),
+            qty,
+            when,
+        )
+        if new_key == key:
+            if not table.put_if(row, unchanged(current)):
+                raise ItemChanged
+            return qty
         try:
             table.transact(
                 [
                     {"Put": {"Item": row, "ConditionExpression": "attribute_not_exists(sk)"}},
-                    {
-                        "Delete": {
-                            "Key": {"pk": pk, "sk": f"ITEM#{key}"},
-                            "ConditionExpression": "attribute_exists(sk)",
-                        }
-                    },
+                    {"Delete": {"Key": {"pk": pk, "sk": f"ITEM#{key}"}, **unchanged(current)}},
                 ]
             )
         except TransactionConflict as e:
             if e.reasons[:1] == ["ConditionalCheckFailed"]:
                 raise ItemExists(new_key) from None
-            if e.reasons[1:2] == ["ConditionalCheckFailed"]:
-                raise ItemNotFound(key) from None
+            if _lost_race(e.reasons[1:2]):
+                raise ItemChanged from None
             raise
+        return qty
+
+    qty = retrying(write)
     renamed = {"renamed_from": key} if new_key != key else {}
     log_event("item_edited", account_id=account_id, item=new_key, quantity=qty, **renamed)
 

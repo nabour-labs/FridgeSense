@@ -112,6 +112,18 @@ class FridgeTable:
     def put(self, item: dict) -> None:
         self.client.put_item(TableName=self.name, Item=serialize(item))
 
+    def put_if(self, item: dict, condition: dict) -> bool:
+        """Put `item` only if `condition` (ConditionExpression and its names and values)
+        holds; False if it didn't."""
+        kwargs = {**condition}
+        if "ExpressionAttributeValues" in kwargs:
+            kwargs["ExpressionAttributeValues"] = serialize(kwargs["ExpressionAttributeValues"])
+        try:
+            self.client.put_item(TableName=self.name, Item=serialize(item), **kwargs)
+        except self.client.exceptions.ConditionalCheckFailedException:
+            return False
+        return True
+
     def delete(self, pk: str, sk: str) -> bool:
         """Delete one item; False if it did not exist."""
         resp = self.client.delete_item(
@@ -180,7 +192,8 @@ class FridgeTable:
         return True
 
     def transact(self, items: list[dict]) -> None:
-        """Write items atomically. Each entry is {"Put": {...}} or {"Update": {...}} with
+        """Write items atomically. Each entry is {"Put": {...}}, {"Update": {...}},
+        {"Delete": {...}} or {"ConditionCheck": {...}} with
         plain values; TableName and serialization are filled in here."""
         prepared = []
         for entry in items:

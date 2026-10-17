@@ -7,14 +7,17 @@ import json
 import boto3
 import pytest
 import respx
+from botocore.exceptions import ClientError
 from botocore.stub import Stubber
 from PIL import Image
 
+from fridgesense import alignment, face_blur
 from fridgesense.devices import Device, DeviceRepository
 from fridgesense.door_events import iso_utc
 from fridgesense.handlers import api
 from fridgesense.ring import API_BASE
 from fridgesense.store import load_app_config
+from fridgesense.table import FridgeTable
 from tests.api_helpers import ACCOUNT, NOW, call, configure, link_account, sign_in
 from tests.conftest import color_jpeg
 
@@ -59,11 +62,21 @@ def owner(tokens):
     return tokens["owner"]
 
 
-def add(token, image=OPEN, box=LEFT, status="open"):
+def add_zone(token, name="Doors", box=LEFT):
+    return call("POST", "/api/door-calibration/zones", {"name": name, "box": box}, token)
+
+
+def zone_id(token, name="Doors", box=LEFT):
+    status, body = add_zone(token, name, box)
+    assert status == 200
+    return body["zones"][-1]["id"]
+
+
+def add(token, zone, image=OPEN, status="open"):
     return call(
         "POST",
         "/api/door-calibration/references",
-        {"image": b64(image), "box": box, "status": status},
+        {"image": b64(image), "zone_id": zone, "status": status},
         token,
     )
 
@@ -85,6 +98,7 @@ def test_snapshot_taken(owner, faces):
 @respx.mock
 def test_snapshot_no_recent_footage(owner):
     respx.post(DOWNLOAD).respond(416)
+    respx.get(f"{API_BASE}/v1/history/devices/{DEVICE}/events").respond(200, json={"data": []})
     assert call("POST", "/api/camera/snapshot", token=owner) == (
         409,
         {"error": "no recent footage"},
@@ -112,12 +126,46 @@ def test_snapshot_face_detection_unavailable(owner, faces):
     )
 
 
+# Snapshot while blurring is off
+@respx.mock
+def test_snapshot_while_blurring_is_off(owner, faces):
+    call("PUT", "/api/settings/face-blur", {"enabled": False}, owner)
+    respx.post(DOWNLOAD).respond(303, headers={"Location": LINK})
+    respx.get(LINK).respond(200, content=color_jpeg(size=(1920, 1080)))
+    status, body = call("POST", "/api/camera/snapshot", token=owner)  # no detect_faces stubbed
+    assert status == 200
+    assert Image.open(io.BytesIO(base64.b64decode(body["image"]))).size == (960, 540)
+    faces.assert_no_pending_responses()
+
+
+# Read fails for a snapshot
+@respx.mock
+def test_snapshot_setting_read_fails(owner, faces, monkeypatch):
+    call("PUT", "/api/settings/face-blur", {"enabled": False}, owner)
+    get = FridgeTable.get
+
+    def failing_get(self, pk, sk):
+        if sk == face_blur.SETTING_SK:
+            raise ClientError({"Error": {"Code": "InternalServerError"}}, "GetItem")
+        return get(self, pk, sk)
+
+    monkeypatch.setattr(FridgeTable, "get", failing_get)
+    respx.post(DOWNLOAD).respond(303, headers={"Location": LINK})
+    respx.get(LINK).respond(200, content=color_jpeg(size=(960, 540)))
+    faces.add_response("detect_faces", {"FaceDetails": []})
+    assert call("POST", "/api/camera/snapshot", token=owner)[0] == 200
+    faces.assert_no_pending_responses()  # detection ran although the saved setting is off
+
+
 # No device discovered (every route)
 @pytest.mark.parametrize(
     "method, path",
     [
         ("POST", "/api/camera/snapshot"),
         ("GET", "/api/door-calibration"),
+        ("POST", "/api/door-calibration/zones"),
+        ("PATCH", "/api/door-calibration/zones/abc"),
+        ("DELETE", "/api/door-calibration/zones/abc"),
         ("POST", "/api/door-calibration/references"),
         ("DELETE", "/api/door-calibration/references/abc"),
         ("POST", "/api/door-calibration/run"),
@@ -134,8 +182,10 @@ def test_nothing_set_up_yet(tokens):
     assert status == 200
     assert body == {
         "device_id": DEVICE,
+        "zones": [],
         "references": [],
         "setup": None,
+        "alignment": None,
         "defaults": {
             "zones": [
                 {"x": 0.38, "y": 0.32, "width": 0.21, "height": 0.30},
@@ -167,26 +217,122 @@ def test_no_token(aws):
     "method, path",
     [
         ("POST", "/api/camera/snapshot"),
+        ("POST", "/api/door-calibration/zones"),
+        ("PATCH", "/api/door-calibration/zones/{zone}"),
+        ("DELETE", "/api/door-calibration/zones/{zone}"),
         ("POST", "/api/door-calibration/references"),
         ("DELETE", "/api/door-calibration/references/abc"),
         ("POST", "/api/door-calibration/run"),
     ],
 )
 def test_viewer_cannot_change_the_setup(tokens, method, path):
+    zone = zone_id(tokens["owner"])
+    before = call("GET", "/api/door-calibration", token=tokens["owner"])[1]
     ring = respx.post(DOWNLOAD).respond(303, headers={"Location": LINK})
-    assert call(method, path, {}, tokens["viewer"]) == READ_ONLY
+    body = {"name": "Other", "box": LEFT, "zone_id": zone, "image": b64(OPEN), "status": "open"}
+    assert call(method, path.format(zone=zone), body, tokens["viewer"]) == READ_ONLY
     assert not ring.called
-    assert call("GET", "/api/door-calibration", token=tokens["owner"])[1]["references"] == []
+    assert call("GET", "/api/door-calibration", token=tokens["owner"])[1] == before
+
+
+# Zone added
+def test_zone_added(owner, monkeypatch):
+    add_zone(owner, "Doors")
+    monkeypatch.setattr(api, "now", lambda: NOW + 1)  # zones list oldest first
+    box = {"x": 0.38, "y": 0.65, "width": 0.2, "height": 0.25}
+    status, body = add_zone(owner, "Freezer drawer", box)
+    assert status == 200
+    last = body["zones"][-1]
+    assert last["id"]
+    assert {k: last[k] for k in ("name", "box", "open", "closed")} == {
+        "name": "Freezer drawer",
+        "box": box,
+        "open": 0,
+        "closed": 0,
+    }
+    assert [z["name"] for z in body["zones"]] == ["Doors", "Freezer drawer"]
+
+
+# Invalid zone rejected
+@pytest.mark.parametrize(
+    "body, error",
+    [
+        ({"name": "", "box": LEFT}, "name must be 1 to 30 characters"),
+        ({"name": "   ", "box": LEFT}, "name must be 1 to 30 characters"),
+        ({"name": "x" * 31, "box": LEFT}, "name must be 1 to 30 characters"),
+        ({"box": LEFT}, "name must be 1 to 30 characters"),
+        (
+            {"name": "Doors", "box": {"x": 0.9, "y": 0, "width": 0.2, "height": 1}},
+            "box must be inside the image and at least 2% wide and tall",
+        ),
+    ],
+)
+def test_invalid_zone_rejected(owner, body, error):
+    assert call("POST", "/api/door-calibration/zones", body, owner) == (400, {"error": error})
+    assert call("GET", "/api/door-calibration", token=owner)[1]["zones"] == []
+
+
+# Zone limit
+def test_zone_limit(owner, monkeypatch):
+    for n in range(6):
+        monkeypatch.setattr(api, "now", lambda n=n: NOW + n)
+        assert add_zone(owner, f"Z{n}")[0] == 200
+    assert add_zone(owner, "Z6") == (409, {"error": "at most 6 door zones"})
+
+
+# Zone redrawn
+def test_zone_redrawn(owner, monkeypatch):
+    zone = zone_id(owner)
+    add(owner, zone, OPEN, "open")
+    add(owner, zone, CLOSED, "closed")
+    call("POST", "/api/door-calibration/run", token=owner)
+    monkeypatch.setattr(api, "now", lambda: NOW + 10)
+    box = {"x": 0.36, "y": 0.3, "width": 0.25, "height": 0.4}
+    status, body = call("PATCH", f"/api/door-calibration/zones/{zone}", {"box": box}, owner)
+    assert status == 200
+    assert [(z["name"], z["box"]) for z in body["zones"]] == [("Doors", box)]
+    assert [r["box"] for r in body["references"]] == [box, box]
+    assert body["setup"]["stale"] is True
+
+
+def test_zone_renamed(owner):
+    zone = zone_id(owner)
+    path = f"/api/door-calibration/zones/{zone}"
+    status, body = call("PATCH", path, {"name": "Fridge doors"}, owner)
+    assert status == 200
+    assert [(z["name"], z["box"]) for z in body["zones"]] == [("Fridge doors", LEFT)]
+    assert call("PATCH", path, {"name": ""}, owner) == (
+        400,
+        {"error": "name must be 1 to 30 characters"},
+    )
+
+
+# Zone deleted with its references
+def test_zone_deleted_with_its_references(owner):
+    zone = zone_id(owner)
+    add(owner, zone, OPEN, "open")
+    add(owner, zone, CLOSED, "closed")
+    status, body = call("DELETE", f"/api/door-calibration/zones/{zone}", token=owner)
+    assert status == 200
+    assert body["zones"] == [] and body["references"] == []
+    for method in ("PATCH", "DELETE"):
+        assert call(method, f"/api/door-calibration/zones/{zone}", {"name": "x"}, owner) == (
+            404,
+            {"error": "not found"},
+        )
 
 
 # Reference added
 def test_reference_added(owner):
     box = {"x": 0.38, "y": 0.32, "width": 0.21, "height": 0.30}
-    status, body = add(owner, color_jpeg(size=(960, 540)), box)
+    zone = zone_id(owner, "Doors", box)
+    status, body = add(owner, zone, color_jpeg(size=(960, 540)))
     assert status == 200
     [ref] = body["references"]
     assert ref["id"]
+    assert ref["zone_id"] == zone
     assert ref["box"] == box
+    assert (body["zones"][0]["open"], body["zones"][0]["closed"]) == (1, 0)
     assert ref["status"] == "open"
     assert ref["score"] is None
     assert ref["image"] == b64(color_jpeg(size=(960, 540)))
@@ -198,36 +344,47 @@ def test_reference_added(owner):
     "body, error",
     [
         (
-            {"image": b64(b"\x89PNG\r\n\x1a\n"), "box": LEFT, "status": "open"},
+            {"image": b64(b"\x89PNG\r\n\x1a\n"), "zone_id": "{zone}", "status": "open"},
             "image must be a JPEG of at most 300 KB",
         ),
         (
-            {
-                "image": b64(OPEN),
-                "box": {"x": 0.9, "y": 0, "width": 0.2, "height": 1},
-                "status": "open",
-            },
-            "box must be inside the image and at least 2% wide and tall",
+            {"image": b64(OPEN), "zone_id": "{zone}", "status": "ajar"},
+            "status must be open or closed",
         ),
-        ({"image": b64(OPEN), "box": LEFT, "status": "ajar"}, "status must be open or closed"),
+        ({"image": b64(OPEN), "status": "open"}, "pick a door zone"),
+        ({"image": b64(OPEN), "zone_id": "bm9wZQ", "status": "open"}, "pick a door zone"),
+        ({"image": b64(OPEN), "zone_id": 5, "status": "open"}, "pick a door zone"),
     ],
 )
 def test_invalid_reference_rejected(owner, body, error):
+    zone = zone_id(owner)
+    body = {
+        k: v.format(zone=zone) if k == "zone_id" and isinstance(v, str) else v
+        for k, v in body.items()
+    }
     assert call("POST", "/api/door-calibration/references", body, owner) == (400, {"error": error})
     assert call("GET", "/api/door-calibration", token=owner)[1]["references"] == []
 
 
+# Zones kept per device
+def test_zones_kept_per_device(owner):
+    zone = zone_id(owner)
+    DeviceRepository().replace(ACCOUNT, [Device("ava1.ring.device.D2", "Other")])
+    assert add(owner, zone) == (400, {"error": "pick a door zone"})
+
+
 # Reference limit
 def test_reference_limit(owner, monkeypatch):
-    for n in range(12):
+    zone = zone_id(owner)
+    for n in range(24):
         monkeypatch.setattr(api, "now", lambda n=n: NOW + n)
-        assert add(owner)[0] == 200
-    assert add(owner) == (409, {"error": "at most 12 door references"})
+        assert add(owner, zone)[0] == 200
+    assert add(owner, zone) == (409, {"error": "at most 24 door references"})
 
 
 # Reference deleted
 def test_reference_deleted(owner):
-    ref_id = add(owner)[1]["references"][0]["id"]
+    ref_id = add(owner, zone_id(owner))[1]["references"][0]["id"]
     status, body = call("DELETE", f"/api/door-calibration/references/{ref_id}", token=owner)
     assert status == 200 and body["references"] == []
     assert call("DELETE", f"/api/door-calibration/references/{ref_id}", token=owner) == (
@@ -238,13 +395,15 @@ def test_reference_deleted(owner):
 
 # Setup from one open and one closed reference (through the API)
 def test_run_setup(owner, monkeypatch):
-    add(owner, OPEN, LEFT, "open")
+    doors = zone_id(owner, "Doors")
+    add(owner, doors, OPEN, "open")
     monkeypatch.setattr(api, "now", lambda: NOW + 1)
-    add(owner, CLOSED, LEFT, "closed")
+    add(owner, doors, CLOSED, "closed")
     monkeypatch.setattr(api, "now", lambda: NOW + 2)
     status, body = call("POST", "/api/door-calibration/run", token=owner)
     assert status == 200
     [zone] = body["setup"]["zones"]
+    assert (zone["id"], zone["name"]) == (doors, "Doors")
     assert {k: zone[k] for k in ("x", "y", "width", "height", "feature", "direction")} == {
         "x": 0.0,
         "y": 0.0,
@@ -265,21 +424,98 @@ def test_run_setup(owner, monkeypatch):
 
 # Setup marked stale (through the API)
 def test_setup_marked_stale(owner, monkeypatch):
-    add(owner, OPEN, LEFT, "open")
-    add(owner, CLOSED, LEFT, "closed")
+    zone = zone_id(owner)
+    add(owner, zone, OPEN, "open")
+    add(owner, zone, CLOSED, "closed")
     call("POST", "/api/door-calibration/run", token=owner)
     monkeypatch.setattr(api, "now", lambda: NOW + 10)
-    status, body = add(owner, CLOSED, LEFT, "closed")
+    status, body = add(owner, zone, CLOSED, "closed")
     assert body["setup"]["stale"] is True
     assert body["references"][-1]["score"] == pytest.approx(0.0, abs=0.005)
 
 
-# Missing a status / Open and closed overlap / Too many zones (422 with scores)
+# Reference of a zone added after setup
+def test_reference_of_a_zone_added_after_setup(owner, monkeypatch):
+    set_up_door(owner)
+    monkeypatch.setattr(api, "now", lambda: NOW + 10)
+    drawer = zone_id(owner, "Drawer", {"x": 0.5, "y": 0, "width": 0.5, "height": 1})
+    _, body = add(owner, drawer, CLOSED, "closed")
+    assert body["references"][-1]["score"] is None
+
+
+# No zones
+def test_no_zones(owner):
+    assert call("POST", "/api/door-calibration/run", token=owner) == (
+        422,
+        {"error": "add a door zone first", "references": []},
+    )
+
+
+# Missing a status / Open and closed overlap (422 with scores)
 def test_setup_fails_with_scores(owner):
-    add(owner, OPEN, LEFT, "open")
+    add(owner, zone_id(owner, "Freezer drawer"), OPEN, "open")
     status, body = call("POST", "/api/door-calibration/run", token=owner)
     assert status == 422
-    assert body["error"] == "zone 1 needs an open and a closed reference"
+    assert body["error"] == "Freezer drawer needs an open and a closed reference"
     [ref] = body["references"]
     assert ref["score"] == pytest.approx(0.1, abs=0.005)
     assert call("GET", "/api/door-calibration", token=owner)[1]["setup"] is None
+
+
+# --- door-self-calibration: alignment and tuning in the body ---
+
+
+def set_up_door(owner):
+    zone = zone_id(owner)
+    add(owner, zone, OPEN, "open")
+    add(owner, zone, CLOSED, "closed")
+    call("POST", "/api/door-calibration/run", token=owner)
+
+
+# Before any event
+def test_alignment_before_any_event(owner):
+    set_up_door(owner)
+    _, body = call("GET", "/api/door-calibration", token=owner)
+    assert body["alignment"] == {
+        "dx": 0,
+        "dy": 0,
+        "error": None,
+        "failures": 0,
+        "moved": False,
+        "moved_at": None,
+        "last_moved_at": None,
+        "checked_at": None,
+    }
+    assert body["setup"]["tuned_at"] is None
+    assert body["setup"]["tuned_from"] is None
+
+
+# Reported after an aligned event
+def test_reported_after_an_aligned_event(owner, tokens):
+    set_up_door(owner)
+    at = int(NOW * 1000) + 5000
+    result = alignment.Alignment(True, 0.0156, 0.0, 0.0312, "first")
+    alignment.record(FridgeTable(), ACCOUNT, DEVICE, result, at)
+    _, body = call("GET", "/api/door-calibration", token=tokens["viewer"])
+    assert body["alignment"] == {
+        "dx": 0.016,
+        "dy": 0,
+        "error": 0.031,
+        "failures": 0,
+        "moved": False,
+        "moved_at": None,
+        "last_moved_at": None,
+        "checked_at": iso_utc(at),
+    }
+    assert body["setup"]["tuned_at"] is None
+
+
+def test_moved_times_reported(owner):
+    set_up_door(owner)
+    at = int(NOW * 1000) + 9000
+    moved = alignment.Alignment(True, 0.05, 0, 0.01, "last")
+    alignment.record(FridgeTable(), ACCOUNT, DEVICE, moved, at)
+    _, body = call("GET", "/api/door-calibration", token=owner)
+    assert body["alignment"]["moved"] is True
+    assert body["alignment"]["moved_at"] == iso_utc(at)
+    assert body["alignment"]["last_moved_at"] == iso_utc(at)

@@ -40,6 +40,8 @@ export interface DoorEvent {
   changes: Change[];
   pending_count: number;
   stills: string[];
+  /** The open-span clip (link ending in `#t=start,end`); null for viewers and when there is none. */
+  clip: string | null;
 }
 
 export interface EventPage {
@@ -133,6 +135,13 @@ export interface CameraInfo {
   uptime: { window_days: number; percent: number | null; since: string | null };
   checked_at: string;
   ring?: "unavailable";
+  monitoring: Monitoring;
+}
+
+/** Whether FridgeSense records door openings for the camera; `since` is when this state began. */
+export interface Monitoring {
+  paused: boolean;
+  since: string | null;
 }
 
 export interface Snapshot {
@@ -144,11 +153,23 @@ export interface Snapshot {
 export type DoorStatus = "open" | "closed";
 export type DoorFeature = "blue" | "color" | "brightness" | "change";
 
-/** A camera snapshot with one box around a door or drawer, labeled open or closed. */
+/** A named box around a door or drawer; setup makes one rule per zone. */
+export interface DoorZone {
+  id: string;
+  name: string;
+  box: Box;
+  /** How many open and closed references it has. */
+  open: number;
+  closed: number;
+}
+
+/** A camera snapshot of one door zone, labeled open or closed. */
 export interface DoorReference {
   id: string;
+  zone_id: string;
   /** Base64 JPEG. */
   image: string;
+  /** Its zone's current box. */
   box: Box;
   status: DoorStatus;
   /** The value of its zone's chosen feature, or null before setup. */
@@ -157,6 +178,9 @@ export interface DoorReference {
 }
 
 export interface SetupZone extends Box {
+  /** The door zone it was made from (null for a setup run before zones existed). */
+  id?: string | null;
+  name?: string | null;
   feature: DoorFeature;
   direction: "above" | "below";
   threshold: number;
@@ -165,9 +189,40 @@ export interface SetupZone extends Box {
 
 export interface DoorSetup {
   device_id: string;
+  zones: DoorZone[];
   references: DoorReference[];
-  setup: { zones: SetupZone[]; ran_at: string; stale: boolean } | null;
+  setup: {
+    zones: SetupZone[];
+    ran_at: string;
+    stale: boolean;
+    /** When the rules were last re-tuned from recent openings, and from how many samples. */
+    tuned_at?: string | null;
+    tuned_from?: number | null;
+  } | null;
+  /** How far the camera has shifted since setup (fractions of the frame); null before setup. */
+  alignment?: Alignment | null;
   defaults: { zones: Box[]; threshold: number };
+}
+
+export interface Alignment {
+  dx: number;
+  dy: number;
+  error: number | null;
+  failures: number;
+  moved: boolean;
+  moved_at: string | null;
+  last_moved_at: string | null;
+  checked_at: string | null;
+}
+
+export type SetupWarning =
+  | { code: "monitoring_paused"; message: string; since: string }
+  | { code: "motion_detection_off" | "door_setup_missing" | "needs_relink"; message: string }
+  | { code: "camera_moved"; message: string; since: string; update: ("door_references" | "fridge_area")[] };
+
+export interface WarningsBody {
+  warnings: SetupWarning[];
+  checked_at: string;
 }
 
 /** The owner's box around the fridge, drawn on a camera snapshot. */
@@ -287,4 +342,9 @@ export interface MotionTrace extends Omit<DebugMotion, "nova"> {
   nova_totals: NovaTotals;
   door: DoorTrace;
   nova: NovaCall[];
+}
+
+/** The owner's face-blur setting. */
+export interface FaceBlur {
+  enabled: boolean;
 }

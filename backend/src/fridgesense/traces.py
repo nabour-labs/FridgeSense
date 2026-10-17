@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from PIL import Image
+from PIL import Image, ImageFilter, UnidentifiedImageError
 
 from fridgesense import door_calibration
 from fridgesense.analysis import RESPONSE_FIELDS, CallRecord
@@ -31,10 +31,30 @@ from fridgesense.table import FridgeTable, account_pk
 
 TRACE_DAYS = 7
 WRITE_WORKERS = 8
+THUMB_SIDE = 160  # longest side of a raw debug still while face blurring is on
+THUMB_BLUR = 2
+THUMB_QUALITY = 80
 
 
 def debug_prefix(account_id: str, device_id: str, start_ms: int) -> str:
     return f"{stills_prefix(account_id, device_id, start_ms)}debug/"
+
+
+def trace_thumbnail(jpeg: bytes) -> bytes | None:
+    """The still shrunk to THUMB_SIDE px (never enlarged) and blurred, so no face in it can be
+    recognized; None if it can't be decoded."""
+    try:
+        img = Image.open(io.BytesIO(jpeg)).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        return None
+    scale = min(1.0, THUMB_SIDE / max(img.size))
+    if scale < 1:
+        size = (max(1, round(img.width * scale)), max(1, round(img.height * scale)))
+        img = img.resize(size, Image.Resampling.LANCZOS)
+    img = img.filter(ImageFilter.GaussianBlur(THUMB_BLUR))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=THUMB_QUALITY)
+    return buf.getvalue()
 
 
 def trace_sk(device_id: str, start_ms: int) -> str:
@@ -55,6 +75,8 @@ class DoorTrace:
     door_sk: str | None = None
     opened_at: str | None = None
     closed_at: str | None = None
+    alignment: dict | None = None  # {"dx", "dy", "error", "ok"} when the bookends were aligned
+    face_blur: bool = True  # the owner's setting for this motion: raw stills are thumbnails
 
     def results(self) -> dict[int, StillResult]:
         return {n: self.check.result_of(v) for n, v in self.values.items()}
@@ -156,9 +178,17 @@ class TraceWriter:
         window = state["window"]
         prefix = debug_prefix(state["account_id"], state["device_id"], window["start_ms"])
         results = trace.results()
-        raw = [s for s in trace.stills if s.data is not None]
+        # While face blurring is on, only a small blurred thumbnail of each still is kept.
+        keep = trace_thumbnail if trace.face_blur else (lambda data: data)
+        raw = {s.n: keep(s.data) for s in trace.stills if s.data is not None}
+        raw = {n: data for n, data in raw.items() if data is not None}
         with ThreadPoolExecutor(max_workers=WRITE_WORKERS) as pool:
-            list(pool.map(lambda s: self._put(f"{prefix}raw-{s.n}.jpg", s.data, "image/jpeg"), raw))
+            list(
+                pool.map(
+                    lambda item: self._put(f"{prefix}raw-{item[0]}.jpg", item[1], "image/jpeg"),
+                    raw.items(),
+                )
+            )
         stills = []
         for s in trace.stills:
             result = results.get(s.n)
@@ -166,7 +196,7 @@ class TraceWriter:
                 {
                     "n": s.n,
                     "at_ms": s.at_ms,
-                    "key": f"{prefix}raw-{s.n}.jpg" if s.data is not None else None,
+                    "key": f"{prefix}raw-{s.n}.jpg" if s.n in raw else None,
                     "missing_status": s.status if s.data is None else None,
                     "zones": [_zone_json(v) for v in trace.values.get(s.n, [])],
                     "best_zone": result.zone if result else None,
@@ -184,6 +214,8 @@ class TraceWriter:
             "opened_at": trace.opened_at,
             "closed_at": trace.closed_at,
             "rule": self._rule(state, trace.check, prefix),
+            "rules": trace.check.source,
+            "alignment": trace.alignment,
             "stills": stills,
             "open_span": trace.open_span,
             "picked": trace.picked,
@@ -192,7 +224,7 @@ class TraceWriter:
         self._put(f"{prefix}door.json", json.dumps(doc).encode(), "application/json")
 
     def _rule(self, state: dict, check: DoorCheck, prefix: str) -> dict:
-        setup = check.source == "setup"
+        setup = check.source in ("setup", "tuned")
         zones = []
         for n, rule in enumerate(check.rules, 1):
             baseline_key = None

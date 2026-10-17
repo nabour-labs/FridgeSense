@@ -195,13 +195,37 @@ const BOX = { x: 0.38, y: 0.32, width: 0.21, height: 0.3 };
 test.each([
   ["camera", (api: ApiClient) => api.camera(), "GET", "/api/camera", undefined],
   ["cameraSnapshot", (api: ApiClient) => api.cameraSnapshot(), "POST", "/api/camera/snapshot", undefined],
+  ["cameraFrame", (api: ApiClient) => api.cameraFrame("/9j/FRAME"), "POST", "/api/camera/frame", { image: "/9j/FRAME" }],
+  ["faceBlur", (api: ApiClient) => api.faceBlur(), "GET", "/api/settings/face-blur", undefined],
+  ["setFaceBlur", (api: ApiClient) => api.setFaceBlur(false), "PUT", "/api/settings/face-blur", { enabled: false }],
   ["doorCalibration", (api: ApiClient) => api.doorCalibration(), "GET", "/api/door-calibration", undefined],
   [
+    "addDoorZone",
+    (api: ApiClient) => api.addDoorZone("Freezer drawer", BOX),
+    "POST",
+    "/api/door-calibration/zones",
+    { name: "Freezer drawer", box: BOX },
+  ],
+  [
+    "updateDoorZone",
+    (api: ApiClient) => api.updateDoorZone("Wk/1", { name: "Doors", box: BOX }),
+    "PATCH",
+    "/api/door-calibration/zones/Wk%2F1",
+    { name: "Doors", box: BOX },
+  ],
+  [
+    "deleteDoorZone",
+    (api: ApiClient) => api.deleteDoorZone("Wk/1"),
+    "DELETE",
+    "/api/door-calibration/zones/Wk%2F1",
+    undefined,
+  ],
+  [
     "addDoorReference",
-    (api: ApiClient) => api.addDoorReference("/9j/SNAP", BOX, "open"),
+    (api: ApiClient) => api.addDoorReference("/9j/SNAP", "Wk/1", "open"),
     "POST",
     "/api/door-calibration/references",
-    { image: "/9j/SNAP", box: BOX, status: "open" },
+    { image: "/9j/SNAP", zone_id: "Wk/1", status: "open" },
   ],
   [
     "deleteDoorReference",
@@ -214,6 +238,7 @@ test.each([
   ["startLive", (api: ApiClient) => api.startLive("v=0\r\n"), "POST", "/api/camera/live", { offer: "v=0\r\n" }],
   ["stopLive", (api: ApiClient) => api.stopLive("S/1"), "DELETE", "/api/camera/live/S%2F1", undefined],
   ["fridgeArea", (api: ApiClient) => api.fridgeArea(), "GET", "/api/fridge-area", undefined],
+  ["warnings", (api: ApiClient) => api.warnings(), "GET", "/api/warnings", undefined],
   [
     "saveFridgeArea",
     (api: ApiClient) => api.saveFridgeArea("/9j/SNAP", BOX),
@@ -262,4 +287,14 @@ test("one debug motion is read by id", async () => {
   await new ApiClient(() => "t", fetch).debugMotion("a/b");
   expect(fetch.mock.calls[0][0]).toBe("/api/debug/motions/a%2Fb");
   expect(fetch.mock.calls[0][1].method).toBe("GET");
+});
+
+test("setMonitoring sends the paused state", async () => {
+  const fetch = respond(200, { paused: true, since: "2026-10-18T14:05:00.000Z" });
+  const result = await new ApiClient(() => "t", fetch).setMonitoring(true);
+  expect(result).toEqual({ paused: true, since: "2026-10-18T14:05:00.000Z" });
+  const [url, init] = fetch.mock.calls[0];
+  expect(url).toBe("/api/camera/monitoring");
+  expect(init.method).toBe("PUT");
+  expect(JSON.parse(init.body)).toEqual({ paused: true });
 });

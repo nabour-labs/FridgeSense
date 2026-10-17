@@ -24,7 +24,12 @@ def run_refresh(
     try:
         new = refreshed(tokens, oauth, now())
     except OAuthRejected as e:
-        store.save(tokens.model_copy(update={"link_status": "needs_relink"}))
+        latest = store.load() or tokens
+        if latest.refresh_token != tokens.refresh_token:
+            # Another caller rotated the refresh token first; its tokens are good.
+            log_event("token_refresh_superseded", account_id=tokens.account_id)
+            return "already_refreshed"
+        store.save(latest.model_copy(update={"link_status": "needs_relink"}))
         log_event(
             "token_refresh_rejected",
             logging.ERROR,

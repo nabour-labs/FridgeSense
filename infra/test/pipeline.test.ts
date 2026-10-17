@@ -106,6 +106,30 @@ describe("door-event state machine", () => {
     ]);
   });
 
+  // Failed run ends as a failed execution
+  it("ends a marked-failed run in a Fail state so ExecutionsFailed counts it", () => {
+    const { States } = definition();
+    expect(States.MarkFailed.Next).toBe("AnalysisFailed");
+    expect(States.AnalysisFailed).toEqual({ Type: "Fail", Error: "AnalysisFailed" });
+  });
+
+  // Window step retries and is caught / Stills step retries and is caught
+  it.each(["FindWindow", "FetchStills"])("retries %s on task failure and marks the event failed", (name) => {
+    const step = definition().States[name] as State & {
+      Retry: Record<string, unknown>[];
+      Catch: Record<string, unknown>[];
+    };
+    expect(step.Retry).toContainEqual({
+      ErrorEquals: ["States.TaskFailed"],
+      IntervalSeconds: 10,
+      MaxAttempts: 2,
+      BackoffRate: 2,
+    });
+    expect(step.Catch).toEqual([
+      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "MarkFailed" },
+    ]);
+  });
+
   it("passes the task name and the run state to the pipeline Lambda", () => {
     const { States } = definition();
     const tasks = { FindWindow: "find_window", FetchStills: "fetch_stills", Analyze: "analyze",
@@ -156,7 +180,8 @@ describe("pipeline Lambda", () => {
     expect(vars.DOOR_FRAME_INTERVAL_MS).toBe("500");
     expect(vars).not.toHaveProperty("DOOR_BOX");
     expect(vars.FACE_DETECT_PRICE).toBe("0.001");
-    expect(vars.DEBUG_TRACES).toBe("true");
+    // Off by default when deployed
+    expect(vars.DEBUG_TRACES).toBe("false");
   });
 
   it("may call only rekognition:DetectFaces, on *", () => {
@@ -206,6 +231,41 @@ describe("stills bucket", () => {
   it("enforces SSL", () => {
     const policies = JSON.stringify(resourcesOf("AWS::S3::BucketPolicy"));
     expect(policies).toContain("aws:SecureTransport");
+  });
+
+  // CORS rule on the stills bucket
+  it("lets the app read signed media cross-origin", () => {
+    const stills = Object.values(resourcesOf("AWS::S3::Bucket")).find((b) =>
+      JSON.stringify(b.Properties.BucketName ?? "").includes("fridgesense-stills"),
+    )!;
+    const cors = stills.Properties.CorsConfiguration as { CorsRules: Record<string, string[]>[] };
+    const rules = cors.CorsRules;
+    expect(rules).toHaveLength(1);
+    expect(rules[0].AllowedMethods).toEqual(["GET", "HEAD"]);
+    expect(rules[0].AllowedOrigins).toEqual(["*"]);
+    expect(rules[0].AllowedHeaders).toContain("Range");
+    expect(rules[0].ExposedHeaders).toEqual(
+      expect.arrayContaining(["Content-Length", "Content-Range", "Accept-Ranges"]),
+    );
+  });
+
+  // Bucket still private
+  it("keeps the stills bucket private", () => {
+    const stills = Object.values(resourcesOf("AWS::S3::Bucket")).find((b) =>
+      JSON.stringify(b.Properties.BucketName ?? "").includes("fridgesense-stills"),
+    )!;
+    expect(stills.Properties.PublicAccessBlockConfiguration).toEqual({
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    });
+    for (const policy of Object.values(resourcesOf("AWS::S3::BucketPolicy"))) {
+      const doc = policy.Properties.PolicyDocument as { Statement: (Statement & { Principal: unknown })[] };
+      for (const st of doc.Statement) {
+        if (st.Effect === "Allow") expect(st.Principal).not.toBe("*");
+      }
+    }
   });
 });
 

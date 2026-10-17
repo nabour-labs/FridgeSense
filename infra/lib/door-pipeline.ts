@@ -3,12 +3,13 @@ import type { Table } from "aws-cdk-lib/aws-dynamodb";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Architecture, type Code, Function as LambdaFn, Runtime } from "aws-cdk-lib/aws-lambda";
 import type { LogGroup } from "aws-cdk-lib/aws-logs";
-import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
+import { BlockPublicAccess, Bucket, BucketEncryption, HttpMethods } from "aws-cdk-lib/aws-s3";
 import type { ISecret } from "aws-cdk-lib/aws-secretsmanager";
 import {
   Choice,
   Condition,
   DefinitionBody,
+  Fail,
   JsonPath,
   LogLevel,
   StateMachine,
@@ -82,6 +83,16 @@ export class DoorPipeline extends Construct {
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       lifecycleRules: [{ expiration: Duration.days(7) }],
+      // The app draws clip frames onto a canvas, which needs CORS. Any origin: reads still need a
+      // presigned link, and naming the CloudFront domain here would make a dependency cycle.
+      cors: [
+        {
+          allowedMethods: [HttpMethods.GET, HttpMethods.HEAD],
+          allowedOrigins: ["*"],
+          allowedHeaders: ["Range"],
+          exposedHeaders: ["Content-Length", "Content-Range", "Accept-Ranges"],
+        },
+      ],
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
@@ -154,7 +165,18 @@ export class DoorPipeline extends Construct {
     analyze.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
     // The event is already "analyzing" here; a failed save must not leave it there.
     save.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
-    markFailed.next(new Succeed(this, "AnalysisFailed"));
+    // Window and stills only read Ring and overwrite the same keys, so a retry is safe.
+    for (const s of [findWindow, fetchStills]) {
+      s.addRetry({
+        errors: ["States.TaskFailed"],
+        interval: Duration.seconds(10),
+        maxAttempts: 2,
+        backoffRate: 2,
+      });
+      s.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
+    }
+    // A Fail state, so ExecutionsFailed (and its alarm) counts these runs.
+    markFailed.next(new Fail(this, "AnalysisFailed", { error: "AnalysisFailed" }));
 
     const waitAgain = new Wait(this, "WaitForRecordingEnd", {
       time: WaitTime.duration(Duration.seconds(20)),
