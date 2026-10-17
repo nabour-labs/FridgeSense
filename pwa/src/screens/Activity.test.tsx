@@ -337,11 +337,11 @@ test.each(["owner", "user", "viewer"] as const)("the %s sees a Livestream button
 });
 
 test("the Livestream button opens the Livestream dialog", async () => {
-  const api = renderActivity([event()], { role: "viewer" });
+  const api = renderActivity([event()], { role: "viewer", camera: vi.fn().mockResolvedValue({ name: "Fridge", online: true }) });
   await userEvent.click(await screen.findByRole("button", { name: "Livestream" }));
   expect(screen.getByRole("dialog", { name: "Livestream" })).toBeInTheDocument();
-  // jsdom has no WebRTC, so the dialog says so instead of calling the API.
-  expect(screen.getByText("This browser can't play live video.")).toBeInTheDocument();
+  // jsdom has no WebRTC, so after the online check the dialog says so instead of calling the API.
+  expect(await screen.findByText("This browser can't play live video.")).toBeInTheDocument();
   expect(api.startLive).not.toHaveBeenCalled();
   await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

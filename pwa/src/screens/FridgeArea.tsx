@@ -1,6 +1,6 @@
 import { Camera, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { NoVideo } from "../camera/liveSnapshot";
+import { CameraOffline, NoVideo } from "../camera/liveSnapshot";
 import { ApiError } from "../api/client";
 import type { FridgeAreaBody, Snapshot } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
@@ -95,7 +95,7 @@ function SetFridgeArea({ onClose, onSaved }: { onClose: () => void; onSaved: (bo
       setShapes([]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setError(NO_FOOTAGE);
-      else if (err instanceof NoVideo) setError(err.message);
+      else if (err instanceof NoVideo || err instanceof CameraOffline) setError(err.message);
       else if (err instanceof ApiError && err.status === 502) setError("The camera can't be reached right now.");
       else report(err);
     } finally {
