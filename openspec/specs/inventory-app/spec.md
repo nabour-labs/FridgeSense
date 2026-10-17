@@ -413,7 +413,7 @@ The app SHALL offer a Config screen, opened by a "Config" gear button in the hea
 - **THEN** the reference thumbnail, its annotation and the instructions are shown, with no "Add", "Delete" or "Save" controls
 
 ### Requirement: Manage reference images
-The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer two sources: "Choose photo" (pick or take a photo on the device) and "Camera snapshot" (`POST /api/camera/snapshot`). Once an image is chosen, the owner SHALL be able to draw on it with a "Box" tool and a "Line" tool, undo the last shape with "Undo", and type the annotation. The shapes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
+The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer three sources: "Choose photo" (pick or take a photo on the device), "Camera snapshot" (`POST /api/camera/snapshot`) and "Recent clip". "Recent clip" SHALL open the "Snapshot from a recent clip" sheet: a dropdown of the door openings from the last 7 days that have a `clip`, newest first, each labelled with its day, local time and duration (e.g. "Today 18:02 · 25 s"); the selected clip plays with a scrubber; "Use this frame" sends the shown frame, as a JPEG at most 960 px wide, to `POST /api/camera/frame`, and only the image that route returns is shown for drawing; "Cancel" closes the sheet without a request. Once an image is chosen, the owner SHALL be able to draw on it with a "Box" tool and a "Line" tool, undo the last shape with "Undo", and type the annotation. The shapes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
 
 #### Scenario: Add a reference
 - **WHEN** the owner taps "Add", taps "Choose photo", picks a 4032×3024 photo, types `soda can` and taps "Save"
@@ -450,6 +450,34 @@ The "Reference images" sub-section SHALL list each reference as a thumbnail with
 #### Scenario: Upload refused
 - **WHEN** the API answers 400 or 409 to an add
 - **THEN** the error message from the response is shown and the list is unchanged
+
+#### Scenario: Add a reference from a recent clip
+- **WHEN** the owner taps "Add", then "Recent clip", picks the 18:02 opening, taps "Use this frame", and `POST /api/camera/frame` answers 200 with a 960×540 image
+- **THEN** the grabbed frame was sent to `POST /api/camera/frame`, the returned image is shown for drawing, and after typing `milk bag` and tapping "Save", the uploaded JPEG is 768×432
+
+#### Scenario: Recent clips listed
+- **WHEN** the last 7 days hold openings today at 18:02 (25 s, with a clip), today at 09:15 (no clip) and yesterday at 20:40 (12 s, with a clip)
+- **THEN** the dropdown lists "Today 18:02 · 25 s" then "Yesterday 20:40 · 12 s", the first is selected, and its video plays the clip link with `crossOrigin` set to `anonymous`
+
+#### Scenario: No recent clips
+- **WHEN** no door opening in the last 7 days has a clip
+- **THEN** the sheet says "No door openings with a clip in the last 7 days." and "Use this frame" is disabled
+
+#### Scenario: Recent clip won't load
+- **WHEN** the selected clip fails to load
+- **THEN** the sheet says "This clip can't be played" and "Use this frame" is disabled
+
+#### Scenario: Frame can't be grabbed
+- **WHEN** drawing the frame fails
+- **THEN** the sheet says "This frame can't be used. Try another clip." and no request is sent
+
+#### Scenario: Faces can't be blurred
+- **WHEN** `POST /api/camera/frame` answers 502
+- **THEN** the sheet says "Faces couldn't be blurred, so this frame can't be used." and no image is shown for drawing
+
+#### Scenario: Cancel the recent clip picker
+- **WHEN** the owner taps "Cancel" in the sheet
+- **THEN** the sheet closes, no image is shown for drawing, and `POST /api/camera/frame` is not requested
 
 ### Requirement: Edit custom instructions
 The "Custom instructions" sub-section SHALL show the saved instructions in a text area with a live "n / 1000" character count. It SHALL send them only when the owner taps "Save", and confirm with "Saved".

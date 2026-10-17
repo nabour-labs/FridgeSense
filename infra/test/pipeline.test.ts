@@ -232,6 +232,41 @@ describe("stills bucket", () => {
     const policies = JSON.stringify(resourcesOf("AWS::S3::BucketPolicy"));
     expect(policies).toContain("aws:SecureTransport");
   });
+
+  // CORS rule on the stills bucket
+  it("lets the app read signed media cross-origin", () => {
+    const stills = Object.values(resourcesOf("AWS::S3::Bucket")).find((b) =>
+      JSON.stringify(b.Properties.BucketName ?? "").includes("fridgesense-stills"),
+    )!;
+    const cors = stills.Properties.CorsConfiguration as { CorsRules: Record<string, string[]>[] };
+    const rules = cors.CorsRules;
+    expect(rules).toHaveLength(1);
+    expect(rules[0].AllowedMethods).toEqual(["GET", "HEAD"]);
+    expect(rules[0].AllowedOrigins).toEqual(["*"]);
+    expect(rules[0].AllowedHeaders).toContain("Range");
+    expect(rules[0].ExposedHeaders).toEqual(
+      expect.arrayContaining(["Content-Length", "Content-Range", "Accept-Ranges"]),
+    );
+  });
+
+  // Bucket still private
+  it("keeps the stills bucket private", () => {
+    const stills = Object.values(resourcesOf("AWS::S3::Bucket")).find((b) =>
+      JSON.stringify(b.Properties.BucketName ?? "").includes("fridgesense-stills"),
+    )!;
+    expect(stills.Properties.PublicAccessBlockConfiguration).toEqual({
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    });
+    for (const policy of Object.values(resourcesOf("AWS::S3::BucketPolicy"))) {
+      const doc = policy.Properties.PolicyDocument as { Statement: (Statement & { Principal: unknown })[] };
+      for (const st of doc.Statement) {
+        if (st.Effect === "Allow") expect(st.Principal).not.toBe("*");
+      }
+    }
+  });
 });
 
 describe("webhook hand-over", () => {

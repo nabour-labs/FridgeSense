@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Mock } from "vitest";
 import { ApiError } from "../api/client";
@@ -268,6 +268,55 @@ test("a camera snapshot can be added as a reference", async () => {
   expect((blob as Blob).type).toBe("image/jpeg");
   expect(shapes).toBeUndefined();
   expect(api.addReference).toHaveBeenCalledWith("milk bag", "/9j/RESIZED");
+});
+
+// Add a reference from a recent clip
+test("a frame from a recent clip can be added as a reference, blurred first", async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as never);
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((cb) => cb(new Blob(["raw"], { type: "image/jpeg" })));
+  const opened = new Date();
+  opened.setHours(18, 2, 0, 0);
+  const clipEvent = {
+    id: "e1",
+    opened_at: opened.toISOString(),
+    closed_at: opened.toISOString(),
+    duration_s: 25,
+    status: "done",
+    changes: [],
+    pending_count: 0,
+    stills: [],
+    clip: "https://stills.example.com/clip.mp4?sig=1#t=0.5,8.5",
+  };
+  const added = { instructions: "", references: [ref("r2", "milk bag")] };
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [] },
+    {
+      api: {
+        events: vi.fn().mockResolvedValue({ events: [clipEvent] }),
+        cameraFrame: vi.fn().mockResolvedValue(SNAPSHOT),
+        addReference: vi.fn().mockResolvedValue(added),
+      },
+    },
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Add" }));
+  await userEvent.click(screen.getByRole("button", { name: "Recent clip" }));
+  const picker = await screen.findByRole("dialog", { name: "Snapshot from a recent clip" });
+  expect(await within(picker).findByRole("combobox", { name: "Clip" })).toHaveTextContent("Today 18:02 · 25 s");
+  const video = within(picker).getByTestId("clip-video");
+  fireEvent.loadedData(video);
+  await userEvent.click(within(picker).getByRole("button", { name: "Use this frame" }));
+  await waitFor(() => expect(api.cameraFrame).toHaveBeenCalledWith(btoa("raw")));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument(),
+  );
+  const img = await within(screen.getByRole("dialog")).findByRole("img", { name: "Reference to draw on" });
+  expect(img).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
+  await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+  const [blob] = resize.mock.calls[0];
+  expect((blob as Blob).type).toBe("image/jpeg");
+  expect(api.addReference).toHaveBeenCalledWith("milk bag", "/9j/RESIZED");
+  vi.restoreAllMocks();
 });
 
 // Snapshot with no recent footage
