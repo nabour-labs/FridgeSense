@@ -123,3 +123,16 @@ test("a viewer sees the paused banner without the link", async () => {
   expect(banner).toHaveTextContent(PAUSED.message);
   expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
 });
+
+// Re-link banner
+test("needs relink shows its message with no link", async () => {
+  const relink: SetupWarning = {
+    code: "needs_relink",
+    message:
+      "The Ring account link has expired, so door openings are not recorded. Re-link the Ring account in the Ring app.",
+  };
+  renderWarnings([relink]);
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent(relink.message);
+  expect(within(banner).queryAllByRole("link")).toHaveLength(0);
+});

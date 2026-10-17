@@ -88,7 +88,7 @@ Then deploy. Lambda packages are built locally with uv (no Docker):
 set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com
 ```
 
-Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $20/month budget alert (at 80%) and the alarm for failed door-event runs. To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
+Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $20/month budget alert (at 80%) and the alarms for failed or timed-out door-event runs and for a rejected Ring token refresh (re-link the Ring account in the Ring app when that one fires). To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
 
 The API is throttled at 10 requests/s (burst 20) per route, and the two passcode checks (`POST /api/session`, `POST /ring/link`) at 1 request/s (burst 3).
 

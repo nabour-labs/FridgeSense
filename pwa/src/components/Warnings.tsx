@@ -7,6 +7,8 @@ type Fix = { label: string; href: string };
 
 function fixes(w: SetupWarning): Fix[] {
   switch (w.code) {
+    case "needs_relink":
+      return []; // re-linking happens in the Ring app
     case "monitoring_paused":
       return [{ label: "Resume on Camera tab", href: "#config" }];
     case "motion_detection_off":

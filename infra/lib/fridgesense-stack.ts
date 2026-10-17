@@ -16,6 +16,7 @@ import { CfnBudget } from "aws-cdk-lib/aws-budgets";
 import {
   Alarm,
   ComparisonOperator,
+  type IMetric,
   Stats,
   TreatMissingData,
 } from "aws-cdk-lib/aws-cloudwatch";
@@ -24,7 +25,7 @@ import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
 import { Rule, Schedule } from "aws-cdk-lib/aws-events";
 import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
 import { Architecture, Code, Function as LambdaFn, Runtime } from "aws-cdk-lib/aws-lambda";
-import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
+import { FilterPattern, LogGroup, MetricFilter, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { Topic } from "aws-cdk-lib/aws-sns";
 import { EmailSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
@@ -210,10 +211,11 @@ export class FridgeSenseStack extends Stack {
     table.grantReadWriteData(httpFn);
     doors.stateMachine.grantStartExecution(httpFn);
 
+    const refreshLogs = logGroup("TokenRefreshFunction");
     const refreshFn = new LambdaFn(this, "TokenRefreshFunction", {
       ...common,
       handler: "fridgesense.handlers.token_refresh.handler",
-      logGroup: logGroup("TokenRefreshFunction"),
+      logGroup: refreshLogs,
       description: "Refreshes the Ring tokens every 3 hours",
     });
     appSecret.grantRead(refreshFn);
@@ -323,15 +325,43 @@ export class FridgeSenseStack extends Stack {
     });
     const alerts = new Topic(this, "Alerts", { topicName: "fridgesense-alerts" });
     alerts.addSubscription(new EmailSubscription(alertEmail));
-    new Alarm(this, "DoorEventsFailed", {
-      alarmName: "fridgesense-door-events-failed",
-      alarmDescription: "A door-event workflow run failed",
-      metric: doors.stateMachine.metricFailed({ period: Duration.minutes(5), statistic: Stats.SUM }),
-      threshold: 1,
-      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      evaluationPeriods: 1,
-      treatMissingData: TreatMissingData.NOT_BREACHING,
-    }).addAlarmAction(new SnsAction(alerts));
+    const fiveMinSum = { period: Duration.minutes(5), statistic: Stats.SUM };
+    const alarm = (id: string, alarmName: string, alarmDescription: string, metric: IMetric) =>
+      new Alarm(this, id, {
+        alarmName,
+        alarmDescription,
+        metric,
+        threshold: 1,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        evaluationPeriods: 1,
+        treatMissingData: TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(new SnsAction(alerts));
+    alarm(
+      "DoorEventsFailed",
+      "fridgesense-door-events-failed",
+      "A door-event workflow run failed",
+      doors.stateMachine.metricFailed(fiveMinSum),
+    );
+    alarm(
+      "DoorEventsTimedOut",
+      "fridgesense-door-events-timed-out",
+      "A door-event workflow run timed out",
+      doors.stateMachine.metricTimedOut(fiveMinSum),
+    );
+    // A plain term pattern: Lambda's text log lines prefix the JSON, so a JSON pattern can't match.
+    const rejected = new MetricFilter(this, "TokenRefreshRejected", {
+      logGroup: refreshLogs,
+      filterPattern: FilterPattern.literal('"token_refresh_rejected"'),
+      metricNamespace: "FridgeSense",
+      metricName: "TokenRefreshRejected",
+      metricValue: "1",
+    });
+    alarm(
+      "RingRelinkNeeded",
+      "fridgesense-ring-relink-needed",
+      "Ring rejected the token refresh: re-link the Ring account in the Ring app",
+      rejected.metric(fiveMinSum),
+    );
 
     const base = api.apiEndpoint;
     new CfnOutput(this, "TokenExchangeUrl", { value: `${base}/ring/token` });

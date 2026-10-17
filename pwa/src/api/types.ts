@@ -215,7 +215,7 @@ export interface Alignment {
 
 export type SetupWarning =
   | { code: "monitoring_paused"; message: string; since: string }
-  | { code: "motion_detection_off" | "door_setup_missing"; message: string }
+  | { code: "motion_detection_off" | "door_setup_missing" | "needs_relink"; message: string }
   | { code: "camera_moved"; message: string; since: string; update: ("door_references" | "fridge_area")[] };
 
 export interface WarningsBody {

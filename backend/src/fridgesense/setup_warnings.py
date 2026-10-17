@@ -6,6 +6,10 @@ from fridgesense.door_events import iso_utc
 from fridgesense.ring import RingClient
 from fridgesense.table import FridgeTable
 
+NEEDS_RELINK = (
+    "The Ring account link has expired, so door openings are not recorded. "
+    "Re-link the Ring account in the Ring app."
+)
 PAUSED = "FridgeSense is paused, so door openings are not recorded."
 MOTION_OFF = (
     "Motion detection is off on the camera, so no door openings are recorded. "
@@ -37,10 +41,17 @@ def camera_moved(table: FridgeTable, account_id: str, device_id: str) -> dict | 
 
 
 def warnings_body(
-    ring: RingClient, table: FridgeTable, account_id: str, device_id: str | None, now_ms: int
+    ring: RingClient,
+    table: FridgeTable,
+    account_id: str,
+    device_id: str | None,
+    now_ms: int,
+    link_status: str = "linked",
 ) -> dict:
     """`GET /api/warnings`. A Ring failure only leaves out the motion-detection check."""
     found: list[dict] = []
+    if link_status == "needs_relink":
+        found.append({"code": "needs_relink", "message": NEEDS_RELINK})
     if device_id is not None:
         state = monitoring.load(table, account_id, device_id)
         if state.paused:

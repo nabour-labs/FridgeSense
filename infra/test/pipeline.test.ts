@@ -106,6 +106,30 @@ describe("door-event state machine", () => {
     ]);
   });
 
+  // Failed run ends as a failed execution
+  it("ends a marked-failed run in a Fail state so ExecutionsFailed counts it", () => {
+    const { States } = definition();
+    expect(States.MarkFailed.Next).toBe("AnalysisFailed");
+    expect(States.AnalysisFailed).toEqual({ Type: "Fail", Error: "AnalysisFailed" });
+  });
+
+  // Window step retries and is caught / Stills step retries and is caught
+  it.each(["FindWindow", "FetchStills"])("retries %s on task failure and marks the event failed", (name) => {
+    const step = definition().States[name] as State & {
+      Retry: Record<string, unknown>[];
+      Catch: Record<string, unknown>[];
+    };
+    expect(step.Retry).toContainEqual({
+      ErrorEquals: ["States.TaskFailed"],
+      IntervalSeconds: 10,
+      MaxAttempts: 2,
+      BackoffRate: 2,
+    });
+    expect(step.Catch).toEqual([
+      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "MarkFailed" },
+    ]);
+  });
+
   it("passes the task name and the run state to the pipeline Lambda", () => {
     const { States } = definition();
     const tasks = { FindWindow: "find_window", FetchStills: "fetch_stills", Analyze: "analyze",

@@ -57,6 +57,7 @@ class Context:
     role: str
     params: dict[str, str]
     table: FridgeTable
+    link_status: str = "linked"
 
 
 @dataclass(frozen=True)
@@ -105,7 +106,9 @@ def handler(event, context):
         tokens = TokenStore().load()
         if tokens is None:
             return json_response(409, {"error": "no camera linked"})
-        ctx = Context(req, tokens.account_id, role, match.groupdict(), FridgeTable())
+        ctx = Context(
+            req, tokens.account_id, role, match.groupdict(), FridgeTable(), tokens.link_status
+        )
         return r.handle(ctx)
     return json_response(404, {"error": "not found"})
 
@@ -862,7 +865,12 @@ def fridge_area_body(table: FridgeTable, account_id: str, device_id: str) -> dic
 @route("GET", "/api/warnings")
 def get_warnings(ctx: Context) -> dict:
     body = setup_warnings.warnings_body(
-        deps.ring_client(now=now), ctx.table, ctx.account_id, _device_id(ctx), int(now() * 1000)
+        deps.ring_client(now=now),
+        ctx.table,
+        ctx.account_id,
+        _device_id(ctx),
+        int(now() * 1000),
+        link_status=ctx.link_status,
     )
     return json_response(200, body)
 

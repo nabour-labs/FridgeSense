@@ -81,9 +81,11 @@ def mark_failed_task(table: FridgeTable, state: dict) -> dict:
         logging.ERROR,
         reason=str(state.get("error", {}).get("Error", "unknown")),
         account_id=state["account_id"],
-        door_sk=state["door_sk"],
+        door_sk=state.get("door_sk"),
     )
-    _set_status(table, state["account_id"], state["door_sk"], "analysis_failed")
+    # A window or stills failure comes before the door event is recorded.
+    if "door_sk" in state:
+        _set_status(table, state["account_id"], state["door_sk"], "analysis_failed")
     return {**state, "outcome": "analysis_failed"}
 
 

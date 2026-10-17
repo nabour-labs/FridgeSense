@@ -126,6 +126,20 @@ def test_mark_failed_task(setup):
     assert door(table)["status"] == "analysis_failed"
 
 
+# Failure before the door event exists
+def test_mark_failed_before_the_door_event_exists(setup, caplog):
+    table, _, _ = setup
+    state = {"account_id": ACCOUNT, "error": {"Error": "RingTimeout"}}
+    with caplog.at_level(logging.ERROR, logger="fridgesense"):
+        out = mark_failed_task(table, state)
+    assert out == {**state, "outcome": "analysis_failed"}
+    [line] = [json.loads(r.message) for r in caplog.records]
+    assert line["event"] == "analysis_failed"
+    assert line["reason"] == "RingTimeout"
+    assert line["account_id"] == ACCOUNT
+    assert [d["status"] for d in table.query(ACCOUNT, "DOOR#")] == ["analyzing"]
+
+
 def captured_request(setup) -> dict:
     _, client, stub = setup
     seen = {}

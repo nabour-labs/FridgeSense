@@ -9,6 +9,7 @@ import {
   Choice,
   Condition,
   DefinitionBody,
+  Fail,
   JsonPath,
   LogLevel,
   StateMachine,
@@ -154,7 +155,18 @@ export class DoorPipeline extends Construct {
     analyze.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
     // The event is already "analyzing" here; a failed save must not leave it there.
     save.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
-    markFailed.next(new Succeed(this, "AnalysisFailed"));
+    // Window and stills only read Ring and overwrite the same keys, so a retry is safe.
+    for (const s of [findWindow, fetchStills]) {
+      s.addRetry({
+        errors: ["States.TaskFailed"],
+        interval: Duration.seconds(10),
+        maxAttempts: 2,
+        backoffRate: 2,
+      });
+      s.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
+    }
+    // A Fail state, so ExecutionsFailed (and its alarm) counts these runs.
+    markFailed.next(new Fail(this, "AnalysisFailed", { error: "AnalysisFailed" }));
 
     const waitAgain = new Wait(this, "WaitForRecordingEnd", {
       time: WaitTime.duration(Duration.seconds(20)),
