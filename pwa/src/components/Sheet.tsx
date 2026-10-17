@@ -54,9 +54,9 @@ export function Sheet({
               className="grid size-11 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 active:scale-95 dark:hover:bg-slate-800"
             >
               {maximized ? (
-                <Minimize2 aria-hidden className="size-5" />
+                <Minimize2 aria-hidden className="size-4" />
               ) : (
-                <Maximize2 aria-hidden className="size-5" />
+                <Maximize2 aria-hidden className="size-4" />
               )}
             </button>
             <button

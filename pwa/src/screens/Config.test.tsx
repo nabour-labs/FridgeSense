@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { Mock } from "vitest";
 import { ApiError } from "../api/client";
-import type { Resize } from "../image";
+import type { Crop, Resize } from "../image";
 import type { Config as ConfigData, Reference, Role } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { drag, fakeApi } from "../test-utils";
@@ -17,10 +17,16 @@ const MILK = ref("r1", "milk bag");
 
 function renderConfig(
   config: ConfigData,
-  { role = "owner", api: overrides = {}, resize = vi.fn().mockResolvedValue("/9j/RESIZED") } = {} as {
+  {
+    role = "owner",
+    api: overrides = {},
+    resize = vi.fn().mockResolvedValue("/9j/RESIZED"),
+    crop = vi.fn().mockResolvedValue(new Blob(["cropped"], { type: "image/jpeg" })),
+  } = {} as {
     role?: Role;
     api?: Partial<Record<keyof Api, unknown>>;
     resize?: Mock<Resize>;
+    crop?: Mock<Crop>;
   },
 ) {
   const api = fakeApi({ config: vi.fn().mockResolvedValue(config), ...overrides });
@@ -28,10 +34,10 @@ function renderConfig(
   if (!location.hash) location.hash = "#config/refs";
   render(
     <AppContext.Provider value={{ api, role, report, online: vi.fn(), go: vi.fn() }}>
-      <Config resize={resize} />
+      <Config resize={resize} crop={crop} />
     </AppContext.Provider>,
   );
-  return { api, report, resize };
+  return { api, report, resize, crop };
 }
 
 // Viewer sees read-only config
@@ -333,22 +339,80 @@ test("a snapshot with no recent footage says so and keeps Choose photo", async (
 });
 
 // Draw on the image
-test("boxes and lines drawn on the image go into the upload", async () => {
+test("boxes drawn on the image go into the upload, with no Box or Line tool", async () => {
   const { api, resize } = renderConfig(
     { instructions: "", references: [] },
     { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT), addReference: vi.fn().mockResolvedValue({ instructions: "", references: [] }) } },
   );
   await openSnapshot(api);
-  await userEvent.click(screen.getByRole("button", { name: "Box" }));
+  expect(screen.queryByRole("button", { name: "Box" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Line" })).not.toBeInTheDocument();
   drag([10, 10], [40, 50]);
-  await userEvent.click(screen.getByRole("button", { name: "Line" }));
   drag([50, 50], [90, 90]);
   await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");
   await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
   expect(resize.mock.calls[0][1]).toEqual([
     { kind: "box", x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.5 },
-    { kind: "line", x1: 0.5, y1: 0.5, x2: 0.9, y2: 0.9 },
+    { kind: "box", x1: 0.5, y1: 0.5, x2: 0.9, y2: 0.9 },
   ]);
+});
+
+function stubObjectUrls() {
+  const create = vi.fn().mockReturnValue("blob:cropped");
+  Object.assign(URL, { createObjectURL: create, revokeObjectURL: vi.fn() });
+  return () => Object.assign(URL, { createObjectURL: undefined, revokeObjectURL: undefined });
+}
+
+// Crop to the box
+test("Crop crops to the last box, clears the boxes and uploads the cropped image", async () => {
+  const restore = stubObjectUrls();
+  const { api, resize, crop } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT), addReference: vi.fn().mockResolvedValue({ instructions: "", references: [] }) } },
+  );
+  await openSnapshot(api);
+  drag([60, 60], [90, 90]);
+  drag([10, 10], [40, 50]);
+  await userEvent.click(screen.getByRole("button", { name: "Crop" }));
+  const [source, box] = crop.mock.calls[0];
+  expect((source as Blob).type).toBe("image/jpeg");
+  expect(box).toEqual({ kind: "box", x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.5 });
+  const img = await within(screen.getByRole("dialog")).findByRole("img", { name: "Reference to draw on" });
+  await waitFor(() => expect(img).toHaveAttribute("src", "blob:cropped"));
+  expect(screen.queryAllByTestId("markup-shape")).toHaveLength(0);
+  await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+  const [uploaded, shapes] = resize.mock.calls[0];
+  expect(uploaded).toBe(await crop.mock.results[0].value);
+  expect(shapes).toBeUndefined();
+  restore();
+});
+
+// Crop needs a box
+test("Crop is disabled until a box is drawn", async () => {
+  const { api } = renderConfig({ instructions: "", references: [] }, { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) } });
+  await openSnapshot(api);
+  expect(screen.getByRole("button", { name: "Crop" })).toBeDisabled();
+  drag([10, 10], [40, 50]);
+  expect(screen.getByRole("button", { name: "Crop" })).toBeEnabled();
+});
+
+// Undo a crop
+test("Undo after a crop restores the original image and its box", async () => {
+  const restore = stubObjectUrls();
+  const { api } = renderConfig({ instructions: "", references: [] }, { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) } });
+  await openSnapshot(api);
+  drag([10, 10], [40, 50]);
+  await userEvent.click(screen.getByRole("button", { name: "Crop" }));
+  const img = () => within(screen.getByRole("dialog")).getByRole("img", { name: "Reference to draw on" });
+  await waitFor(() => expect(img()).toHaveAttribute("src", "blob:cropped"));
+  const undo = screen.getByRole("button", { name: "Undo" });
+  expect(undo).toBeEnabled();
+  await userEvent.click(undo);
+  expect(img()).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
+  expect(screen.getAllByTestId("markup-shape")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Crop" })).toBeEnabled();
+  restore();
 });
 
 // Undo a shape
