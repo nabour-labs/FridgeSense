@@ -24,5 +24,5 @@ Every inventory write (saving a door event's changes, confirming a pending chang
 - **THEN** the edit is refused as not found and there is neither a `bottle` nor an `oat milk` item
 
 #### Scenario: Setting a count racing a door event
-- **WHEN** `cheese` has quantity 1 and peak 1, its count is set to 4, and a door event adding 2 cheese is saved after the set read `cheese` but before it wrote it
-- **THEN** `cheese` has quantity 4 and `peak_quantity = 4`
+- **WHEN** `cheese` has quantity 1 and peak 1, its count is set to 4, and a door event adding 5 cheese is saved after the set read `cheese` but before it wrote it
+- **THEN** `cheese` has quantity 4 and `peak_quantity = 6` (the door event's peak is kept)
