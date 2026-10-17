@@ -59,9 +59,10 @@ def ring_motion(enabled="on", status=200):
 def set_up_door(at=NOW_MS - 10 * HOUR_MS):
     table = FridgeTable()
     lit = color_jpeg(GREY, [((0.1, 0.25, 0.1, 0.5), (40, 90, 200))], size=(200, 100))
-    door_calibration.add_reference(table, ACCOUNT, DEVICE, lit, LEFT, "open", at)
+    z = door_calibration.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, at).sk
+    door_calibration.add_reference(table, ACCOUNT, DEVICE, lit, z, "open", at)
     closed = color_jpeg(GREY, size=(200, 100))
-    door_calibration.add_reference(table, ACCOUNT, DEVICE, closed, LEFT, "closed", at + 1)
+    door_calibration.add_reference(table, ACCOUNT, DEVICE, closed, z, "closed", at + 1)
     door_calibration.run(table, ACCOUNT, DEVICE, at + 2)
 
 
@@ -149,7 +150,8 @@ def test_motion_setting_not_reported(tokens):
 def test_setup_never_run(tokens):
     ring_motion("on")
     closed = color_jpeg(GREY, size=(200, 100))
-    door_calibration.add_reference(FridgeTable(), ACCOUNT, DEVICE, closed, LEFT, "closed", NOW_MS)
+    z = door_calibration.add_zone(FridgeTable(), ACCOUNT, DEVICE, "Doors", LEFT, NOW_MS).sk
+    door_calibration.add_reference(FridgeTable(), ACCOUNT, DEVICE, closed, z, "closed", NOW_MS)
     assert warnings(tokens["owner"]) == [SETUP_MISSING]
 
 

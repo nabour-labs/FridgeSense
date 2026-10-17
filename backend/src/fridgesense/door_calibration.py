@@ -1,5 +1,6 @@
-"""The owner's door references (open/closed snapshots with a box) and the setup run that
-turns them into the door check's per-zone rules: which feature, which way, what threshold."""
+"""The owner's door zones (a named box around a door or drawer), their references
+(open/closed snapshots of a zone) and the setup run that turns them into the door check's
+per-zone rules: which feature, which way, what threshold."""
 
 import base64
 import binascii
@@ -25,16 +26,20 @@ from fridgesense.door_events import (
 from fridgesense.table import FridgeTable, account_pk
 
 MAX_IMAGE_BYTES = 300_000
-MAX_REFERENCES = 12
+MAX_REFERENCES = 24
 MAX_ZONES = 6
+MAX_NAME = 30
 MIN_SIDE = 0.02
-GROUP_IOU = 0.3
 MIN_MARGIN = 0.01
 STATUSES = ("open", "closed")
 
 
 def ref_prefix(device_id: str) -> str:
     return f"DOORREF#{device_id}#"
+
+
+def zone_prefix(device_id: str) -> str:
+    return f"DOORZONE#{device_id}#"
 
 
 def setup_sk(device_id: str) -> str:
@@ -47,6 +52,10 @@ def marker_sk(device_id: str) -> str:
 
 class TooMany(Exception):
     """The device already holds MAX_REFERENCES door references."""
+
+
+class TooManyZones(Exception):
+    """The device already holds MAX_ZONES door zones."""
 
 
 class SetupFailed(Exception):
@@ -74,6 +83,13 @@ def validate_box(value: Any) -> Box:
     return x, y, w, h
 
 
+def validate_name(value: Any) -> str:
+    name = value.strip() if isinstance(value, str) else ""
+    if not 1 <= len(name) <= MAX_NAME:
+        raise Invalid(f"name must be 1 to {MAX_NAME} characters")
+    return name
+
+
 def validate_status(value: Any) -> str:
     if value not in STATUSES:
         raise Invalid("status must be open or closed")
@@ -97,10 +113,19 @@ def box_json(box: Box) -> dict:
 
 
 @dataclass(frozen=True)
+class DoorZone:
+    sk: str
+    name: str
+    box: Box
+    created_at: str
+
+
+@dataclass(frozen=True)
 class DoorReference:
     sk: str
     image: bytes
-    box: Box
+    zone_id: str  # the zone's sk
+    box: Box  # the zone's current box
     status: str
     created_at: str
 
@@ -113,6 +138,8 @@ class SetupZone:
     threshold: float
     margin: float
     baseline: bytes
+    zone_id: str = ""  # empty for a setup run before zones existed
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -130,20 +157,33 @@ def _box_of(item: dict) -> Box:
     return (float(b["x"]), float(b["y"]), float(b["width"]), float(b["height"]))
 
 
-def _reference(item: dict) -> DoorReference:
-    return DoorReference(
-        sk=item["sk"],
-        image=bytes(item["image"]),
-        box=_box_of(item),
-        status=item["status"],
-        created_at=item["created_at"],
-    )
+def _zone(item: dict) -> DoorZone:
+    return DoorZone(item["sk"], item["name"], _box_of(item), item["created_at"])
+
+
+def list_zones(table: FridgeTable, account_id: str, device_id: str) -> list[DoorZone]:
+    """The device's door zones, oldest first."""
+    items = sorted(table.query(account_id, zone_prefix(device_id)), key=lambda i: i["sk"])
+    return [_zone(i) for i in items]
 
 
 def list_references(table: FridgeTable, account_id: str, device_id: str) -> list[DoorReference]:
-    """The device's door references, oldest first."""
+    """The device's door references, oldest first. References with no zone (stored before
+    zones existed, or left by a zone delete that stopped partway) are skipped."""
+    boxes = {z.sk: z.box for z in list_zones(table, account_id, device_id)}
     items = sorted(table.query(account_id, ref_prefix(device_id)), key=lambda i: i["sk"])
-    return [_reference(i) for i in items]
+    return [
+        DoorReference(
+            sk=i["sk"],
+            image=bytes(i["image"]),
+            zone_id=i["zone_id"],
+            box=boxes[i["zone_id"]],
+            status=i["status"],
+            created_at=i["created_at"],
+        )
+        for i in items
+        if i.get("zone_id") in boxes
+    ]
 
 
 def _mark_changed(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> None:
@@ -155,25 +195,85 @@ def add_reference(
     account_id: str,
     device_id: str,
     image: bytes,
-    box: Any,
+    zone_id: Any,
     status: str,
     now_ms: int,
 ) -> DoorReference:
-    box = validate_box(box) if isinstance(box, dict) else box
-    if len(table.query(account_id, ref_prefix(device_id))) >= MAX_REFERENCES:
+    """Invalid("pick a door zone") unless zone_id is one of the device's zones."""
+    zones = {z.sk: z for z in list_zones(table, account_id, device_id)}
+    if not isinstance(zone_id, str) or zone_id not in zones:
+        raise Invalid("pick a door zone")
+    if len(list_references(table, account_id, device_id)) >= MAX_REFERENCES:
         raise TooMany()
     # Zero-padded time first, so sort keys list references oldest first.
     item = {
         "pk": account_pk(account_id),
         "sk": f"{ref_prefix(device_id)}{now_ms:013d}-{secrets.token_hex(3)}",
         "image": image,  # Binary: 300 KB fits under DynamoDB's 400 KB item limit
-        "box": box_json(box),
+        "zone_id": zone_id,
         "status": status,
         "created_at": iso_utc(now_ms),
     }
     table.put(item)
     _mark_changed(table, account_id, device_id, now_ms)
-    return _reference(item)
+    return DoorReference(item["sk"], image, zone_id, zones[zone_id].box, status, item["created_at"])
+
+
+def add_zone(
+    table: FridgeTable, account_id: str, device_id: str, name: Any, box: Any, now_ms: int
+) -> DoorZone:
+    name = validate_name(name)
+    box = validate_box(box)
+    if len(list_zones(table, account_id, device_id)) >= MAX_ZONES:
+        raise TooManyZones()
+    item = {
+        "pk": account_pk(account_id),
+        "sk": f"{zone_prefix(device_id)}{now_ms:013d}-{secrets.token_hex(3)}",
+        "name": name,
+        "box": box_json(box),
+        "created_at": iso_utc(now_ms),
+    }
+    table.put(item)
+    _mark_changed(table, account_id, device_id, now_ms)
+    return _zone(item)
+
+
+def update_zone(
+    table: FridgeTable,
+    account_id: str,
+    device_id: str,
+    sk: str,
+    now_ms: int,
+    name: Any = None,
+    box: Any = None,
+) -> bool:
+    """Rename and/or redraw a zone (None leaves a field as it is); False if there is no such
+    zone. Its references follow the new box."""
+    if not sk.startswith(zone_prefix(device_id)):
+        return False
+    item = table.get(account_pk(account_id), sk)
+    if item is None:
+        return False
+    if name is not None:
+        item["name"] = validate_name(name)
+    if box is not None:
+        item["box"] = box_json(validate_box(box))
+    table.put(item)
+    _mark_changed(table, account_id, device_id, now_ms)
+    return True
+
+
+def delete_zone(table: FridgeTable, account_id: str, device_id: str, sk: str, now_ms: int) -> bool:
+    """Delete a zone and its references; False if there is no such zone."""
+    if not sk.startswith(zone_prefix(device_id)):
+        return False
+    if not table.delete(account_pk(account_id), sk):
+        return False
+    for ref in table.query(account_id, ref_prefix(device_id)):
+        if ref.get("zone_id") == sk:
+            table.delete(account_pk(account_id), ref["sk"])
+    _mark_changed(table, account_id, device_id, now_ms)
+    return True
 
 
 def delete_reference(
@@ -186,42 +286,6 @@ def delete_reference(
         return False
     _mark_changed(table, account_id, device_id, now_ms or int(time.time() * 1000))
     return True
-
-
-def iou(a: Box, b: Box) -> float:
-    ax, ay, aw, ah = a
-    bx, by, bw, bh = b
-    w = max(0.0, min(ax + aw, bx + bw) - max(ax, bx))
-    h = max(0.0, min(ay + ah, by + bh) - max(ay, by))
-    overlap = w * h
-    union = aw * ah + bw * bh - overlap
-    return overlap / union if union > 0 else 0.0
-
-
-def _bounding(a: Box, b: Box) -> Box:
-    left, top = min(a[0], b[0]), min(a[1], b[1])
-    right, bottom = max(a[0] + a[2], b[0] + b[2]), max(a[1] + a[3], b[1] + b[3])
-    return left, top, right - left, bottom - top
-
-
-def _round_box(box: Box) -> Box:
-    return tuple(round(v, 3) for v in box)
-
-
-def group_boxes(boxes: list[Box]) -> tuple[list[Box], list[int]]:
-    """(zones, the 0-based zone of each box): a box joins the first group it overlaps enough."""
-    groups: list[Box] = []
-    member: list[int] = []
-    for box in boxes:
-        for k, group in enumerate(groups):
-            if iou(box, group) >= GROUP_IOU:
-                groups[k] = _bounding(group, box)
-                member.append(k)
-                break
-        else:
-            groups.append(box)
-            member.append(len(groups) - 1)
-    return [_round_box(g) for g in groups], member
 
 
 def _image(data: bytes) -> Image.Image:
@@ -240,25 +304,23 @@ def _choose(opened: list[float], closed: list[float]) -> tuple[str, float, float
 def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Setup:
     """Work out each zone's rule from the references and store it; SetupFailed leaves the
     stored setup unchanged."""
+    zones = list_zones(table, account_id, device_id)
     refs = list_references(table, account_id, device_id)
     images = [_image(r.image) for r in refs]
-    zones, member = group_boxes([r.box for r in refs])
-    scores = {
-        r.sk: measure(img, zones[member[i]], "color")
-        for i, (r, img) in enumerate(zip(refs, images, strict=True))
-    }
+    scores = {r.sk: measure(img, r.box, "color") for r, img in zip(refs, images, strict=True)}
     if len(zones) > MAX_ZONES:
-        raise SetupFailed(f"at most {MAX_ZONES} separate zones", scores)
+        raise SetupFailed(f"at most {MAX_ZONES} door zones", scores)
     if not zones:
-        raise SetupFailed("zone 1 needs an open and a closed reference", scores)
+        raise SetupFailed("add a door zone first", scores)
 
     chosen: list[SetupZone] = []
-    for k, zone in enumerate(zones):
-        mine = [i for i, z in enumerate(member) if z == k]
+    for z in zones:
+        zone = z.box
+        mine = [i for i, r in enumerate(refs) if r.zone_id == z.sk]
         opened = [images[i] for i in mine if refs[i].status == "open"]
         closed = [images[i] for i in mine if refs[i].status == "closed"]
         if not opened or not closed:
-            raise SetupFailed(f"zone {k + 1} needs an open and a closed reference", scores)
+            raise SetupFailed(f"{z.name} needs an open and a closed reference", scores)
         baseline = baseline_of(closed, zone)
         best = None
         for feature in FEATURES:  # ties keep the earlier feature
@@ -268,10 +330,19 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
             if rule and rule[2] >= MIN_MARGIN and (best is None or rule[2] > best[3]):
                 best = (feature, *rule)
         if best is None:
-            raise SetupFailed(f"zone {k + 1}: open and closed references overlap", scores)
+            raise SetupFailed(f"{z.name}: open and closed references overlap", scores)
         feature, direction, threshold, margin = best
         chosen.append(
-            SetupZone(zone, feature, direction, round(threshold, 4), round(margin, 4), baseline)
+            SetupZone(
+                zone,
+                feature,
+                direction,
+                round(threshold, 4),
+                round(margin, 4),
+                baseline,
+                zone_id=z.sk,
+                name=z.name,
+            )
         )
 
     newest_closed = next(
@@ -289,6 +360,8 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
                     "threshold": z.threshold,
                     "margin": z.margin,
                     "baseline": z.baseline,
+                    "zone_id": z.zone_id,
+                    "name": z.name,
                 }
                 for z in chosen
             ],
@@ -340,6 +413,8 @@ def _zones_of(items: list[dict]) -> tuple[SetupZone, ...]:
             threshold=float(z["threshold"]),
             margin=float(z["margin"]),
             baseline=bytes(z["baseline"]),
+            zone_id=z.get("zone_id", ""),
+            name=z.get("name", ""),
         )
         for z in items
     )
@@ -359,12 +434,13 @@ def setup_check(table: FridgeTable, account_id: str, device_id: str) -> DoorChec
 
 
 def reference_scores(refs: list[DoorReference], setup: Setup | None) -> dict[str, float | None]:
-    """Each reference's value of its setup zone's feature (None: no setup or no matching zone)."""
+    """Each reference's value of its setup zone's feature (None: no setup, or the setup has no
+    zone with the reference's zone_id)."""
     scores: dict[str, float | None] = {}
     for ref in refs:
         zone = None
         if setup is not None:
-            zone = next((z for z in setup.zones if iou(ref.box, z.box) >= GROUP_IOU), None)
+            zone = next((z for z in setup.zones if z.zone_id and z.zone_id == ref.zone_id), None)
         scores[ref.sk] = (
             None if zone is None else measure(ref.image, zone.box, zone.feature, zone.baseline)
         )

@@ -144,11 +144,23 @@ export interface Snapshot {
 export type DoorStatus = "open" | "closed";
 export type DoorFeature = "blue" | "color" | "brightness" | "change";
 
-/** A camera snapshot with one box around a door or drawer, labeled open or closed. */
+/** A named box around a door or drawer; setup makes one rule per zone. */
+export interface DoorZone {
+  id: string;
+  name: string;
+  box: Box;
+  /** How many open and closed references it has. */
+  open: number;
+  closed: number;
+}
+
+/** A camera snapshot of one door zone, labeled open or closed. */
 export interface DoorReference {
   id: string;
+  zone_id: string;
   /** Base64 JPEG. */
   image: string;
+  /** Its zone's current box. */
   box: Box;
   status: DoorStatus;
   /** The value of its zone's chosen feature, or null before setup. */
@@ -157,6 +169,9 @@ export interface DoorReference {
 }
 
 export interface SetupZone extends Box {
+  /** The door zone it was made from (null for a setup run before zones existed). */
+  id?: string | null;
+  name?: string | null;
   feature: DoorFeature;
   direction: "above" | "below";
   threshold: number;
@@ -165,6 +180,7 @@ export interface SetupZone extends Box {
 
 export interface DoorSetup {
   device_id: string;
+  zones: DoorZone[];
   references: DoorReference[];
   setup: {
     zones: SetupZone[];
