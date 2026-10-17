@@ -413,7 +413,7 @@ The app SHALL offer a Config screen, opened by a "Config" gear button in the hea
 - **THEN** the reference thumbnail, its annotation and the instructions are shown, with no "Add", "Delete" or "Save" controls
 
 ### Requirement: Manage reference images
-The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer three sources: "Choose photo" (pick or take a photo on the device), "Camera snapshot" (`POST /api/camera/snapshot`) and "Recent clip". "Recent clip" SHALL open the "Snapshot from a recent clip" sheet: a dropdown of the door openings from the last 7 days that have a `clip`, newest first, each labelled with its day, local time and duration (e.g. "Today 18:02 · 25 s"); the selected clip plays with a scrubber; "Use this frame" sends the shown frame, as a JPEG at most 960 px wide, to `POST /api/camera/frame`, and only the image that route returns is shown for drawing; "Cancel" closes the sheet without a request. Once an image is chosen, the owner SHALL be able to draw on it with a "Box" tool and a "Line" tool, undo the last shape with "Undo", and type the annotation. The shapes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
+The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer three sources: "Choose photo" (pick or take a photo on the device), "Camera snapshot" (`POST /api/camera/snapshot`) and "Recent clip". "Recent clip" SHALL open the "Snapshot from a recent clip" sheet: a dropdown of the door openings from the last 7 days that have a `clip`, newest first, each labelled with its day, local time and duration (e.g. "Today 18:02 · 25 s"); the selected clip plays with a scrubber; "Use this frame" sends the shown frame, as a JPEG at most 960 px wide, to `POST /api/camera/frame`, and only the image that route returns is shown for drawing; "Cancel" closes the sheet without a request. Once an image is chosen, the owner SHALL be able to drag boxes on it, undo the last box with "Undo", and type the annotation. There SHALL be no "Box" or "Line" tool buttons and no way to draw a line. Once at least one box is drawn, a "Crop" button SHALL crop the image to the last box, taken from the full-resolution image; the cropped image SHALL replace the one shown and its boxes SHALL be cleared. "Undo" with no boxes left after a crop SHALL restore the image from before that crop, with its boxes. The boxes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
 
 #### Scenario: Add a reference
 - **WHEN** the owner taps "Add", taps "Choose photo", picks a 4032×3024 photo, types `soda can` and taps "Save"
@@ -428,8 +428,20 @@ The "Reference images" sub-section SHALL list each reference as a thumbnail with
 - **THEN** "No recent footage. Walk past the camera, then try again." is shown and the owner can still choose a photo
 
 #### Scenario: Draw on the image
-- **WHEN** the owner selects "Box", drags from 10%, 10% to 40%, 50% of the image, selects "Line", drags from 50%, 50% to 90%, 90%, and taps "Save"
-- **THEN** the shapes passed to the upload are a box from `(0.1, 0.1)` to `(0.4, 0.5)` and a line from `(0.5, 0.5)` to `(0.9, 0.9)`, in that order, drawn in red into the JPEG
+- **WHEN** the owner drags from 10%, 10% to 40%, 50% of the image, then from 50%, 50% to 90%, 90%, and taps "Save"
+- **THEN** there are no "Box" or "Line" buttons, and the shapes passed to the upload are a box from `(0.1, 0.1)` to `(0.4, 0.5)` and a box from `(0.5, 0.5)` to `(0.9, 0.9)`, in that order, drawn in red into the JPEG
+
+#### Scenario: Crop to the box
+- **WHEN** the owner draws a box from 10%, 10% to 40%, 50% on a 1000×800 image and taps "Crop"
+- **THEN** the image is cropped to the 300×320 px region at (100, 80), the cropped image is shown for drawing with no boxes, and after typing `milk bag` and tapping "Save" the cropped image (not the original) is uploaded, with no shapes
+
+#### Scenario: Crop needs a box
+- **WHEN** an image is chosen and no box is drawn
+- **THEN** "Crop" is disabled
+
+#### Scenario: Undo a crop
+- **WHEN** the owner draws a box, taps "Crop", then taps "Undo"
+- **THEN** the original image is shown again with that box, and "Crop" is enabled
 
 #### Scenario: Undo a shape
 - **WHEN** the owner has drawn two shapes and taps "Undo"
