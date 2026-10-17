@@ -33,7 +33,7 @@ CLIP_LINK = "https://clip.example.com/clip.mp4"
 START = 1786715596000
 STATE20 = {**STATE, "window": {**STATE["window"], "end_ms": START + 20_000}}
 CHECK = DoorCheck(zones=((0.0, 0.0, 1.0, 1.0),), threshold=0.02)
-STILL = color_jpeg((90, 90, 90), [((0.1, 0.1, 0.8, 0.8), (30, 80, 210))])  # a lit Ring still
+STILL = color_jpeg((200, 60, 60))  # Ring's still: a different moment, never what the check scored
 
 
 @pytest.fixture
@@ -90,10 +90,6 @@ def serve_stills(missing=()):
     return post
 
 
-def requested_offsets(post) -> list[int]:
-    return sorted(json.loads(c.request.content)["timestamp"] - START for c in post.calls)
-
-
 def stored_stills() -> list[str]:
     """The stored keys other than the open-span clip."""
     return [k for k in stored_keys() if not k.endswith("/clip.mp4")]
@@ -141,17 +137,34 @@ def test_still_open_at_the_end_of_the_clip(aws, ring_http, tmp_path):
     assert event["closed_at"] == "2026-08-14T13:53:36.000Z"
 
 
-# Four stills from the open span
-@respx.mock
-def test_four_stills_from_the_open_span(aws, ring_http, tmp_path):
-    serve_clip(tmp_path, [(4000, 12_500)])
-    stills = serve_stills()
+def frame_colours(seen: list[bytes]) -> list[str]:
+    """Each stored still as "lit" (open frame) or "closed" (closed frame); fails on Ring's still."""
+    out = []
+    for data in seen:
+        img = Image.open(io.BytesIO(data))
+        assert img.format == "JPEG" and img.size == (320, 180)  # a clip frame, not Ring's still
+        r, g, b = img.convert("RGB").getpixel((160, 90))
+        assert r < 150, "Ring's still was stored instead of the clip frame"
+        out.append("lit" if b > 150 and r < 90 else "closed")
+    return out
+
+
+def run_seen(ring_http, tmp_path):
     seen = []
     out = run(
         ring_http, blurrer=FakeBlurrer(blurred=lambda d: seen.append(d) or d), clip_dir=tmp_path
     )
-    assert requested_offsets(stills) == [4000, 7000, 9500, 12_500]
-    assert seen == [STILL] * 4
+    return out, seen
+
+
+# Four stills from the open span
+@respx.mock
+def test_four_stills_from_the_open_span(aws, ring_http, tmp_path):
+    serve_clip(tmp_path, [(4000, 12_500)])
+    serve_stills()
+    out, seen = run_seen(ring_http, tmp_path)
+    # frames at 4000, 7000, 9500 (lit) and 12500 (the first closed frame)
+    assert frame_colours(seen) == ["lit", "lit", "lit", "closed"]
     assert stored_stills() == [f"{PREFIX}still-{n}.jpg" for n in range(1, 5)]
     assert out["still_keys"] == stored_stills()
 
@@ -160,10 +173,21 @@ def test_four_stills_from_the_open_span(aws, ring_http, tmp_path):
 @respx.mock
 def test_short_open_span(aws, ring_http, tmp_path):
     serve_clip(tmp_path, [(6000, 6500)])
-    stills = serve_stills()
-    run(ring_http, clip_dir=tmp_path)
-    assert requested_offsets(stills) == [6000, 6500]
+    serve_stills()
+    _, seen = run_seen(ring_http, tmp_path)
+    assert frame_colours(seen) == ["lit", "closed"]  # frames at 6000 and 6500
     assert stored_stills() == [f"{PREFIX}still-1.jpg", f"{PREFIX}still-2.jpg"]
+
+
+# No Ring still requested
+@respx.mock
+def test_no_ring_still_requested(aws, ring_http, tmp_path):
+    serve_clip(tmp_path, [(4000, 12_500)])
+    stills = serve_stills()
+    out, seen = run_seen(ring_http, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert stills.call_count == 0
+    assert frame_colours(seen)[1] == "lit"  # still-2.jpg is the frame at 7000 ms
 
 
 # Still missing, frame used
@@ -171,17 +195,10 @@ def test_short_open_span(aws, ring_http, tmp_path):
 def test_still_missing_frame_used(aws, ring_http, tmp_path):
     serve_clip(tmp_path, [(4000, 12_500)])
     serve_stills(missing={7000})
-    seen = []
-    out = run(
-        ring_http, blurrer=FakeBlurrer(blurred=lambda d: seen.append(d) or d), clip_dir=tmp_path
-    )
+    out, seen = run_seen(ring_http, tmp_path)
     assert out["outcome"] == "door_open"
     assert len(out["still_keys"]) == 4
-    assert seen[0] == STILL and seen[2] == STILL and seen[3] == STILL
-    frame = Image.open(io.BytesIO(seen[1]))
-    assert frame.format == "JPEG" and frame.size == (320, 180)
-    r, g, b = frame.convert("RGB").getpixel((160, 90))
-    assert b > 150 and r < 90  # the lit frame at 7.0 s
+    assert frame_colours(seen)[1] == "lit"  # the lit frame at 7.0 s
 
 
 # Door opening processed: blurred stills and only the open-span clip reach S3

@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-17 · Ring Partner API · Still at a clip frame's time shows a different moment
+
+- **Task:** store sharp stills of a door opening for Nova, at the times the door check found the door open in the event clip.
+- **Steps:** downloaded the clip with `POST /v1/devices/{id}/media/video/download` (`{"timestamp": <start_ms>, "duration": <end_ms − start_ms>}`), scored a frame every 500 ms (frame time = `start_ms` + offset), then for 4 frames from the open span asked `POST /v1/devices/{id}/media/image/download` with `{"type": "at_timestamp", "timestamp": <frame time>, "image_options": {"format": "jpeg"}}`.
+- **Expected:** the still at that timestamp shows the same moment as the clip frame.
+- **Actual:** on the 2026-10-17 21:13:37Z event the clip frames scored the door open from 21:13:49.9Z to 21:14:01.9Z (`door_event_recorded` with `"source": "clip"`), all 4 still requests returned an image, and all 4 images show both doors closed with people walking past. Nova then reported an item added from closed-door stills.
+- **Severity:** Medium
+- **Workaround:** store the picked clip frames themselves (already 2560×1440, the same size as the stills) and stop requesting stills on the clip path.
+- **Suggestion:** say in the image download docs how far `at_timestamp` can be from the requested time (the docs say "nearest frame within ±10 s"), return the actual frame time in the response, or offer an exact-time mode.
+
 ### 2026-10-17 · Ring Partner API · Live session "connects" for an unplugged camera but sends no video
 
 - **Task:** take setup snapshots from a frame of the WHEP live view, and play the Livestream dialog.

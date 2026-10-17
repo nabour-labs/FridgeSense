@@ -529,23 +529,6 @@ def clip_frames_checked(
     return frames, values
 
 
-def stills_at(
-    ring: RingClient,
-    http: httpx.Client,
-    device_id: str,
-    frames: list[Downloaded],
-    sleep: Callable[[float], None],
-) -> list[bytes]:
-    """A Ring still at each frame's time (sharper than video), or the frame where none comes."""
-
-    def fetch(frame: Downloaded) -> bytes:
-        data, _ = fetch_still(ring, http, device_id, frame.at_ms, sleep)
-        return frame.data if data is None else data
-
-    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
-        return list(pool.map(fetch, frames))
-
-
 def _device_check(
     default: "DoorCheck",
     setup_for: Callable[[str, str], "DoorCheck | None"] | None,
@@ -719,8 +702,9 @@ def _fetch_stills(
     """Download stills, run the door check, and claim + record the door event.
 
     With `frame_interval_ms`, the check first runs on the event clip's frames at that spacing
-    and stills are downloaded only at the times picked from the open span; if the clip can't
-    be used it falls back to sampling stills across the window (the only path without it).
+    and the frames picked from the open span are the stills (no Ring still is requested); if
+    the clip can't be used it falls back to sampling stills across the window (the only path
+    without it).
 
     The door check runs on the raw, uncropped stills in memory. For a door opening, up to
     4 stills from the open span are cropped to `crop`, go through `blurrer` (face detection,
@@ -802,12 +786,9 @@ def _fetch_stills(
         picks = pick(span)
         trace.open_span = [raw[i][0] for i in span]
         trace.picked = [raw[i][0] for i in picks]
-        chosen = [downloaded[raw[i][0] - 1] for i in picks]
-        if clip:
-            datas = stills_at(ring, http, device_id, chosen, sleep)
-        else:
-            datas = [d.data for d in chosen]
-        picked = [(k, crop_still(data, crop)) for k, data in enumerate(datas, start=1)]
+        # On the clip path these are the scored frames themselves: a Ring still at the same
+        # time can show another moment (it is the nearest frame within ±10 s).
+        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(picks, start=1)]
         stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
         still_keys = [k for k, _ in stills]
         trace.stored_keys = still_keys
