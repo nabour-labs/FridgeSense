@@ -133,7 +133,7 @@ Ring tokens are refreshed every 3 hours. If a refresh is ever rejected, the logs
 1. Ring sends a motion webhook. FridgeSense starts one Step Functions run (`fridgesense-door-events`) for it.
 2. The run waits for Ring to finish the recording, then finds the event's start and end in Ring's history.
 3. It downloads the recording once from Ring and checks a frame every 0.5 s in the door zones, however long the motion lasted. The first open frame and the first closed frame after it give the door event's `opened_at` and `closed_at`, so `duration_s` is how long the door was really open, not how long someone stood in view. Motion without an opening stops here, so no face detection or Nova call is made. The clip stays in the Lambda's `/tmp` and is never stored. If Ring has no clip for the motion, the step logs `clip_unavailable` with the reason and checks about one still per second instead (4 to 30 of them).
-4. Up to 4 stills from the open stretch go on: Ring stills at the picked times, which are sharper than video frames (the clip frame stands in if a still can't be downloaded). Each is cropped to the strip the camera's privacy mask leaves visible. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova. If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
+4. Up to 4 stills from the open stretch go on: Ring stills at the picked times, which are sharper than video frames (the clip frame stands in if a still can't be downloaded). Each is cropped to the strip the camera's privacy mask leaves visible. Amazon Rekognition finds any faces and each one is blurred before the still is stored in S3, so no unblurred face reaches S3, the app or Nova (unless the owner turns **Blur faces** off). If face detection fails, that still is dropped rather than stored. The stills are deleted after 7 days.
 5. Amazon Nova 2 Lite compares the stills and lists items added and removed. Changes with confidence 0.7 or more update the inventory; the rest wait for confirmation.
 
 Nova 2 Lite runs through the `us.` cross-region inference profile, so a still may be processed in us-east-1, us-east-2 or us-west-2. To use Nova Lite v1 in us-east-1 only, deploy with `-c novaModelId=amazon.nova-lite-v1:0 -c novaPriceIn=0.00006 -c novaPriceOut=0.00024`.
@@ -237,16 +237,20 @@ Changes apply from the next door opening. Each reference adds roughly 1–2K inp
 
 ### Debug traces
 
-Every motion the camera reports leaves a trace for 7 days. **Config → Debug** lists them by day; tap one, or the bug icon on an Activity card, to see:
+When traces are on, every motion the camera reports leaves a trace for 7 days. **Config → Debug** lists them by day; tap one, or the bug icon on an Activity card, to see:
 
 - **Door check:** every still downloaded for the motion, with each zone's score against its threshold, the open/closed verdict, which stills went to analysis, and the rule that decided (setup zones with their baselines and door references, or the default zones). The door check is a pixel rule, so its scores are its reasoning; there is no prompt.
 - **Nova calls:** for each Converse attempt of a door opening, the request in order (text, reference images, stills, cache points), the raw response and stop reason, input/output/cache tokens, cost, Bedrock's `latencyMs` and the measured wall time. Failed and invalid attempts are included.
 
-Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). **The raw stills are stored unblurred**, so only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the user and demo passcodes get 403 and see no Debug tab or links. Turn traces off, for example before recording a demo with people in frame:
+Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). While **Blur faces** is on, a trace keeps each downloaded still only as a blurred thumbnail 160 px on its longest side; with it off, it keeps the still as downloaded. Only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the user and demo passcodes get 403 and see no Debug tab or links. Traces are off unless you deploy with them on, for example while tuning door detection:
 
 ```bash
-cdk deploy -c debugTraces=false
+cdk deploy -c debugTraces=true
 ```
+
+### Blur faces
+
+**Config → Camera → Blur faces** is on by default. While it is on, faces are blurred in every stored still, snapshot and live frame, and debug traces keep only blurred thumbnails. Only the owner can turn it off (`PUT /api/settings/face-blur`); then no face detection runs (saving about $0.001 per still) and stills are stored as recorded for 7 days. Every role can read it (`GET /api/settings/face-blur`). Livestream is never blurred, whatever the setting.
 
 ### Demo access
 

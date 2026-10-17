@@ -26,6 +26,7 @@ from fridgesense import (
     camera_info,
     deps,
     door_calibration,
+    face_blur,
     fridge_area,
     inventory,
     live,
@@ -513,6 +514,21 @@ def delete_reference(ctx: Context) -> dict:
     return json_response(200, config_body(ctx.table, ctx.account_id))
 
 
+@route("GET", "/api/settings/face-blur")
+def get_face_blur(ctx: Context) -> dict:
+    return json_response(200, {"enabled": face_blur.load(ctx.table, ctx.account_id)})
+
+
+@route("PUT", "/api/settings/face-blur", owner=True)
+def put_face_blur(ctx: Context) -> dict:
+    enabled = (_json_body(ctx.req) or {}).get("enabled")
+    if type(enabled) is not bool:
+        return json_response(400, {"error": "bad setting"})
+    face_blur.save(ctx.table, ctx.account_id, enabled, int(now() * 1000))
+    log_event("face_blur_changed", account_id=ctx.account_id, enabled=enabled)
+    return json_response(200, {"enabled": enabled})
+
+
 def rekognition_client():
     return boto3.client(
         "rekognition",
@@ -560,7 +576,9 @@ def post_snapshot(ctx: Context, device_id: str) -> dict:
         image, ts = camera.snapshot(
             deps.ring_client(now=now),
             deps.http_client(),
-            FaceBlurrer(rekognition_client(), price),
+            face_blur.blurrer(
+                ctx.table, ctx.account_id, lambda: FaceBlurrer(rekognition_client(), price)
+            ),
             device_id,
             int(now() * 1000),
             sleep,
@@ -581,7 +599,10 @@ def post_frame(ctx: Context) -> dict:
         return json_response(400, {"error": "bad image"})
     price = float(os.environ.get("FACE_DETECT_PRICE") or DEFAULT_PRICE)
     try:
-        blurred = camera.blur_frame(FaceBlurrer(rekognition_client(), price), jpeg)
+        blurrer = face_blur.blurrer(
+            ctx.table, ctx.account_id, lambda: FaceBlurrer(rekognition_client(), price)
+        )
+        blurred = camera.blur_frame(blurrer, jpeg)
     except camera.SnapshotFailed:
         return json_response(502, {"error": "camera unavailable"})
     return json_response(
