@@ -85,6 +85,7 @@ def test_snapshot_taken(owner, faces):
 @respx.mock
 def test_snapshot_no_recent_footage(owner):
     respx.post(DOWNLOAD).respond(416)
+    respx.get(f"{API_BASE}/v1/history/devices/{DEVICE}/events").respond(200, json={"data": []})
     assert call("POST", "/api/camera/snapshot", token=owner) == (
         409,
         {"error": "no recent footage"},
