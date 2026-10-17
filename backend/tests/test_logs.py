@@ -1,7 +1,14 @@
-"""Redaction for log lines (ring-account-link: Secrets never logged)."""
+"""Redaction for log lines (ring-account-link: Secrets never logged) and log-hygiene."""
 
 import json
 import logging
+import os
+import subprocess
+import sys
+
+import httpx
+import pytest
+import respx
 
 from fridgesense.logs import log_event, redact
 
@@ -36,3 +43,37 @@ def test_token_counts_are_not_redacted():
         "input_tokens": 1180,
         "security_token": "[redacted]",
     }
+
+
+HANDLERS = ["api", "http", "mcp", "pipeline", "token_refresh"]
+
+
+# Scenario: Handler muted on import
+@pytest.mark.parametrize("name", HANDLERS)
+def test_handler_muted_on_import(name):
+    code = (
+        f"import logging, fridgesense.handlers.{name}; "
+        # The handlers raise the root logger to INFO when called.
+        "logging.getLogger().setLevel(logging.INFO); "
+        "print(logging.getLogger('httpx').getEffectiveLevel())"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "AWS_DEFAULT_REGION": "us-east-1"},
+    )
+    assert int(out.stdout.strip().splitlines()[-1]) >= logging.WARNING
+
+
+# Scenario: Signed URL fetched during a pipeline run
+@respx.mock
+def test_signed_url_not_logged(caplog):
+    import fridgesense.handlers.pipeline  # noqa: F401  (the import mutes httpx)
+
+    url = "https://media.example/clip.mp4?security_token=abc"
+    respx.get(url).respond(200)
+    with caplog.at_level(logging.INFO):
+        httpx.get(url)
+    assert not any("security_token=abc" in r.getMessage() for r in caplog.records)

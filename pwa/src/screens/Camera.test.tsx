@@ -85,7 +85,7 @@ async function checkDecoder() {
     peers.push(p);
     return p as unknown as RTCPeerConnection;
   };
-  renderCamera(vi.fn().mockResolvedValue(INFO), LIVE, createPeer);
+  renderCamera(vi.fn().mockResolvedValue(INFO), LIVE, createPeer, "owner");
   await userEvent.click(await screen.findByRole("button", { name: "Check decoder" }));
   await waitFor(() => expect(peers[0]?.localDescription).not.toBeNull());
   return peers;
@@ -254,9 +254,17 @@ test("with no history the tab says none is recorded", async () => {
 
 // Scenario: Before any check
 test("before a check the decoder card explains itself", async () => {
-  renderCamera(vi.fn().mockResolvedValue(INFO));
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "user");
   expect(await screen.findByText(CHECK_HINT)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Check decoder" })).toBeInTheDocument();
+});
+
+// Scenario: No Decoder card for a viewer
+test("the viewer sees no decoder card", async () => {
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "viewer");
+  expect(await screen.findByRole("region", { name: "FridgeSense" })).toBeInTheDocument();
+  expect(screen.queryByText(CHECK_HINT)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Check decoder" })).not.toBeInTheDocument();
 });
 
 // Scenario: Decoder values after a check

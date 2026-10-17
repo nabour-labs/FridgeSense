@@ -43,10 +43,23 @@ describe("API throttling", () => {
   // Passcode routes throttled
   it("limits the passcode routes to 1 request/s with a burst of 3", () => {
     const tight = { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 };
+    const settings = defaultStage().Properties.RouteSettings as Record<string, unknown>;
+    expect(settings["POST /api/session"]).toEqual(tight);
+    expect(settings["POST /ring/link"]).toEqual(tight);
+  });
+
+  // Webhook route throttled
+  it("gives POST /ring/webhook its own limit of 50 requests/s with a burst of 100", () => {
     expect(defaultStage().Properties.RouteSettings).toEqual({
-      "POST /api/session": tight,
-      "POST /ring/link": tight,
+      "POST /api/session": { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 },
+      "POST /ring/link": { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 },
+      "POST /ring/webhook": { ThrottlingRateLimit: 50, ThrottlingBurstLimit: 100 },
     });
+  });
+
+  // Webhook route exists before its limit
+  it("creates the webhook route before the stage", () => {
+    expect(defaultStage().DependsOn ?? []).toContain(routeId("POST /ring/webhook"));
   });
 
   // Session route reaches the app API

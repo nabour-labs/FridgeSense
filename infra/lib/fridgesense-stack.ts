@@ -230,11 +230,16 @@ export class FridgeSenseStack extends Stack {
     const routes: [string, HttpMethod][] = [
       ["/ring/token", HttpMethod.POST],
       ["/ring/link", HttpMethod.GET],
-      ["/ring/webhook", HttpMethod.POST],
     ];
     for (const [routePath, method] of routes) {
       api.addRoutes({ path: routePath, methods: [method], integration });
     }
+    // Ring's deliveries: limited on their own below.
+    const [webhookRoute] = api.addRoutes({
+      path: "/ring/webhook",
+      methods: [HttpMethod.POST],
+      integration,
+    });
     // The link page's passcode check: throttled on its own below.
     const [ringLinkPost] = api.addRoutes({
       path: "/ring/link",
@@ -262,7 +267,9 @@ export class FridgeSenseStack extends Stack {
       ...nova,
     });
     // Throttle the API; the two passcode checks much harder to slow brute force.
-    // Limits are per route across all callers. API Gateway rejects route settings
+    // Limits are per route across all callers, so the webhook gets a higher one of its own:
+    // unsigned junk at the default rate would otherwise 429 Ring's deliveries, and Ring
+    // disables a webhook after 10+ failures in a row. API Gateway rejects route settings
     // for routes that don't exist yet, so the stage waits for them.
     const stage = api.defaultStage?.node.defaultChild as CfnStage;
     stage.defaultRouteSettings = { throttlingRateLimit: 10, throttlingBurstLimit: 20 };
@@ -271,10 +278,14 @@ export class FridgeSenseStack extends Stack {
       ["POST /ring/link", ringLinkPost],
     ];
     // RouteSettings is an untyped map: CDK passes its keys through as written.
-    stage.routeSettings = Object.fromEntries(
-      passcodeRoutes.map(([key]) => [key, { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 }]),
-    );
+    stage.routeSettings = {
+      ...Object.fromEntries(
+        passcodeRoutes.map(([key]) => [key, { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 3 }]),
+      ),
+      "POST /ring/webhook": { ThrottlingRateLimit: 50, ThrottlingBurstLimit: 100 },
+    };
     for (const [, route] of passcodeRoutes) stage.node.addDependency(route);
+    stage.node.addDependency(webhookRoute);
 
     // The "Camera linked" page links to the app.
     httpFn.addEnvironment("APP_URL", app.url);

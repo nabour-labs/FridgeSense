@@ -24,10 +24,10 @@ UNAVAILABLE = (502, {"error": "camera unavailable"})
 def tokens(aws, monkeypatch):
     monkeypatch.setattr(api, "now", lambda: NOW)
     link_account()
-    configure(demo_passcode="look-only")
+    configure(demo_passcode="look-only", user_passcode="family")
     load_app_config(refresh=True)
     DeviceRepository().replace(ACCOUNT, [Device(DEVICE, "Fridge")])
-    return {"owner": sign_in(), "viewer": sign_in("look-only")}
+    return {"owner": sign_in(), "user": sign_in("family"), "viewer": sign_in("look-only")}
 
 
 def opened(location=f"/v1/devices/{DEVICE}/media/streaming/whep/sessions/S123"):
@@ -48,12 +48,23 @@ def test_live_view_opened(tokens):
     assert sent.headers["authorization"] == "Bearer at1"
 
 
+# Scenario: User opens a live view
+@respx.mock
+def test_user_opens_a_live_view(tokens):
+    opened()
+    status, body = call("POST", "/api/camera/live", {"offer": OFFER}, tokens["user"])
+    assert status == 200 and body["answer"] == ANSWER
+
+
 # Scenario: Viewer opens a live view
 @respx.mock
 def test_viewer_opens_a_live_view(tokens):
-    opened()
-    status, body = call("POST", "/api/camera/live", {"offer": OFFER}, tokens["viewer"])
-    assert status == 200 and body["answer"] == ANSWER
+    route = opened()
+    assert call("POST", "/api/camera/live", {"offer": OFFER}, tokens["viewer"]) == (
+        403,
+        {"error": "read-only"},
+    )
+    assert not route.called
 
 
 # Scenario: Bad offer
@@ -123,8 +134,19 @@ def test_not_signed_in(tokens):
 @respx.mock
 def test_live_view_closed(tokens, status):
     route = respx.delete(f"{SESSIONS}/S123").respond(status)
-    assert call("DELETE", "/api/camera/live/S123", token=tokens["viewer"]) == (200, {"ok": True})
+    assert call("DELETE", "/api/camera/live/S123", token=tokens["user"]) == (200, {"ok": True})
     assert route.called
+
+
+# Scenario: Viewer refused a close
+@respx.mock
+def test_viewer_refused_a_close(tokens):
+    route = respx.delete(f"{SESSIONS}/S123").respond(204)
+    assert call("DELETE", "/api/camera/live/S123", token=tokens["viewer"]) == (
+        403,
+        {"error": "read-only"},
+    )
+    assert not route.called
 
 
 # Scenario: Session already gone

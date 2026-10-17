@@ -39,10 +39,6 @@ DEADLINE_S = 12.0
 MAX_ROUNDS = 4
 DAILY_LIMIT = 100
 
-# The MCP client's HTTP library logs every request URL at INFO, and the URL holds mcp_key.
-for _name in ("httpx", "httpx2"):
-    logging.getLogger(_name).setLevel(logging.WARNING)
-
 Reason = Literal[
     "mcp_error", "bedrock_error", "too_many_rounds", "timeout", "empty_answer", "over_budget"
 ]

@@ -6,7 +6,7 @@ Deploy-time guards that cap abuse of the public API and warn the owner early abo
 ## Requirements
 
 ### Requirement: Default API request limit
-The HTTP API's default stage SHALL limit every route to a steady rate of 10 requests per second with a burst of 20, unless a route has its own lower limit.
+The HTTP API's default stage SHALL limit every route to a steady rate of 10 requests per second with a burst of 20, unless a route has its own limit.
 
 #### Scenario: Default stage throttled
 - **WHEN** the stack is synthesized
@@ -47,3 +47,14 @@ The alert email address SHALL come from the CDK context value `alertEmail`. No e
 #### Scenario: Address missing
 - **WHEN** the stack is synthesized without an `alertEmail` context value
 - **THEN** synthesis throws an error whose message contains `alertEmail`
+
+### Requirement: Webhook route limited separately
+`POST /ring/webhook` SHALL have its own limit of 50 requests per second with a burst of 100, so unsigned traffic at the default limit can't starve Ring's deliveries into 429s. The stage SHALL depend on the webhook route so CloudFormation creates the route first.
+
+#### Scenario: Webhook route throttled
+- **WHEN** the stack is synthesized
+- **THEN** the `$default` stage's `RouteSettings` has an entry for `POST /ring/webhook` with `ThrottlingRateLimit = 50` and `ThrottlingBurstLimit = 100`, and the `POST /api/session` and `POST /ring/link` entries are still 1 and 3
+
+#### Scenario: Webhook route exists before its limit
+- **WHEN** the stack is synthesized
+- **THEN** the `$default` stage depends on the `POST /ring/webhook` route
