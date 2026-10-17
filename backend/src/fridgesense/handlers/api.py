@@ -231,6 +231,19 @@ def get_events(ctx: Context) -> dict:
     now_ms = int(now() * 1000)
     stills_since = iso_utc(now_ms - STILLS_DAYS * DAY_MS)
     s3, bucket = _s3(), os.environ.get("STILLS_BUCKET", "")
+
+    def link(key: str) -> str:
+        return s3.generate_presigned_url(
+            "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=STILL_LINK_TTL_S
+        )
+
+    def clip_of(e: dict) -> str | None:
+        """The open-span clip, played from open to close; never for viewers (not face-blurred)."""
+        if ctx.role == "viewer" or not e.get("clip_key"):
+            return None
+        start_s, end_s = (float(t) for t in e["clip_span"])
+        return f"{link(e['clip_key'])}#t={start_s:g},{end_s:g}"
+
     events = []
     for e in found:
         recent = e.get("opened_at", "") >= stills_since
@@ -243,14 +256,8 @@ def get_events(ctx: Context) -> dict:
                 "status": e.get("status"),
                 "changes": e.get("changes", []),
                 "pending_count": e.get("pending_count", 0),
-                "stills": [
-                    s3.generate_presigned_url(
-                        "get_object",
-                        Params={"Bucket": bucket, "Key": key},
-                        ExpiresIn=STILL_LINK_TTL_S,
-                    )
-                    for key in (e.get("still_keys", []) if recent else [])
-                ],
+                "stills": [link(key) for key in (e.get("still_keys", []) if recent else [])],
+                "clip": clip_of(e) if recent else None,
             }
         )
     return json_response(200, {"events": events, "next": events[-1]["id"] if more else None})
