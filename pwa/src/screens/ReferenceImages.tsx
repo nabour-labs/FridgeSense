@@ -14,7 +14,7 @@ import { useLoad } from "../useLoad";
 import { CARD, HEADING, INPUT, PRIMARY } from "./configStyles";
 
 const MAX_REFERENCES = 6;
-const MAX_ANNOTATION = 80;
+const MAX_ANNOTATION = 300;
 const MAX_INSTRUCTIONS = 1000;
 /** The owner's reference images and custom instructions for the analysis. */
 export function ReferenceImages({ resize = toJpeg, crop = cropJpeg }: { resize?: Resize; crop?: Crop }) {
@@ -365,14 +365,18 @@ function AddReference({
           <label htmlFor="ref-annotation" className="mb-2 block text-sm font-medium">
             Annotation
           </label>
-          <input
+          <textarea
             id="ref-annotation"
             value={annotation}
+            rows={3}
             maxLength={MAX_ANNOTATION}
             placeholder="e.g. milk bag (2 L, white with blue print)"
             onChange={(e) => setAnnotation(e.target.value)}
-            className={`${INPUT} h-12`}
+            className={`${INPUT} block py-3 text-sm`}
           />
+          <p className="mt-1 px-1 text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">
+            {annotation.length} / {MAX_ANNOTATION}
+          </p>
         </div>
         {error && (
           <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
