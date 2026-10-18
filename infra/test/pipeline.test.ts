@@ -312,11 +312,11 @@ describe("clip blur", () => {
     return found[0];
   }
 
-  it("is an arm64 container Lambda with 3008 MB, 300 s and 2 GB of /tmp", () => {
+  it("is an arm64 container Lambda with 10240 MB (about 6 vCPU), 300 s and 2 GB of /tmp", () => {
     const [, fn] = blurFunction();
     expect(fn.Properties).toMatchObject({
       Architectures: ["arm64"],
-      MemorySize: 3008,
+      MemorySize: 10240,
       Timeout: 300,
       EphemeralStorage: { Size: 2048 },
     });
