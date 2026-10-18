@@ -6,14 +6,14 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 1. Confirm thresholds on real frames (local only)
 
-- [ ] 1.1 Copy the raw debug frames of the 2026-10-17 events into `tmp/door-frames-2026-10-17/` (gitignored, never committed or uploaded; the S3 copies expire around 2026-10-24). Use the profile from `.env` and read-only `aws s3 sync` of `debug/raw-*.jpg`. Verify with `git status` that nothing new is tracked.
-- [ ] 1.2 With a throwaway scratchpad script, measure the strict blue rule (60/100/120) on zone 1 for: the morning daylight frames, the evening frames of event 1792286435007 (open at frames 18–26), and every `tmp/*.mp4` labelled opening. Confirm closed frames read below 0.01 and open frames at or above 0.01. If not, change the constants and the spec values in this change first. Record the numbers in design.md.
+- [x] 1.1 Copy the raw debug frames of the 2026-10-17 events into `tmp/door-frames-2026-10-17/` (gitignored, never committed or uploaded; the S3 copies expire around 2026-10-24). Use the profile from `.env` and read-only `aws s3 sync` of `debug/raw-*.jpg`. Verify with `git status` that nothing new is tracked.
+- [x] 1.2 With a throwaway scratchpad script, measure the strict blue rule (60/100/120) on zone 1 for: the morning daylight frames, the evening frames of event 1792286435007 (open at frames 18–26), and every `tmp/*.mp4` labelled opening. Confirm closed frames read below 0.01 and open frames at or above 0.01. If not, change the constants and the spec values in this change first. Record the numbers in design.md.
 
 ## 2. Strict fridge-light test
 
-- [ ] 2.1 Write failing tests in `backend/tests/test_door_check.py` for "Cool daylight on closed doors" and "Weakly blue pixels do not count". Re-run the existing "Fridge light visible", "Faint fridge light counts at the default threshold", "Food in front of closed doors", "Dark colored clothing does not count" and "Stored color setup still works". Confirm the two new tests fail on the 20/60/100 rule.
-- [ ] 2.2 Add `BLUE_MIN_CHROMA`, `BLUE_MIN_PEAK`, `BLUE_MIN_LEAD` and a blue-only mask in `door_events.py`, leaving `color` on 60/100. Verify with `uv run pytest tests/test_door_check.py` and the door-calibration and self-tuning tests.
-- [ ] 2.3 Write failing tests in `backend/tests/test_door_calibration.py` for "Daylit steel is not fridge light" and "Fridge interior is fridge light" (reference `blue` values via `GET /api/door-calibration` scores or `measure`). Confirm they pass with 2.2 and fail if the constants are reverted.
+- [x] 2.1 Write failing tests in `backend/tests/test_door_check.py` for "Cool daylight on closed doors" and "Weakly blue pixels do not count". Re-run the existing "Fridge light visible", "Faint fridge light counts at the default threshold", "Food in front of closed doors", "Dark colored clothing does not count" and "Stored color setup still works". Confirm the two new tests fail on the 20/60/100 rule.
+- [x] 2.2 Add `BLUE_MIN_CHROMA`, `BLUE_MIN_PEAK`, `BLUE_MIN_LEAD` and a blue-only mask in `door_events.py`, leaving `color` on 60/100. Verify with `uv run pytest tests/test_door_check.py` and the door-calibration and self-tuning tests.
+- [x] 2.3 Write failing tests in `backend/tests/test_door_calibration.py` for "Daylit steel is not fridge light" and "Fridge interior is fridge light" (reference `blue` values via `GET /api/door-calibration` scores or `measure`). Confirm they pass with 2.2 and fail if the constants are reverted.
 
 ## 3. Fridge light preferred in setup and re-tuning
 

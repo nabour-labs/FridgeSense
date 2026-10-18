@@ -576,3 +576,32 @@ def test_setup_run_clears_moved(aws):
     s = alignment.load_alignment(FridgeTable(), ACCOUNT, D1)
     assert (s.dx, s.dy, s.failures, s.moved, s.moved_at_ms) == (0, 0, 0, False, None)
     assert s.last_moved_at_ms == T0 + 7
+
+
+# Fridge light measured strictly in setup
+DAYLIT_STEEL = (110, 150, 200)
+
+
+def _blue_setup_scores(extra: bytes) -> tuple[float, float]:
+    """Scores of a lit open reference and `extra` (closed) under a `blue` setup zone."""
+    z = zone()
+    opened = add(lit(), z.sk, "open")
+    add(plain(128), z.sk, "closed", at=T0 + 1)
+    setup = run()
+    assert setup.zones[0].feature == "blue"
+    other = add(extra, z.sk, "closed", at=T0 + 120_000)
+    scores = dc.reference_scores(dc.list_references(FridgeTable(), ACCOUNT, D1), setup)
+    return scores[opened.sk], scores[other.sk]
+
+
+# Daylit steel is not fridge light
+def test_daylit_steel_is_not_fridge_light(aws):
+    daylit = color_jpeg(GREY, [((0.0, 0.0, 0.15, 1.0), DAYLIT_STEEL)], size=(200, 100))
+    _, score = _blue_setup_scores(daylit)
+    assert score == pytest.approx(0.0, abs=0.002)
+
+
+# Fridge interior is fridge light
+def test_fridge_interior_is_fridge_light(aws):
+    opened, _ = _blue_setup_scores(plain(128))
+    assert opened == pytest.approx(0.1, abs=0.005)

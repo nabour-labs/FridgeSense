@@ -90,7 +90,11 @@ DEFAULT_ZONES: tuple[Box, ...] = ((0.38, 0.32, 0.21, 0.30), (0.455, 0.60, 0.12, 
 DEFAULT_THRESHOLD = 0.01
 MIN_CHROMA = 60  # max(R,G,B) - min(R,G,B): grey steel, white and wood stay below this
 MIN_PEAK = 100  # brightest channel: keeps dark saturated clothing (navy) out
-MIN_BLUE_LEAD = 20  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
+# Fridge light: stricter than "colourful". Daylight tints the steel doors a pale blue
+# (e.g. 110,150,200) that passes the colour test; the LED-lit interior is a deep blue.
+BLUE_MIN_CHROMA = 100
+BLUE_MIN_PEAK = 120
+BLUE_MIN_LEAD = 60  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
 
 
 def still_times(start_ms: int, end_ms: int, count: int = STILL_COUNT) -> list[int]:
@@ -151,14 +155,16 @@ def _crop_box(img: Image.Image, box: Box) -> Image.Image:
     return img.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
 
 
-def _colorful_mask(zone: Image.Image) -> Image.Image:
+def _colorful_mask(
+    zone: Image.Image, min_chroma: int = MIN_CHROMA, min_peak: int = MIN_PEAK
+) -> Image.Image:
     r, g, b = zone.split()
     peak = ImageChops.lighter(ImageChops.lighter(r, g), b)
     low = ImageChops.darker(ImageChops.darker(r, g), b)
     chroma = ImageChops.subtract(peak, low)
     return ImageChops.multiply(
-        chroma.point(lambda v: 255 if v > MIN_CHROMA else 0),
-        peak.point(lambda v: 255 if v > MIN_PEAK else 0),
+        chroma.point(lambda v: 255 if v > min_chroma else 0),
+        peak.point(lambda v: 255 if v > min_peak else 0),
     )
 
 
@@ -167,11 +173,13 @@ def _colorful(zone: Image.Image) -> float:
 
 
 def _blue_lit(zone: Image.Image) -> float:
-    """Share of colourful pixels whose blue leads red and green: the lit fridge interior."""
+    """Share of strongly colourful pixels whose blue clearly leads red and green: the lit
+    fridge interior."""
     r, g, b = zone.split()
     lead = ImageChops.subtract(b, ImageChops.lighter(r, g))
-    blue = lead.point(lambda v: 255 if v > MIN_BLUE_LEAD else 0)
-    return ImageStat.Stat(ImageChops.multiply(_colorful_mask(zone), blue)).mean[0] / 255
+    blue = lead.point(lambda v: 255 if v > BLUE_MIN_LEAD else 0)
+    mask = _colorful_mask(zone, BLUE_MIN_CHROMA, BLUE_MIN_PEAK)
+    return ImageStat.Stat(ImageChops.multiply(mask, blue)).mean[0] / 255
 
 
 def _open_rgb(still: bytes | Image.Image) -> Image.Image:
