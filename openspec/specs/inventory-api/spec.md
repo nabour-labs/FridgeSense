@@ -106,7 +106,7 @@ A token with role `viewer` SHALL be accepted on every `GET` route and SHALL be r
 - **THEN** the response is `{"items": [], "pending_count": 0}`
 
 ### Requirement: Door event listing
-`GET /api/events` SHALL return `{"events": [...], "next": <id or null>}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, `stills` and `clip`. `stills` holds 15-minute download links for its stored stills, or `[]` for events older than 7 days. `clip` is a 15-minute download link for the event's open-span clip, ending in the media fragment `#t=<start_s>,<end_s>` from its `clip_span`. It is `null` when the event has no `clip_key`, when the event is older than 7 days, and always for viewer tokens.
+`GET /api/events` SHALL return `{"events": [...], "next": <id or null>}`, newest first. Each event has `id`, `opened_at`, `closed_at`, `duration_s`, `status`, `changes`, `pending_count`, `stills` and `clip`. `stills` holds 15-minute download links for its stored stills, or `[]` for events older than 7 days. `clip` is a 15-minute download link for the event's open-span clip, ending in the media fragment `#t=<start_s>,<end_s>` from its `clip_span`. It is `null` when the event has no `clip_key` or is older than 7 days. For viewer tokens it is also `null` unless the event has `clip_blurred = true`.
 
 The range is either `days=<n>` (default 7, max 30, ending now) or `from` and `to`, ISO 8601 instants with `from` inclusive, `to` exclusive, `from` before `to` and at most 31 days apart. When `from` is given, `days` is ignored. With `limit=<n>` (1 to 50) at most `n` events are returned and `next` is the id of the last one when older events remain in the range, else null; `cursor=<id>` returns only events older than that event. Without `limit`, every event in range is returned and `next` is null.
 
@@ -119,8 +119,16 @@ The range is either `days=<n>` (default 7, max 30, ending now) or `from` and `to
 - **THEN** its `clip` is a link that downloads `clip.mp4` without any other credentials and ends in `#t=0.5,8.5`
 
 #### Scenario: Viewer gets no clip
-- **WHEN** a viewer token lists the same event
+- **WHEN** a viewer token lists the same event, which has no `clip_blurred`
 - **THEN** its `clip` is `null` and its 4 `stills` links are still listed
+
+#### Scenario: Viewer gets a blurred clip
+- **WHEN** a viewer token lists a recent door event with `clip_key` set, `clip_span = [0.5, 8.5]` and `clip_blurred = true`
+- **THEN** its `clip` is a link to `clip.mp4` ending in `#t=0.5,8.5`
+
+#### Scenario: Clip still being blurred
+- **WHEN** a recent door event's raw clip is waiting for the blur step (no `clip_key` yet)
+- **THEN** its `clip` is `null` for every role and its `stills` are listed
 
 #### Scenario: Event without a clip
 - **WHEN** a recent door event has no `clip_key`
@@ -340,3 +348,26 @@ A token with role `user` SHALL be accepted on every route an owner token is acce
 #### Scenario: User refused debug traces
 - **WHEN** a user token calls `GET /api/debug/motions` or `GET /api/debug/motions/{id}`
 - **THEN** each response is 403 `{"error": "admin only"}`
+
+### Requirement: Proof still links per change
+In `GET /api/events`, each item of an event's `changes` SHALL have `proof`: a list of 15-minute download links, one for each saved `proof` index that names one of the event's `still_keys`, in order. It SHALL be `[]` when the change has no `proof`, the event is older than 7 days, or no index names a stored still. Every role SHALL get it.
+
+#### Scenario: Proof links listed
+- **WHEN** a recent event has 4 `still_keys` and a change with `proof = [2, 3]`
+- **THEN** that change's `proof` holds 2 links, which download `still_keys[2]` and `still_keys[3]` without any other credentials
+
+#### Scenario: Viewer gets proof
+- **WHEN** a viewer token lists the same event
+- **THEN** that change's `proof` holds the same 2 stills
+
+#### Scenario: Change without proof
+- **WHEN** a recent event's change was saved without `proof`
+- **THEN** its `proof` is `[]`
+
+#### Scenario: Index past the stored stills
+- **WHEN** a change has `proof = [1, 5]` and the event has 4 `still_keys`
+- **THEN** its `proof` holds only the link to `still_keys[1]`
+
+#### Scenario: Old event
+- **WHEN** an event opened 8 days ago has a change with `proof = [0]`
+- **THEN** its `proof` is `[]`

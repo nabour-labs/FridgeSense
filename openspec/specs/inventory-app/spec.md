@@ -861,3 +861,45 @@ On the Activity screen, each door opening card SHALL show a "Debug" link for the
 #### Scenario: Viewer has no link
 - **WHEN** a viewer opens Activity
 - **THEN** no "Debug" link is shown
+
+### Requirement: Proof stills on Activity
+When any change of an event has `proof` links, the event card SHALL show a "Proof" strip with each such change's thumbnails (up to 2), each captioned with the change's label ("+ soda", "− 2 eggs"). The strip SHALL sit beside the clip or stills on screens `sm` and up, and below them on phones. Tapping a thumbnail SHALL open the still viewer on that change's proof stills. Without proof links, no strip SHALL be shown.
+
+#### Scenario: Proof beside the clip
+- **WHEN** an event has a `clip` link and a change "+ soda" with 2 `proof` links
+- **THEN** the card shows the video and a "Proof" strip with 2 images whose accessible names are "Proof for + soda, 1 of 2" and "Proof for + soda, 2 of 2"
+
+#### Scenario: Several changes
+- **WHEN** an event has "+ soda" with 1 proof link and "− 2 eggs" with 2
+- **THEN** the strip shows 3 thumbnails, captioned "+ soda" and "− 2 eggs"
+
+#### Scenario: Tap a proof still
+- **WHEN** the user taps "Proof for − 2 eggs, 2 of 2"
+- **THEN** the still viewer opens on that image, "Next still" is disabled and "Previous still" shows "Proof for − 2 eggs, 1 of 2"
+
+#### Scenario: No proof
+- **WHEN** no change of an event has `proof` links
+- **THEN** no "Proof" strip is shown, and the clip or stills show as before
+
+#### Scenario: Proof with stills
+- **WHEN** an event has `clip: null`, 4 still links and a change with 1 proof link
+- **THEN** the 4 still buttons and a "Proof" strip with 1 image are both shown
+
+#### Scenario: Layout by width
+- **WHEN** the card is rendered
+- **THEN** the media area uses a one-column grid that becomes two columns at `sm` (`sm:grid-cols-[2fr_1fr]`), with the strip in the second column
+
+### Requirement: Clip picker plays face-blurred clips
+The Reference images clip picker SHALL offer only the clips that `GET /api/events` returns as `clip` links, and SHALL play no other video. While face blurring is on, those links are face-blurred clips (see `clip-face-blur`). A frame grabbed from a clip SHALL still be sent to `POST /api/camera/frame`, and only the image that route returns SHALL be used.
+
+#### Scenario: Only listed clips offered
+- **WHEN** `GET /api/events` returns three recent events, two with a `clip` link and one with `clip: null`
+- **THEN** the picker offers exactly the two clips, and its video sources are those two links
+
+#### Scenario: Clip being blurred not offered
+- **WHEN** the only recent event has `clip: null` because its clip is still being blurred
+- **THEN** the picker shows "No door openings with a clip in the last 7 days."
+
+#### Scenario: Frame still blurred by the server
+- **WHEN** the owner picks a frame from a clip
+- **THEN** `POST /api/camera/frame` is requested once with that frame, and the reference form shows the image it returns

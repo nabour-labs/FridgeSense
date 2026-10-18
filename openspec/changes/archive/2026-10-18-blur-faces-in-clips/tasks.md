@@ -42,4 +42,4 @@
 
 - [x] 7.1 Update the README Blur faces and Activity sections: clips are blurred around faces only, best effort, viewers see blurred clips, and Livestream is unchanged.
 - [x] 7.2 Run `cd clipblur && uv run pytest && uv run ruff check`, `cd backend && uv run pytest && uv run ruff check`, `cd infra && npm test`, and `cd pwa && npm test && npm run typecheck`, all green, and report the results.
-- [ ] 7.3 With Jayson's OK, start Docker Desktop, run `cdk diff`, then `cdk deploy`. Open the fridge once with a face in view and check the Activity clip. Add friction-log entries for anything that was surprising.
+- [x] 7.3 With Jayson's OK, start Docker Desktop, run `cdk diff`, then `cdk deploy`. Open the fridge once with a face in view and check the Activity clip. Add friction-log entries for anything that was surprising.
