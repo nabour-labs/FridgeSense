@@ -32,7 +32,7 @@
 ## 5. Infrastructure
 
 - [x] 5.1 Write failing CDK assertion tests for "Lifecycle rule synthesized", the `DockerImageFunction` settings and least-privilege role, and the "Blur runs after save", "No raw clip" and "Blur error caught" state transitions. Run them red.
-- [ ] 5.2 Add the function, the `HasRawClip` choice, `BlurClip`, the `DropRawClip` catch and the tagged lifecycle rule in `door-pipeline.ts`. Verify that 5.1 passes and that `cdk synth` succeeds with Docker running.
+- [x] 5.2 Add the function, the `HasRawClip` choice, `BlurClip`, the `DropRawClip` catch and the tagged lifecycle rule in `door-pipeline.ts`. Verify that 5.1 passes and that `cdk synth` succeeds with Docker running.
 
 ## 6. Clip picker (PWA)
 
