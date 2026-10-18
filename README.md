@@ -1,15 +1,13 @@
 # FridgeSense
 
-A Ring Indoor Cam 2K watches your fridge. Each time the door opens, the clip goes to S3 and Amazon Bedrock Nova lists what went in or came out. FridgeSense keeps a running inventory and door open/close statistics, available in a PWA and through an MCP server for Alexa+.
-
-See [docs/hackathon-plan.md](docs/hackathon-plan.md) for the full plan.
+**Know what's in your fridge without opening it.** A Ring Indoor Cam 2K watches the fridge. Each time the door opens, FridgeSense pulls the clip from Ring, checks that the door really opened, and asks Amazon Nova what went in or came out. You get a running inventory and door open/close stats on your phone, and you can ask "Do I have milk?" by voice through Alexa+ (MCP) or in the app.
 
 <table>
   <tr>
-    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/01-fridge.png"><img src="docs/screenshots/light/01-fridge.png" width="200" alt="Fridge screen: 17 items in stock, grouped by category"></picture><br><b>Fridge</b></td>
-    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/03-activity.png"><img src="docs/screenshots/light/03-activity.png" width="200" alt="Activity screen: today's door openings with camera stills and what went in or out"></picture><br><b>Activity</b></td>
-    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/06-stats.png"><img src="docs/screenshots/light/06-stats.png" width="200" alt="Stats screen: opens per day and a day-by-hour heatmap"></picture><br><b>Stats</b></td>
-    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/07-ask.png"><img src="docs/screenshots/light/07-ask.png" width="200" alt="Ask screen: answers to 'Do I have milk?' and 'What should I eat first?'"></picture><br><b>Ask</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/01-fridge.png"><img src="docs/screenshots/light/01-fridge.png" width="200" alt="Fridge screen: 17 items in stock, grouped by category, with 2 items to confirm"></picture><br><b>Fridge</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/03-activity.png"><img src="docs/screenshots/light/03-activity.png" width="200" alt="Activity screen: today's door openings with camera stills, what went in or out, and proof stills"></picture><br><b>Activity</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/06-stats.png"><img src="docs/screenshots/light/06-stats.png" width="200" alt="Stats screen: opens per day, open times and a day-by-hour heatmap"></picture><br><b>Stats</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/07-ask.png"><img src="docs/screenshots/light/07-ask.png" width="200" alt="Ask screen: answers to 'Do I have milk?' and 'What should I eat first?' with the MCP tools each one checked"></picture><br><b>Ask</b></td>
   </tr>
 </table>
 
@@ -20,17 +18,93 @@ See [docs/hackathon-plan.md](docs/hackathon-plan.md) for the full plan.
   <tr>
     <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/00-sign-in.png"><img src="docs/screenshots/light/00-sign-in.png" width="200" alt="Sign-in screen with a passcode field"></picture><br><b>Sign in</b></td>
     <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/02-fridge-edit-item.png"><img src="docs/screenshots/light/02-fridge-edit-item.png" width="200" alt="Edit item sheet: name, category and quantity"></picture><br><b>Edit an item</b></td>
-    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/04-activity-still-viewer.png"><img src="docs/screenshots/light/04-activity-still-viewer.png" width="200" alt="Still viewer: one camera still from a door opening"></picture><br><b>Camera stills</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/04-activity-still-viewer.png"><img src="docs/screenshots/light/04-activity-still-viewer.png" width="200" alt="Proof viewer: the still Nova picked to show milk going in"></picture><br><b>Proof stills</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/05-review.png"><img src="docs/screenshots/light/05-review.png" width="200" alt="Review screen: low-confidence changes to confirm, edit or reject"></picture><br><b>Review</b></td>
   </tr>
   <tr>
-    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/05-review.png"><img src="docs/screenshots/light/05-review.png" width="200" alt="Review screen: low-confidence changes to confirm, edit or reject"></picture><br><b>Review</b></td>
-    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/08-config.png"><img src="docs/screenshots/light/08-config.png" width="200" alt="Config screen: reference images and custom instructions for the camera"></picture><br><b>Config</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/08-config.png"><img src="docs/screenshots/light/08-config.png" width="200" alt="Config, Camera tab: pause switch, camera status and capabilities from Ring"></picture><br><b>Camera</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/09-config-refs.png"><img src="docs/screenshots/light/09-config-refs.png" width="200" alt="Config, Reference images tab: photos of items in this fridge with short notes for Nova"></picture><br><b>Reference images</b></td>
+    <td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dark/10-config-doors.png"><img src="docs/screenshots/light/10-config-doors.png" width="200" alt="Config, Open/close detection tab: a door zone with open and closed references and the rule setup picked"></picture><br><b>Open/close detection</b></td>
     <td></td>
   </tr>
 </table>
 </details>
 
-<sub>Screenshots use made-up data from the local mock (`FRIDGESENSE_MOCK=1`); they follow your light or dark theme.</sub>
+<sub>Screenshots show the household **user** view (not the owner, who also gets Livestream and Debug), on made-up data from the local mock (`FRIDGESENSE_MOCK=user`). They follow your light or dark theme.</sub>
+
+## Contents
+
+- [How it works](#how-it-works)
+- [Tech stack](#tech-stack)
+- [Try it (judges)](#try-it-judges)
+- [Setup: deploy and link a Ring camera](#setup-deploy-and-link-a-ring-camera)
+- [Features](#features)
+- [Costs](#costs)
+- [Development](#development)
+
+## How it works
+
+```mermaid
+flowchart LR
+  cam[Ring Indoor Cam 2K] -- motion webhook --> api[API Gateway + Lambda]
+  api -- start run --> sfn[Step Functions]
+  sfn -- clip + stills --> ring[Ring Partner API]
+  sfn -- door check, face blur --> s3[(S3 stills, 7 days)]
+  sfn -- what went in or out? --> nova[Bedrock Nova 2 Lite]
+  sfn --> ddb[(DynamoDB inventory + door events)]
+  ddb --> pwa[PWA on CloudFront]
+  ddb --> mcp[MCP server] --> alexa[Alexa+ / any MCP client]
+```
+
+1. **Ring sends a webhook** for each motion. FridgeSense checks its signature, replies 200 at once and starts one Step Functions run.
+2. **The run downloads the clip once** and checks door zones every 0.5 s with a pixel rule you set up from the app. Motion without a door opening stops here, so it costs nothing.
+3. **Up to 4 stills** from the open stretch are cropped and face-blurred (Amazon Rekognition) before anything is stored.
+4. **Amazon Nova 2 Lite** compares the stills, guided by your reference photos, and returns the items added and removed through Converse tool use. Confident changes update the inventory; the rest wait on the **Review** screen.
+5. **The PWA and the MCP server** read the same DynamoDB table, so the app, Alexa+ and Claude Desktop all give the same answer.
+
+Details for each step are in [What happens on a door opening](#5-what-happens-on-a-door-opening).
+
+## Tech stack
+
+Built for the Ring and Alexa+ tracks and the AWS Builder challenge. Everything runs serverless in AWS us-east-1 and is deployed with one `cdk deploy`.
+
+**Ring Partner API**
+
+| Used for | API |
+|---|---|
+| Account linking and token exchange (private app, OAuth tokens refreshed every 3 h) | Ring OAuth, `GET /v1/accounts/me/app-integrations`, `GET /v1/users/me` |
+| Door openings | Motion webhooks (`X-Signature` HMAC-SHA256 checked first, duplicates skipped by `meta.request_id`) |
+| Clip and stills for each opening | `GET /v1/history/devices/{id}/events`, `/media/video/download`, `/media/image/download` |
+| Camera status and capabilities | `GET /v1/devices`, `GET /v1/devices/{id}`, `device_online`/`device_offline` webhooks |
+| Livestream (owner only) | WebRTC WHEP sessions, `/media/streaming/whep/sessions` |
+
+**Alexa+ and MCP**
+
+| Piece | Tech |
+|---|---|
+| MCP server | Official Python MCP SDK, spec 2025-11-25, Streamable HTTP, stateless on Lambda; six read-only tools |
+| Alexa+ | Alexa AI MCP Toolkit (`alexa-ai` CLI) pointed at the MCP URL |
+| In-app Ask | Nova 2 Lite as an MCP client (Bedrock Converse tool use), answers spoken with Amazon Polly |
+
+**AWS**
+
+| Service | Role |
+|---|---|
+| Amazon Bedrock (Nova 2 Lite) | Lists items added and removed per opening (Converse tool use, cost logged per call); answers Ask questions |
+| AWS Step Functions | One run per motion: wait for the recording, door check, stills, Nova, save |
+| AWS Lambda | Webhook, API, pipeline steps (Python 3.13, arm64), MCP server, and a container Lambda for clip blurring |
+| Amazon API Gateway (HTTP API) | Ring endpoints, app API and MCP endpoint, throttled per route |
+| Amazon DynamoDB | Single table keyed by Ring account and device: inventory, door events, settings, traces (TTL) |
+| Amazon S3 + CloudFront | Stills and clips (7-day lifecycle), PWA hosting |
+| Amazon Rekognition | Face detection, so stills are blurred before they are stored |
+| Amazon Polly | Neural voice for Ask answers |
+| AWS Secrets Manager | Ring client secret, webhook key, tokens and passcodes |
+| CloudWatch, SNS, AWS Budgets | Cost logs, alarms for failed runs and token refresh, $20/month budget alert |
+| AWS CDK (TypeScript) | All of the above as code |
+
+**App and tooling:** Python 3.13 (uv, Pydantic, httpx, PyAV, Pillow), [deface](https://github.com/ORB-HD/deface) for clip face blur, PWA in Vite + React + Tailwind + Recharts + vite-plugin-pwa, tests with pytest, moto, respx and Vitest. Specs are written first with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
+
+Hackathon notes: [product feedback](docs/product-feedback.md) and [friction log](docs/friction-log.md).
 
 ## Try it (judges)
 
@@ -40,35 +114,6 @@ See [docs/hackathon-plan.md](docs/hackathon-plan.md) for the full plan.
 - Demo passcode: **`<demo passcode>`**
 
 The demo passcode signs in **read-only** to the live fridge: the current inventory, door openings day by day (stills for the last 7 days), items waiting for confirmation, and open/close stats. A "Demo · read-only" badge shows on every screen; confirming, editing and fixing counts are disabled.
-
-## Development
-
-The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec) and built test-first. See [CLAUDE.md](CLAUDE.md) for the workflow.
-
-### Layout
-
-- `backend/`: Python 3.13 package `fridgesense` (Ring client, Lambda handlers, CLI). uv + pytest.
-- `infra/`: AWS CDK app in TypeScript. Vitest.
-- `pwa/`: the phone app (Vite, React, Tailwind, Recharts, vite-plugin-pwa). Vitest + Testing Library.
-- `openspec/`: specs and changes.
-
-### Run the tests
-
-Prerequisites: [uv](https://docs.astral.sh/uv/) and Node.js 22.
-
-```bash
-cd backend && uv sync && uv run pytest && uv run ruff check
-```
-
-```bash
-cd infra && npm ci && npm test
-```
-
-```bash
-cd pwa && npm ci && npm test
-```
-
-Tests never call Ring or AWS: Ring responses come from `backend/tests/fixtures/`, AWS is mocked with moto.
 
 ## Setup: deploy and link a Ring camera
 
@@ -173,32 +218,6 @@ The camera's night vision records in black and white, so colour sees nothing wit
 
 The same list is at `GET /api/warnings`.
 
-### Nova cost per opening
-
-Every Nova call logs its token use and cost:
-
-```bash
-set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"nova_cost"'
-```
-
-Each door event also stores its total as `nova_usd`. Expect about $0.0014 per opening with Nova 2 Lite.
-
-### Face detection cost
-
-Every face-detection call (one per stored still, so at most four per door opening, plus one per camera snapshot or live frame taken in Config) logs its cost:
-
-```bash
-set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"face_detect_cost"'
-```
-
-Expect $0.001 per still. Failed calls log `face_detect_failed` instead, with the still number and error. To change the price used in the log, deploy with `-c faceDetectPrice=0.0008`.
-
-Blurring faces in each door opening's clip logs its own cost in a separate log group:
-
-```bash
-set -a; source .env; set +a; aws logs tail /fridgesense/clip-blur --since 24h --filter-pattern '"clip_blur_cost"'
-```
-
 ### 7. Open the app
 
 `cdk deploy` builds the app and prints `SiteUrl`. Read it again any time:
@@ -227,47 +246,6 @@ set -a; source .env; set +a; read -rs "ADMIN?Admin passcode: "; echo; read -rs "
 
 The app asks for the passcode again every 24 hours, whatever the role. It notices the expiry on its own, even offline. Changing a passcode signs out every device that used it.
 
-### Pause FridgeSense
-
-Cleaning, servicing or renovating means lots of door openings that are not real stock changes. Turn off the **FridgeSense** switch at the top of **Config → Camera** to pause (`PUT /api/camera/monitoring` with `{"paused": true}`). While paused, motion webhooks still get 200 but start no run (logged as `motion_paused`), and a run already waiting stops before downloading anything (outcome `paused`). So no stills, face detection, Nova calls, door events, inventory changes or stats are recorded. Live view, snapshots and manual item edits keep working. A banner on the Fridge and Config screens reminds you until you turn the switch back on. The demo passcode sees the state but can't change it.
-
-### Proof on Activity
-
-Each door opening on **Activity** shows its clip (or stills) and, beside it on wider screens or below it on phones, a **Proof** strip: up to 2 stills per change, captioned "+ soda", "− 2 eggs". The same Nova call that lists the changes also says which of its images show each item (`images` in the tool answer), so proof costs no extra call. The proof stills are the stored, face-blurred stills; tap one to see it full size. `GET /api/events` returns them as `proof` links on each change.
-
-### Live view
-
-**Activity → Livestream** plays the camera live for up to 60 seconds (Ring's limit per session on plug-in cameras), then offers **Watch again**. The video goes from Ring straight to the browser over WebRTC; the app API only passes the connection offer and answer (`POST /api/camera/live`, `DELETE /api/camera/live/{session_id}`), so the Ring token stays on the server and nothing is recorded or stored. **Faces are not blurred in live video**, unlike stills, so only the owner can open it: the button is hidden for the user and demo passcodes, and both live routes answer them 403.
-
-### Teach the camera your fridge
-
-The gear at the top right opens **Config**. Its **Camera** tab (the default) shows the camera as Ring reports it (online now, codec, aspect ratio, resolutions, night vision and HDR, motion detection, encryption), its online/offline history and uptime over 30 days (from Ring's `device_online`/`device_offline` webhooks, plus any change seen when the tab is opened), and, for the owner after **Check decoder**, how this browser decodes the live video. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check (step 6); its **Fridge area** tab marks where the fridge is; its **Debug** tab (owner only) shows why each motion was judged the way it was.
-
-- **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
-- **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
-- **Fridge area:** tap **Set area**, drag one box around the whole fridge on a camera snapshot, and save. It is stored per camera (`GET`/`PUT /api/fridge-area`) along with the snapshot. Nothing uses it yet; a later change will crop stills to it before analysis.
-
-Changes apply from the next door opening. Each reference adds roughly 1–2K input tokens per analysis, which shows up in the `nova_cost` log. The demo passcode sees Config read-only.
-
-### Debug traces
-
-When traces are on, every motion the camera reports leaves a trace for 7 days. **Config → Debug** lists them by day; tap one, or the bug icon on an Activity card, to see:
-
-- **Door check:** every still downloaded for the motion, with each zone's score against its threshold, the open/closed verdict, which stills went to analysis, and the rule that decided (setup zones with their baselines and door references, or the default zones). The door check is a pixel rule, so its scores are its reasoning; there is no prompt.
-- **Nova calls:** for each Converse attempt of a door opening, the request in order (text, reference images, stills, cache points), the raw response and stop reason, input/output/cache tokens, cost, Bedrock's `latencyMs` and the measured wall time. Failed and invalid attempts are included.
-
-Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). While **Blur faces** is on, a trace keeps each downloaded still only as a blurred thumbnail 160 px on its longest side; with it off, it keeps the still as downloaded. Only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the user and demo passcodes get 403 and see no Debug tab or links. Traces are on for every deploy: `infra/cdk.json` sets `"debugTraces": "true"`. To deploy once without them:
-
-```bash
-cdk deploy -c debugTraces=false
-```
-
-### Blur faces
-
-**Config → Camera → Blur faces** is on by default. While it is on, faces are blurred in every stored still, snapshot and live frame, and debug traces keep only blurred thumbnails. Only the owner can turn it off (`PUT /api/settings/face-blur`); then no face detection runs (saving about $0.001 per still) and stills are stored as recorded for 7 days. Every role can read it (`GET /api/settings/face-blur`). Livestream is never blurred, whatever the setting.
-
-While it is on, each door opening's clip is blurred too, after the analysis is saved. A container Lambda (`clipblur/`, arm64) runs the open-source [deface](https://github.com/ORB-HD/deface) face detector (CenterFace) on every frame and blurs an ellipse over each face, 30% larger than the face. The rest of the frame stays as recorded, apart from re-encoding. Until it finishes, about a minute, Activity shows the stills. The raw cut (`clip-raw.mp4`) is private, never linked, and deleted once the blurred `clip.mp4` is stored; a tagged lifecycle rule removes any left behind within a day. If blurring fails, the clip is dropped rather than shown unblurred. Because these clips are blurred, the demo passcode sees them too. Clip blurring is best effort: CenterFace can miss a face turned away or half hidden, unlike the per-still Rekognition check. Each run logs `clip_blur_cost` (Lambda GB-seconds, about $0.001 to $0.002 per clip).
-
 ### Demo access
 
 A second, read-only passcode lets judges look without changing anything. Set it (typed without echo):
@@ -284,53 +262,43 @@ set -a; source .env; set +a; aws secretsmanager get-secret-value --secret-id fri
 
 Keep Ring active and use the fridge normally during judging (Nov 9–20) so the 7-day Activity, Stats and stills never run empty.
 
-### Work on the app locally
-
-Against the deployed backend (the dev server proxies `/api` to it):
+### Remove
 
 ```bash
-cd pwa && FRIDGESENSE_URL=https://<your-distribution>.cloudfront.net npm run dev
+set -a; source .env; set +a; cd infra && npx cdk destroy
 ```
 
-Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in as the read-only demo, `FRIDGESENSE_MOCK=user` as a user without Debug):
+The DynamoDB table and the `fridgesense/ring-app` secret are kept; delete them in the console if you no longer need them.
 
-```bash
-cd pwa && FRIDGESENSE_MOCK=1 npm run dev
-```
+## Features
 
-`FRIDGESENSE_MOCK=nocamera` answers every request with 409 "no camera linked", to see the "No Data" screens.
+### Teach the camera your fridge
 
-**Mock video (dev server only).** `npm run dev` always runs in debug mode: a Debug bar under the header has a **Mock video** switch, remembered in the browser. With it on, camera snapshots (Reference images, Open/close detection, Fridge area) open a clip picker instead of asking the camera. You pick a clip, scrub to a moment and tap **Use this frame**. **Livestream** plays a clip on a loop instead of the live view. The clips are the `.mp4` files in the repo's gitignored `tmp/` folder, or in another folder:
+The gear at the top right opens **Config**. Its **Camera** tab (the default) shows the camera as Ring reports it (online now, codec, aspect ratio, resolutions, night vision and HDR, motion detection, encryption), its online/offline history and uptime over 30 days (from Ring's `device_online`/`device_offline` webhooks, plus any change seen when the tab is opened), and, for the owner after **Check decoder**, how this browser decodes the live video. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check ([step 6](#6-set-up-the-door-check)); its **Fridge area** tab marks where the fridge is; its **Debug** tab (owner only) shows why each motion was judged the way it was.
 
-```bash
-cd pwa && FRIDGESENSE_VIDEOS=/path/to/clips FRIDGESENSE_MOCK=1 npm run dev
-```
+- **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
+- **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
+- **Fridge area:** tap **Set area**, drag one box around the whole fridge on a camera snapshot, and save. It is stored per camera (`GET`/`PUT /api/fridge-area`) along with the snapshot. Nothing uses it yet; a later change will crop stills to it before analysis.
 
-Clip frames are **not face-blurred**. With `FRIDGESENSE_URL`, saving a reference made from a clip uploads that frame to the deployed backend, and the picker warns you. The production build has no debug mode and no clip routes.
+Changes apply from the next door opening. Each reference adds roughly 1–2K input tokens per analysis, which shows up in the `nova_cost` log. The demo passcode sees Config read-only.
 
-**Door check on recorded clips (local only).** The same clips can test the open/close check. A fake camera serves each clip as Ring's clip download (and its frames as Ring stills), and the unchanged pipeline step runs on it. Results are scored against hand-written labels in [`backend/tests/fixtures/clips/door_labels.json`](backend/tests/fixtures/clips/door_labels.json): for each clip, the seconds it opened and closed. Nothing calls Ring, AWS or Bedrock. Without the clips or the decoder, the tests skip, so CI never runs them.
+### Proof on Activity
 
-```bash
-cd backend && uv sync --group clips
-```
+Each door opening on **Activity** shows its clip (or stills) and, beside it on wider screens or below it on phones, a **Proof** strip: up to 2 stills per change, captioned "+ soda", "− 2 eggs". The same Nova call that lists the changes also says which of its images show each item (`images` in the tool answer), so proof costs no extra call. The proof stills are the stored, face-blurred stills; tap one to see it full size. `GET /api/events` returns them as `proof` links on each change.
 
-```bash
-cd backend && uv run --group clips pytest -m clips
-```
+### Live view
 
-```bash
-cd backend && uv run --group clips python scripts/door_clip_report.py
-```
+**Activity → Livestream** plays the camera live for up to 60 seconds (Ring's limit per session on plug-in cameras), then offers **Watch again**. The video goes from Ring straight to the browser over WebRTC; the app API only passes the connection offer and answer (`POST /api/camera/live`, `DELETE /api/camera/live/{session_id}`), so the Ring token stays on the server and nothing is recorded or stored. **Faces are not blurred in live video**, unlike stills, so only the owner can open it: the button is hidden for the user and demo passcodes, and both live routes answer them 403.
 
-```bash
-cd backend && uv run --group clips python scripts/door_clip_report.py --threshold 0.005,0.01,0.02 --interval 500,1000
-```
+### Blur faces
 
-```bash
-cd backend && uv run --group clips python scripts/door_clip_report.py --dump
-```
+**Config → Camera → Blur faces** is on by default. While it is on, faces are blurred in every stored still, snapshot and live frame, and debug traces keep only blurred thumbnails. Only the owner can turn it off (`PUT /api/settings/face-blur`); then no face detection runs (saving about $0.001 per still) and stills are stored as recorded for 7 days. Every role can read it (`GET /api/settings/face-blur`). Livestream is never blurred, whatever the setting.
 
-The report prints one row per clip and the confusion matrix (TP, FP, FN, TN), plus open and close timing errors. `--threshold`/`--interval` sweep values and print one summary row per combination. `--dump` writes every sampled still with its zone values to `tmp/clip-stills/` to help with labelling. Clips come from `tmp/`, or from `FRIDGESENSE_CLIPS_DIR`.
+While it is on, each door opening's clip is blurred too, after the analysis is saved. A container Lambda (`clipblur/`, arm64) runs the open-source [deface](https://github.com/ORB-HD/deface) face detector (CenterFace) on every frame and blurs an ellipse over each face, 30% larger than the face. The rest of the frame stays as recorded, apart from re-encoding. Until it finishes, about a minute, Activity shows the stills. The raw cut (`clip-raw.mp4`) is private, never linked, and deleted once the blurred `clip.mp4` is stored; a tagged lifecycle rule removes any left behind within a day. If blurring fails, the clip is dropped rather than shown unblurred. Because these clips are blurred, the demo passcode sees them too. Clip blurring is best effort: CenterFace can miss a face turned away or half hidden, unlike the per-still Rekognition check. Each run logs `clip_blur_cost` (Lambda GB-seconds, about $0.001 to $0.002 per clip).
+
+### Pause FridgeSense
+
+Cleaning, servicing or renovating means lots of door openings that are not real stock changes. Turn off the **FridgeSense** switch at the top of **Config → Camera** to pause (`PUT /api/camera/monitoring` with `{"paused": true}`). While paused, motion webhooks still get 200 but start no run (logged as `motion_paused`), and a run already waiting stops before downloading anything (outcome `paused`). So no stills, face detection, Nova calls, door events, inventory changes or stats are recorded. Live view, snapshots and manual item edits keep working. A banner on the Fridge and Config screens reminds you until you turn the switch back on. The demo passcode sees the state but can't change it.
 
 ### Voice and MCP (Alexa+)
 
@@ -387,13 +355,131 @@ Then test in the simulator under [Alexa+ add-ons](https://developer.amazon.com/a
 
 "Today" uses the household's time zone (default `America/Toronto`). Change it with `cdk deploy -c timeZone=America/Vancouver`. A schedule pings the MCP Lambda every 5 minutes so the first question after a quiet spell still answers within Alexa's 500 ms budget.
 
-### Remove
+### Debug traces
+
+When traces are on, every motion the camera reports leaves a trace for 7 days. **Config → Debug** lists them by day; tap one, or the bug icon on an Activity card, to see:
+
+- **Door check:** every still downloaded for the motion, with each zone's score against its threshold, the open/closed verdict, which stills went to analysis, and the rule that decided (setup zones with their baselines and door references, or the default zones). The door check is a pixel rule, so its scores are its reasoning; there is no prompt.
+- **Nova calls:** for each Converse attempt of a door opening, the request in order (text, reference images, stills, cache points), the raw response and stop reason, input/output/cache tokens, cost, Bedrock's `latencyMs` and the measured wall time. Failed and invalid attempts are included.
+
+Traces live under each event's `debug/` folder in the stills bucket (expired by its 7-day rule) plus a `TRACE#` item per motion (expired by DynamoDB TTL). While **Blur faces** is on, a trace keeps each downloaded still only as a blurred thumbnail 160 px on its longest side; with it off, it keeps the still as downloaded. Only the owner can read traces (`GET /api/debug/motions`, `GET /api/debug/motions/{id}`); the user and demo passcodes get 403 and see no Debug tab or links. Traces are on for every deploy: `infra/cdk.json` sets `"debugTraces": "true"`. To deploy once without them:
 
 ```bash
-set -a; source .env; set +a; cd infra && npx cdk destroy
+cdk deploy -c debugTraces=false
 ```
 
-The DynamoDB table and the `fridgesense/ring-app` secret are kept; delete them in the console if you no longer need them.
+## Costs
+
+AWS costs come out of pocket, so only real door openings reach Nova and every paid call logs what it cost. A typical opening costs about half a cent: roughly $0.0014 for Nova, $0.001 per still for face detection (up to 4 stills) and $0.001 to $0.002 for blurring the clip. Motion without an opening costs only the Lambda time of the door check.
+
+### Nova cost per opening
+
+Every Nova call logs its token use and cost:
+
+```bash
+set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"nova_cost"'
+```
+
+Each door event also stores its total as `nova_usd`. Expect about $0.0014 per opening with Nova 2 Lite.
+
+### Face detection cost
+
+Every face-detection call (one per stored still, so at most four per door opening, plus one per camera snapshot or live frame taken in Config) logs its cost:
+
+```bash
+set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --filter-pattern '"face_detect_cost"'
+```
+
+Expect $0.001 per still. Failed calls log `face_detect_failed` instead, with the still number and error. To change the price used in the log, deploy with `-c faceDetectPrice=0.0008`.
+
+Blurring faces in each door opening's clip logs its own cost in a separate log group:
+
+```bash
+set -a; source .env; set +a; aws logs tail /fridgesense/clip-blur --since 24h --filter-pattern '"clip_blur_cost"'
+```
+
+## Development
+
+The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec) and built test-first. See [CLAUDE.md](CLAUDE.md) for the workflow.
+
+### Layout
+
+- `backend/`: Python 3.13 package `fridgesense` (Ring client, Lambda handlers, Nova analysis, MCP server, CLI). uv + pytest.
+- `clipblur/`: the container Lambda that blurs faces in clips with deface. uv + pytest.
+- `infra/`: AWS CDK app in TypeScript. Vitest.
+- `pwa/`: the phone app (Vite, React, Tailwind, Recharts, vite-plugin-pwa). Vitest + Testing Library.
+- `openspec/`: specs and changes.
+- `docs/`: hackathon plan, [product feedback](docs/product-feedback.md), [friction log](docs/friction-log.md) and screenshots.
+
+### Run the tests
+
+Prerequisites: [uv](https://docs.astral.sh/uv/) and Node.js 22.
+
+```bash
+cd backend && uv sync && uv run pytest && uv run ruff check
+```
+
+```bash
+cd clipblur && uv sync --all-extras --dev && uv run pytest
+```
+
+```bash
+cd infra && npm ci && npm test
+```
+
+```bash
+cd pwa && npm ci && npm test
+```
+
+Tests never call Ring, AWS or Bedrock: Ring responses come from `backend/tests/fixtures/`, AWS is mocked with moto, and Nova answers are canned. CI runs the same commands on every pull request to `main`.
+
+### Work on the app locally
+
+Against the deployed backend (the dev server proxies `/api` to it):
+
+```bash
+cd pwa && FRIDGESENSE_URL=https://<your-distribution>.cloudfront.net npm run dev
+```
+
+Without any backend, on built-in sample data (`FRIDGESENSE_MOCK=viewer` signs in as the read-only demo, `FRIDGESENSE_MOCK=user` as a user without Debug or Livestream, which is what the screenshots above show):
+
+```bash
+cd pwa && FRIDGESENSE_MOCK=1 npm run dev
+```
+
+`FRIDGESENSE_MOCK=nocamera` answers every request with 409 "no camera linked", to see the "No Data" screens.
+
+**Mock video (dev server only).** `npm run dev` always runs in debug mode: a Debug bar under the header has a **Mock video** switch, remembered in the browser. With it on, camera snapshots (Reference images, Open/close detection, Fridge area) open a clip picker instead of asking the camera. You pick a clip, scrub to a moment and tap **Use this frame**. **Livestream** plays a clip on a loop instead of the live view. The clips are the `.mp4` files in the repo's gitignored `tmp/` folder, or in another folder:
+
+```bash
+cd pwa && FRIDGESENSE_VIDEOS=/path/to/clips FRIDGESENSE_MOCK=1 npm run dev
+```
+
+Clip frames are **not face-blurred**. With `FRIDGESENSE_URL`, saving a reference made from a clip uploads that frame to the deployed backend, and the picker warns you. The production build has no debug mode and no clip routes.
+
+**Door check on recorded clips (local only).** The same clips can test the open/close check. A fake camera serves each clip as Ring's clip download (and its frames as Ring stills), and the unchanged pipeline step runs on it. Results are scored against hand-written labels in [`backend/tests/fixtures/clips/door_labels.json`](backend/tests/fixtures/clips/door_labels.json): for each clip, the seconds it opened and closed. Nothing calls Ring, AWS or Bedrock. Without the clips or the decoder, the tests skip, so CI never runs them.
+
+```bash
+cd backend && uv sync --group clips
+```
+
+```bash
+cd backend && uv run --group clips pytest -m clips
+```
+
+```bash
+cd backend && uv run --group clips python scripts/door_clip_report.py
+```
+
+```bash
+cd backend && uv run --group clips python scripts/door_clip_report.py --threshold 0.005,0.01,0.02 --interval 500,1000
+```
+
+```bash
+cd backend && uv run --group clips python scripts/door_clip_report.py --dump
+```
+
+The report prints one row per clip and the confusion matrix (TP, FP, FN, TN), plus open and close timing errors. `--threshold`/`--interval` sweep values and print one summary row per combination. `--dump` writes every sampled still with its zone values to `tmp/clip-stills/` to help with labelling. Clips come from `tmp/`, or from `FRIDGESENSE_CLIPS_DIR`.
 
 ## License
 
