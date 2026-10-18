@@ -643,6 +643,18 @@ def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, windo
         )
 
 
+def _count_suspect(table, account_id: str, device_id: str, suspect: bool) -> None:
+    """Keep the device's suspect streak; a failure here never changes the event's outcome."""
+    from fridgesense import alignment  # alignment imports this module
+
+    try:
+        alignment.record_suspect(table, account_id, device_id, suspect)
+    except Exception as e:
+        log_event(
+            "suspect_streak_failed", logging.WARNING, device_id=device_id, error=type(e).__name__
+        )
+
+
 def _alignment_json(aligned) -> dict | None:
     if aligned is None:
         return None
@@ -800,6 +812,8 @@ def _fetch_stills(
         trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
         results = [check.result_of(v) for v in values]
         opened = [r.is_open for r in results]
+        if clip is not None and check.source in ("setup", "tuned"):
+            _count_suspect(table, account_id, device_id, is_suspect(opened, check.source))
         if clip is not None and is_suspect(opened, check.source):
             suspect = True
             log_event(

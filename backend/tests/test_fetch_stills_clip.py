@@ -422,3 +422,48 @@ def test_normal_event_still_samples(aws, ring_http, tmp_path, follows_camera):
     out = run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)
     assert "suspect" not in out
     assert len(door_samples()) == 1
+
+
+def suspect_streak() -> int:
+    from fridgesense import alignment
+
+    s = alignment.load_alignment(FridgeTable(), STATE["account_id"], STATE["device_id"])
+    return 0 if s is None else s.suspect_streak
+
+
+@respx.mock
+def test_suspect_event_counts_and_a_normal_one_resets(aws, ring_http, tmp_path):
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert suspect_streak() == 1
+    run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)  # same event again: a duplicate
+    assert suspect_streak() == 0
+
+
+@respx.mock
+def test_default_rules_leave_the_streak(aws, ring_http, tmp_path):
+    from fridgesense import alignment
+
+    alignment.record_suspect(FridgeTable(), STATE["account_id"], STATE["device_id"], True)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, None, 27_000, tmp_path)
+    assert suspect_streak() == 1
+
+
+# Streak write fails
+@respx.mock
+def test_streak_write_fails(aws, ring_http, tmp_path, caplog, monkeypatch):
+    from fridgesense import alignment
+
+    def broken(*args):
+        raise RuntimeError("table down")
+
+    monkeypatch.setattr(alignment, "record_suspect", broken)
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert logged(caplog, "suspect_streak_failed")["error"] == "RuntimeError"
