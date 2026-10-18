@@ -17,6 +17,8 @@ function fixes(w: SetupWarning): Fix[] {
       return [{ label: "Set up detection", href: "#config/doors" }];
     case "door_setup_mismatch":
       return [{ label: "Update door references", href: "#config/doors" }];
+    case "privacy_mask_changed":
+      return [{ label: "Update door zones", href: "#config/doors" }];
     case "camera_moved":
       return w.update.map((u) =>
         u === "door_references"

@@ -389,7 +389,8 @@ def test_not_suspect_keeps_the_setup_result(aws, ring_http, tmp_path, caplog):
 
 @pytest.fixture
 def follows_camera(monkeypatch):
-    """A stored closed anchor (a plain grey frame), so every event aligns and is sampled."""
+    """A stored closed anchor that every event lines up with at (0, 0), so it is sampled. The
+    test clips are flat colour, which has no edges to align by, so the match is stubbed."""
     from fridgesense import alignment
 
     grey = Image.new("RGB", (320, 180), (128, 128, 128))
@@ -398,6 +399,13 @@ def follows_camera(monkeypatch):
         door_events_module,
         "_follow_plan",
         lambda table, account_id, device_id, check: door_events_module.FollowPlan(anchor, 0, 0),
+    )
+    monkeypatch.setattr(
+        alignment,
+        "align_bookends",
+        lambda anchor, first, last, anchor_visible=None: alignment.Alignment(
+            True, 0.0, 0.0, 0.0, "first"
+        ),
     )
 
 

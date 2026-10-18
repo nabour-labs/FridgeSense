@@ -30,6 +30,34 @@ SETUP_MISMATCH = (
     "instead. Replace the door references with frames from recent clips and run setup again."
 )
 MISMATCH_STREAK = 3  # suspect clips in a row
+MASK_CHANGED = (
+    "The camera's privacy mask changed and now covers part of {zones}. Move those door zones "
+    "or the mask, then retake their door references."
+)
+
+
+def join_names(names: list[str]) -> str:
+    """ "A", "A and B", "A, B and C"."""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def privacy_mask_changed(table: FridgeTable, account_id: str, device_id: str) -> dict | None:
+    """The mask-change warning while a changed mask hides part of a zone; left out if the
+    alignment can't be read."""
+    try:
+        state = alignment.load_alignment(table, account_id, device_id)
+    except Exception as e:
+        log_event("mask_state_unreadable", logging.WARNING, error=type(e).__name__)
+        return None
+    if state is None or not state.mask_zones:
+        return None
+    zones = list(state.mask_zones)
+    return {
+        "code": "privacy_mask_changed",
+        "message": MASK_CHANGED.format(zones=join_names(zones)),
+        "since": iso_utc(state.mask_changed_at_ms),
+        "zones": zones,
+    }
 
 
 def setup_mismatch(table: FridgeTable, account_id: str, device_id: str) -> dict | None:
@@ -89,4 +117,7 @@ def warnings_body(
         mismatch = setup_mismatch(table, account_id, device_id)
         if mismatch is not None:
             found.append(mismatch)
+        mask = privacy_mask_changed(table, account_id, device_id)
+        if mask is not None:
+            found.append(mask)
     return {"warnings": found, "checked_at": iso_utc(now_ms)}

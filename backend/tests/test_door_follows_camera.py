@@ -273,3 +273,65 @@ def test_trace_records_tuned_rules(aws, ring_http, tmp_path):
     run(ring_http, tmp_path, writer=TraceWriter(s3, FridgeTable(), BUCKET))
     doc = json.loads(s3.get_object(Bucket=BUCKET, Key=f"{PREFIX}debug/door.json")["Body"].read())
     assert doc["rules"] == "tuned"
+
+
+# --- privacy-mask-change: the door check's mask handling ---
+
+
+def black_sides(img: Image.Image, share: float) -> Image.Image:
+    out = img.copy()
+    draw = ImageDraw.Draw(out)
+    draw.rectangle([0, 0, round(W * share) - 1, H], fill=(0, 0, 0))
+    draw.rectangle([W - round(W * share), 0, W, H], fill=(0, 0, 0))
+    return out
+
+
+def setup_item() -> dict:
+    return FridgeTable().get(account_pk(ACCOUNT), door_calibration.setup_sk(DEVICE))
+
+
+# Setup stored before visible maps
+@respx.mock
+def test_event_backfills_the_visible_map(aws, ring_http, tmp_path):
+    set_up()
+    item = setup_item()
+    del item["anchor_visible"]
+    FridgeTable().put(item)
+    serve_clip(tmp_path, px=0)
+    serve_stills()
+    run(ring_http, tmp_path)
+    expected = alignment.visible_to_bytes(alignment.visible_map(view(CLOSED)))
+    assert bytes(setup_item()["anchor_visible"]) == expected
+
+
+@respx.mock
+def test_wider_mask_neither_fails_nor_moves(aws, ring_http, tmp_path):
+    set_up()
+    for _ in range(3):
+        frames = [(t, black_sides(view(CLOSED), 0.2)) for t in range(0, 5961, 250)]
+        data = write_images(tmp_path / "served.mp4", frames).read_bytes()
+        (tmp_path / "served.mp4").unlink()
+        respx.post(CLIP_URL).respond(303, headers={"Location": CLIP_LINK})
+        respx.get(CLIP_LINK).respond(200, content=data)
+        serve_stills()
+        run(ring_http, tmp_path)
+    s = alignment.load_alignment(FridgeTable(), ACCOUNT, DEVICE)
+    assert s.failures == 0 and not s.moved
+    # The zone (x 0.38-0.42) stays clear of a 20% mask: the new map is adopted, no warning.
+    assert s.mask_zones == ()
+    expected = alignment.visible_to_bytes(alignment.visible_map(black_sides(view(CLOSED), 0.2)))
+    assert bytes(setup_item()["anchor_visible"]) == expected
+
+
+@respx.mock
+def test_mask_over_the_zone_recorded(aws, ring_http, tmp_path):
+    set_up()
+    for _ in range(2):
+        frames = [(t, black_sides(view(CLOSED), 0.40)) for t in range(0, 5961, 250)]
+        data = write_images(tmp_path / "served.mp4", frames).read_bytes()
+        (tmp_path / "served.mp4").unlink()
+        respx.post(CLIP_URL).respond(303, headers={"Location": CLIP_LINK})
+        respx.get(CLIP_LINK).respond(200, content=data)
+        serve_stills()
+        run(ring_http, tmp_path)
+    assert alignment.load_alignment(FridgeTable(), ACCOUNT, DEVICE).mask_zones == ("Doors",)

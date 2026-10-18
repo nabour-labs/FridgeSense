@@ -575,11 +575,14 @@ def _device_check(
 
 @dataclass(frozen=True)
 class FollowPlan:
-    """What the door check needs to follow the camera: the closed anchor and the stored shift."""
+    """What the door check needs to follow the camera: the closed anchor and the stored shift,
+    plus the anchor's visible map and the setup's named zones for spotting a mask change."""
 
     anchor: bytes
     dx: float
     dy: float
+    anchor_visible: bytes | None = None
+    zones: tuple[tuple[str, Box], ...] = ()
 
 
 def _follow_plan(
@@ -595,6 +598,8 @@ def _follow_plan(
         if anchor is None:
             return None
         stored = alignment.load_alignment(table, account_id, device_id)
+        visible = door_calibration.load_anchor_visible(table, account_id, device_id)
+        setup = door_calibration.load_setup(table, account_id, device_id)
     except Exception as e:  # a table hiccup must not drop a door opening
         log_event(
             "door_alignment_unavailable",
@@ -603,7 +608,10 @@ def _follow_plan(
             error=type(e).__name__,
         )
         return None
-    return FollowPlan(anchor, stored.dx if stored else 0.0, stored.dy if stored else 0.0)
+    zones = tuple((z.name, z.box) for z in setup.zones) if setup else ()
+    return FollowPlan(
+        anchor, stored.dx if stored else 0.0, stored.dy if stored else 0.0, visible, zones
+    )
 
 
 def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
@@ -611,8 +619,15 @@ def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
     from fridgesense import alignment
 
     try:
-        return alignment.align_event(
-            table, account_id, device_id, plan.anchor, first, last, window["start_ms"]
+        aligned = alignment.align_event(
+            table,
+            account_id,
+            device_id,
+            plan.anchor,
+            first,
+            last,
+            window["start_ms"],
+            plan.anchor_visible,
         )
     except Exception as e:
         log_event(
@@ -622,6 +637,32 @@ def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
             error=type(e).__name__,
         )
         return None
+    _check_mask(table, account_id, device_id, plan, aligned, window)
+    return aligned
+
+
+def _check_mask(table, account_id, device_id, plan: FollowPlan, aligned, window) -> None:
+    """Keep the mask-change state and adopt a new mask that hides no zone; a failure here
+    never changes the event's outcome."""
+    from fridgesense import alignment, door_calibration  # both import this module
+
+    if aligned is None or aligned.visible is None:
+        return
+    try:
+        adopt = alignment.record_mask(
+            table,
+            account_id,
+            device_id,
+            aligned.visible,
+            plan.anchor_visible,
+            list(plan.zones),
+            window["start_ms"],
+        )
+        if adopt is not None:
+            door_calibration.save_anchor_visible(table, account_id, device_id, adopt)
+            log_event("privacy_mask_adopted", account_id=account_id, device_id=device_id)
+    except Exception as e:
+        log_event("mask_check_failed", logging.WARNING, device_id=device_id, error=type(e).__name__)
 
 
 def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, window) -> None:
