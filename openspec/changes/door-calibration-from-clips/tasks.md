@@ -17,9 +17,9 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 3. Fridge light preferred in setup and re-tuning
 
-- [ ] 3.1 Write failing tests in `test_door_calibration.py` for "Blue wins over a larger change margin", "Blue too close to call" and "Drawer without fridge light". Also re-run the existing "Blue preferred over color on a tie" and "Color chosen when the open reference is not blue".
-- [ ] 3.2 Factor the feature choice into one `choose_feature` used by `door_calibration.run`, with blue first whenever it separates. Verify that the 3.1 tests and all existing setup tests pass.
-- [ ] 3.3 Write a failing test in `backend/tests/test_self_tuning.py` for "Re-tune keeps blue". Then make `self_tuning._zone_rule` use `choose_feature`. Verify with `uv run pytest tests/test_self_tuning.py`.
+- [x] 3.1 Write failing tests in `test_door_calibration.py` for "Blue wins over a larger change margin", "Blue too close to call" and "Drawer without fridge light". Also re-run the existing "Blue preferred over color on a tie" and "Color chosen when the open reference is not blue".
+- [x] 3.2 Factor the feature choice into one `choose_feature` used by `door_calibration.run`, with blue first whenever it separates. Verify that the 3.1 tests and all existing setup tests pass.
+- [x] 3.3 Write a failing test in `backend/tests/test_self_tuning.py` for "Re-tune keeps blue". Then make `self_tuning._zone_rule` use `choose_feature`. Verify with `uv run pytest tests/test_self_tuning.py`.
 
 ## 4. Clip-wide sanity guard
 

@@ -195,3 +195,25 @@ def test_rerunning_setup_resets_tuning(aws):
     assert check().source == "setup"
     assert samples() == []
     assert dc.load_setup(FridgeTable(), ACCOUNT, DEVICE).tuned_at is None
+
+
+# Re-tune keeps blue
+BRIGHT_LIT = color_jpeg(
+    GREY,
+    [((0.0, 0.0, 0.5, 1.0), (230, 230, 230)), ((0.05, 0.25, 0.03, 0.5), BLUE)],
+    size=(200, 100),
+)  # the interior light floods the zone: brightness moves far more than the blue-lit share
+
+
+def test_retune_keeps_blue(aws):
+    table = FridgeTable()
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0).sk
+    dc.add_reference(table, ACCOUNT, DEVICE, BRIGHT_LIT, z, "open", T0)
+    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1)
+    dc.run(table, ACCOUNT, DEVICE, T0 + 2)
+    for k in range(3):
+        learn([CLOSED, BRIGHT_LIT, CLOSED], check=check(), at=T0 + 10 + k)
+    assert retune()
+    [rule] = check().rules
+    assert check().source == "tuned"
+    assert rule.feature == "blue"

@@ -605,3 +605,53 @@ def test_daylit_steel_is_not_fridge_light(aws):
 def test_fridge_interior_is_fridge_light(aws):
     opened, _ = _blue_setup_scores(plain(128))
     assert opened == pytest.approx(0.1, abs=0.005)
+
+
+# Fridge light preferred in setup: values per feature as (open values, closed values)
+def _values(**margins: float) -> dict[str, tuple[list[float], list[float]]]:
+    """Each feature separates "above" by its margin, from closed 0.1; others overlap."""
+    out = {f: ([0.5], [0.5]) for f in ("blue", "color", "change", "brightness")}
+    out.update({f: ([0.1 + m], [0.1]) for f, m in margins.items()})
+    return out
+
+
+# Blue wins over a larger change margin
+def test_blue_wins_over_a_larger_change_margin():
+    feature, direction, threshold, margin = dc.choose_feature(_values(blue=0.04, change=0.09))
+    assert (feature, direction) == ("blue", "above")
+    assert threshold == pytest.approx(0.12)
+    assert margin == pytest.approx(0.04)
+
+
+# Blue too close to call
+def test_blue_too_close_to_call():
+    feature, *_ = dc.choose_feature(_values(blue=0.005, change=0.09))
+    assert feature == "change"
+
+
+# Drawer without fridge light
+def test_drawer_without_fridge_light():
+    values = _values(change=0.2)
+    values["blue"] = ([0.0], [0.0])
+    feature, _, _, margin = dc.choose_feature(values)
+    assert feature == "change"
+    assert margin == pytest.approx(0.2)
+
+
+def test_largest_margin_without_blue_ties_in_order():
+    assert dc.choose_feature(_values(color=0.1, change=0.1, brightness=0.1))[0] == "color"
+    assert dc.choose_feature(_values(change=0.1, brightness=0.3))[0] == "brightness"
+
+
+def test_nothing_separates():
+    assert dc.choose_feature(_values()) is None
+
+
+def test_blue_wins_in_a_setup_run(aws):
+    """A lit open reference against a closed one whose daylit steel moves `color` further."""
+    z = zone()
+    add(lit(), z.sk, "open")
+    daylit = color_jpeg(GREY, [((0.0, 0.0, 0.3, 1.0), DAYLIT_STEEL)], size=(200, 100))
+    add(daylit, z.sk, "closed", at=T0 + 1)
+    [only] = run().zones
+    assert only.feature == "blue"

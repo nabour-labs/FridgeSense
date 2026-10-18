@@ -301,6 +301,27 @@ def _choose(opened: list[float], closed: list[float]) -> tuple[str, float, float
     return None
 
 
+Rule = tuple[str, str, float, float]  # feature, direction, threshold, margin
+
+
+def choose_feature(values: dict[str, tuple[list[float], list[float]]]) -> Rule | None:
+    """The zone's rule from each feature's (open values, closed values), or None.
+
+    `blue` wins whenever it separates: it needs no baseline, so unlike `change` it is not
+    thrown off by a picture framed differently from the clips the door check scores.
+    Otherwise the largest margin wins, ties keeping the earlier feature in FEATURES."""
+    best = None
+    for feature in FEATURES:
+        rule = _choose(*values[feature])
+        if rule is None or rule[2] < MIN_MARGIN:
+            continue
+        if feature == "blue":
+            return (feature, *rule)
+        if best is None or rule[2] > best[3]:
+            best = (feature, *rule)
+    return best
+
+
 def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Setup:
     """Work out each zone's rule from the references and store it; SetupFailed leaves the
     stored setup unchanged."""
@@ -322,13 +343,15 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
         if not opened or not closed:
             raise SetupFailed(f"{z.name} needs an open and a closed reference", scores)
         baseline = baseline_of(closed, zone)
-        best = None
-        for feature in FEATURES:  # ties keep the earlier feature
-            values_open = [measure(img, zone, feature, baseline) for img in opened]
-            values_closed = [measure(img, zone, feature, baseline) for img in closed]
-            rule = _choose(values_open, values_closed)
-            if rule and rule[2] >= MIN_MARGIN and (best is None or rule[2] > best[3]):
-                best = (feature, *rule)
+        best = choose_feature(
+            {
+                f: (
+                    [measure(img, zone, f, baseline) for img in opened],
+                    [measure(img, zone, f, baseline) for img in closed],
+                )
+                for f in FEATURES
+            }
+        )
         if best is None:
             raise SetupFailed(f"{z.name}: open and closed references overlap", scores)
         feature, direction, threshold, margin = best

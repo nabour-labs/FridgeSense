@@ -182,11 +182,9 @@ def _zone_rule(zone: dc.SetupZone, refs, images, events, k: int):
             getattr(s, feature) for s in looks
         ]
 
-    best = None
-    for feature in FEATURES:  # ties keep the earlier feature, as in setup
-        rule = dc._choose(values(feature, ref_open, opened), values(feature, ref_closed, closed))
-        if rule and rule[2] >= dc.MIN_MARGIN and (best is None or rule[2] > best[3]):
-            best = (feature, *rule)
+    best = dc.choose_feature(  # chosen as setup chooses
+        {f: (values(f, ref_open, opened), values(f, ref_closed, closed)) for f in FEATURES}
+    )
     if best is None:
         return None
     return (*best, baseline, len(opened) + len(closed))
