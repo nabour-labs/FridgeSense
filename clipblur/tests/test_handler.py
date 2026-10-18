@@ -23,7 +23,7 @@ CLIP_KEY = PREFIX + "clip.mp4"
 
 
 class Context:
-    memory_limit_in_mb = 3008
+    memory_limit_in_mb = "3008"  # a string in the real Lambda runtime
 
 
 @pytest.fixture
