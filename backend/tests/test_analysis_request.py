@@ -218,3 +218,14 @@ def test_retry_sends_the_same_cached_request():
     first, second = sent
     assert first == second
     assert has_cache_point(first)
+
+
+# Scenario: Schema and prompt ask for images
+def test_schema_and_prompt_ask_for_images():
+    req = build_request(DEFAULT_MODEL_ID, STILLS, [])
+    [tool] = req["toolConfig"]["tools"]
+    item = tool["toolSpec"]["inputSchema"]["json"]["properties"]["added"]["items"]
+    assert item["properties"]["images"]["type"] == "array"
+    assert item["properties"]["images"]["items"] == {"type": "integer"}
+    assert "images" not in item["required"]
+    assert "images" in content_of(req)[-1]["text"]

@@ -267,6 +267,8 @@ def _save_once(table: FridgeTable, state: dict) -> dict:
                 "quantity": c["quantity"],
                 "confidence": c["confidence"],
                 "applied": applied,
+                # Indexes into the event's still_keys: the stills that show this change.
+                "proof": [n - 1 for n in c.get("images", [])],
             }
             changes.append(record)
             if applied:

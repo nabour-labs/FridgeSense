@@ -60,10 +60,10 @@ export function mockApi(): Plugin {
   const stills = [1, 2, 3, 4].map((n) => `/mock/still-${n}.svg`);
   let events = [
     { id: "e0", opened_at: iso(2 * MIN), duration_s: 18, status: "done", pending_count: 0, stills,
-      changes: [{ item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.94, applied: true }] },
+      changes: [{ item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.94, applied: true, proof: stills.slice(1, 3) }] },
     { id: "e1", opened_at: iso(50 * MIN), duration_s: 31, status: "done", pending_count: 1, stills,
       changes: [
-        { item: "soda can", category: "beverage", direction: "removed", quantity: 1, confidence: 0.88, applied: true },
+        { item: "soda can", category: "beverage", direction: "removed", quantity: 1, confidence: 0.88, applied: true, proof: [stills[0]] },
         { item: "chocolate bar", category: "snack", direction: "removed", quantity: 1, confidence: 0.62, applied: false },
       ] },
     { id: "e2", opened_at: iso(5 * HOUR), duration_s: 44, status: "done", pending_count: 1, stills: [],

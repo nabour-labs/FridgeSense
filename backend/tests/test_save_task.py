@@ -171,3 +171,16 @@ def test_same_item_added_and_removed_in_one_opening(table):
     put_stock(table, "milk", 1)
     save(table, added=[change("milk", 2)], removed=[change("milk", 1)])
     assert stock(table, "milk")["quantity"] == 2
+
+
+# Scenario: Proof kept
+def test_proof_kept(table):
+    save(table, added=[{**change("soda can", category="beverage"), "images": [3, 4]}])
+    [saved] = door(table)["changes"]
+    assert saved["proof"] == [2, 3]
+
+
+def test_change_without_images_saves_empty_proof(table):
+    save(table, added=[change("milk")])
+    [saved] = door(table)["changes"]
+    assert saved["proof"] == []

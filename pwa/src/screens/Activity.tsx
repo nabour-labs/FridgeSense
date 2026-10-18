@@ -13,7 +13,7 @@ import { useLoad } from "../useLoad";
 const STILL_LINKS_REUSED_MS = 10 * 60_000;
 const PAGE_SIZE = 10;
 
-type StillLinks = Map<string, { stills: string[]; clip: string | null; at: number }>;
+type StillLinks = Map<string, { stills: string[]; clip: string | null; proof: (string[] | undefined)[]; at: number }>;
 
 function startOfDay(d: Date, plusDays = 0): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + plusDays);
@@ -119,11 +119,14 @@ function EventPage({
               kept &&
               kept.stills.length === e.stills.length &&
               (kept.clip === null) === (e.clip === null) &&
+              kept.proof.length === e.changes.length &&
+              e.changes.every((c, i) => (c.proof?.length ?? 0) === (kept.proof[i]?.length ?? 0)) &&
               now - kept.at < STILL_LINKS_REUSED_MS
             ) {
-              return { ...e, stills: kept.stills, clip: kept.clip };
+              const changes = e.changes.map((c, i) => (c.proof ? { ...c, proof: kept.proof[i] } : c));
+              return { ...e, stills: kept.stills, clip: kept.clip, changes };
             }
-            stillLinks.current.set(e.id, { stills: e.stills, clip: e.clip, at: now });
+            stillLinks.current.set(e.id, { stills: e.stills, clip: e.clip, proof: e.changes.map((c) => c.proof), at: now });
             return e;
           }),
         })),
@@ -131,7 +134,7 @@ function EventPage({
     ),
     10_000,
   );
-  const [viewing, setViewing] = useState<{ stills: string[]; index: number } | null>(null);
+  const [viewing, setViewing] = useState<{ stills: string[]; index: number; titleOf?: (i: number) => string } | null>(null);
   const [deleting, setDeleting] = useState<DoorEvent | null>(null);
   const [busy, setBusy] = useState(false);
   const shown = data !== null;
@@ -181,6 +184,9 @@ function EventPage({
                 <EventCard
                   event={e}
                   onStill={(index) => setViewing({ stills: e.stills, index })}
+                  onProof={(c, index) =>
+                    setViewing({ stills: c.proof ?? [], index, titleOf: (i) => proofTitle(c, i, c.proof?.length ?? 0) })
+                  }
                   onDelete={canEdit(role) ? () => setDeleting(e) : undefined}
                   debug={isAdmin(role)}
                 />
@@ -206,6 +212,7 @@ function EventPage({
         <StillViewer
           stills={viewing.stills}
           index={viewing.index}
+          titleOf={viewing.titleOf}
           onIndex={(index) => setViewing({ ...viewing, index })}
           onClose={() => setViewing(null)}
         />
@@ -243,20 +250,28 @@ function stillTitle(index: number, count: number) {
   return `Still ${index + 1} of ${count}`;
 }
 
+function proofTitle(change: Change, index: number, count: number) {
+  return `Proof for ${changeLabel(change)}, ${index + 1} of ${count}`;
+}
+
 function EventCard({
   event,
   onStill,
+  onProof,
   onDelete,
   debug = false,
 }: {
   event: DoorEvent;
   onStill: (index: number) => void;
+  /** Opens one of a change's proof stills. */
+  onProof: (change: Change, index: number) => void;
   /** Absent for viewers. */
   onDelete?: () => void;
   /** Link to the opening's debug trace (owner only: traces hold unblurred stills). */
   debug?: boolean;
 }) {
   const shown = event.changes.filter((c) => !c.rejected);
+  const proven = shown.filter((c) => (c.proof?.length ?? 0) > 0);
   const [clipFailed, setClipFailed] = useState(false);
   const quiet = "text-sm text-slate-500 dark:text-slate-400";
   return (
@@ -307,23 +322,59 @@ function EventCard({
           </ul>
         )}
       </div>
-      {event.clip && !clipFailed ? (
-        // The door-open span only: the link's #t= fragment starts and stops playback there.
-        <video
-          src={event.clip}
-          poster={event.stills[0]}
-          aria-label={`Door opening at ${clock(event.opened_at)}`}
-          muted
-          playsInline
-          controls
-          preload="metadata"
-          onError={() => setClipFailed(true)}
-          className="mt-3 aspect-video w-full rounded-xl bg-slate-100 object-cover dark:bg-slate-800"
-        />
-      ) : (
-        event.stills.length > 0 && <Stills stills={event.stills} onStill={onStill} />
-      )}
+      {/* Proof sits beside the clip or stills from sm up, below them on phones. */}
+      <div className={proven.length > 0 ? "grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr]" : undefined}>
+        <div className="min-w-0">
+          {event.clip && !clipFailed ? (
+            // The door-open span only: the link's #t= fragment starts and stops playback there.
+            <video
+              src={event.clip}
+              poster={event.stills[0]}
+              aria-label={`Door opening at ${clock(event.opened_at)}`}
+              muted
+              playsInline
+              controls
+              preload="metadata"
+              onError={() => setClipFailed(true)}
+              className="mt-3 aspect-video w-full rounded-xl bg-slate-100 object-cover dark:bg-slate-800"
+            />
+          ) : (
+            event.stills.length > 0 && <Stills stills={event.stills} onStill={onStill} />
+          )}
+        </div>
+        {proven.length > 0 && <ProofStrip changes={proven} onProof={onProof} />}
+      </div>
     </article>
+  );
+}
+
+/** Up to 2 stills per change that show it, each group captioned with the change. */
+function ProofStrip({ changes, onProof }: { changes: Change[]; onProof: (change: Change, index: number) => void }) {
+  return (
+    <section aria-label="Proof" className="mt-3 space-y-2">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Proof</h3>
+      {changes.map((c, n) => {
+        const proof = (c.proof ?? []).slice(0, 2);
+        return (
+          <figure key={n} className="space-y-1">
+            <div className="grid grid-cols-2 gap-1.5">
+              {proof.map((url, i) => (
+                <button
+                  key={url}
+                  type="button"
+                  aria-label={proofTitle(c, i, proof.length)}
+                  onClick={() => onProof(c, i)}
+                  className="relative aspect-video overflow-hidden rounded-lg bg-slate-100 transition active:scale-[0.98] dark:bg-slate-800"
+                >
+                  <img src={url} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
+                </button>
+              ))}
+            </div>
+            <figcaption className="text-xs font-semibold text-slate-600 dark:text-slate-300">{changeLabel(c)}</figcaption>
+          </figure>
+        );
+      })}
+    </section>
   );
 }
 
@@ -368,15 +419,18 @@ function Stills({ stills, onStill }: { stills: string[]; onStill: (index: number
 function StillViewer({
   stills,
   index,
+  titleOf,
   onIndex,
   onClose,
 }: {
   stills: string[];
   index: number;
+  /** The title for still `i`; "Still i of n" by default. */
+  titleOf?: (i: number) => string;
   onIndex: (index: number) => void;
   onClose: () => void;
 }) {
-  const title = stillTitle(index, stills.length);
+  const title = titleOf ? titleOf(index) : stillTitle(index, stills.length);
   const nav =
     "grid size-11 place-items-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 active:scale-95 disabled:opacity-30 dark:bg-slate-800 dark:text-slate-200";
   return (

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
 
 from fridgesense.logs import log_event
 from fridgesense.usage import Prices, Tokens, price
@@ -16,6 +16,7 @@ from fridgesense.usage import Prices, Tokens, price
 DEFAULT_MODEL_ID = "us.amazon.nova-2-lite-v1:0"
 TOOL_NAME = "record_fridge_changes"
 MAX_IMAGES = 4
+MAX_PROOF = 2  # proof images kept per change
 CATEGORIES = [
     "dairy",
     "produce",
@@ -43,6 +44,11 @@ _CHANGE_SCHEMA = {
         "category": {"type": "string", "enum": CATEGORIES},
         "quantity": {"type": "integer", "description": "How many whole items"},
         "confidence": {"type": "number", "description": "0 to 1; below 0.7 means unsure"},
+        "images": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "The 1 or 2 image numbers where this item is most clearly visible",
+        },
     },
     "required": ["item", "category", "quantity", "confidence"],
 }
@@ -70,6 +76,8 @@ INSTRUCTIONS = (
     "- Reuse a name from the current inventory when it is the same kind of item.\n"
     "- Count whole items; use quantity 1 if unsure of the count.\n"
     "- Set confidence from 0 to 1; use less than 0.7 when you are unsure.\n"
+    "- For each change, set images to the 1 or 2 image numbers where that item is most "
+    "clearly visible.\n"
     "- If nothing was added or removed, return empty lists.\n"
     "Current inventory: {inventory}\n"
 )
@@ -95,6 +103,7 @@ class Change(BaseModel):
     category: str = "other"
     quantity: int = 1
     confidence: float = 0.0
+    images: list[int] = []  # proof: image numbers (1-based) where the item is clearest
 
     @field_validator("item")
     @classmethod
@@ -126,6 +135,22 @@ class Change(BaseModel):
         except (TypeError, ValueError):
             return 0.0
         return min(max(c, 0.0), 1.0)
+
+    @field_validator("images", mode="before")
+    @classmethod
+    def _images(cls, v: Any, info: ValidationInfo) -> list[int]:
+        """Whole numbers within the stills sent, in order, no duplicates, at most 2."""
+        if not isinstance(v, list):
+            return []
+        count = (info.context or {}).get("images", MAX_IMAGES)
+        kept: list[int] = []
+        for n in v:
+            if isinstance(n, bool) or not isinstance(n, int | float) or n != int(n):
+                continue
+            n = int(n)
+            if 1 <= n <= count and n not in kept:
+                kept.append(n)
+        return kept[:MAX_PROOF]
 
 
 class FridgeChanges(BaseModel):
@@ -207,13 +232,14 @@ def build_request(
     }
 
 
-def parse_response(resp: dict) -> FridgeChanges | None:
-    """The validated tool input, or None if Nova did not answer with the tool."""
+def parse_response(resp: dict, images: int = MAX_IMAGES) -> FridgeChanges | None:
+    """The validated tool input, or None if Nova did not answer with the tool. `images` is how
+    many stills were sent, which bounds each change's proof image numbers."""
     for block in resp.get("output", {}).get("message", {}).get("content", []):
         tool = block.get("toolUse")
         if tool and tool.get("name") == TOOL_NAME:
             try:
-                return FridgeChanges.model_validate(tool.get("input"))
+                return FridgeChanges.model_validate(tool.get("input"), context={"images": images})
             except ValidationError:
                 return None
     return None
@@ -320,7 +346,7 @@ class NovaAnalyzer:
             )
             if on_usage is not None:
                 on_usage(tokens, spent.usd)
-            changes = parse_response(resp)
+            changes = parse_response(resp, len(stills[:MAX_IMAGES]))
             latency = (resp.get("metrics") or {}).get("latencyMs")
             record(
                 attempt,

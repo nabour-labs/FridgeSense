@@ -225,6 +225,10 @@ The app asks for the passcode again every 24 hours, whatever the role. It notice
 
 Cleaning, servicing or renovating means lots of door openings that are not real stock changes. Turn off the **FridgeSense** switch at the top of **Config → Camera** to pause (`PUT /api/camera/monitoring` with `{"paused": true}`). While paused, motion webhooks still get 200 but start no run (logged as `motion_paused`), and a run already waiting stops before downloading anything (outcome `paused`). So no stills, face detection, Nova calls, door events, inventory changes or stats are recorded. Live view, snapshots and manual item edits keep working. A banner on the Fridge and Config screens reminds you until you turn the switch back on. The demo passcode sees the state but can't change it.
 
+### Proof on Activity
+
+Each door opening on **Activity** shows its clip (or stills) and, beside it on wider screens or below it on phones, a **Proof** strip: up to 2 stills per change, captioned "+ soda", "− 2 eggs". The same Nova call that lists the changes also says which of its images show each item (`images` in the tool answer), so proof costs no extra call. The proof stills are the stored, face-blurred stills; tap one to see it full size. `GET /api/events` returns them as `proof` links on each change.
+
 ### Live view
 
 **Activity → Livestream** plays the camera live for up to 60 seconds (Ring's limit per session on plug-in cameras), then offers **Watch again**. The video goes from Ring straight to the browser over WebRTC; the app API only passes the connection offer and answer (`POST /api/camera/live`, `DELETE /api/camera/live/{session_id}`), so the Ring token stays on the server and nothing is recorded or stored. **Faces are not blurred in live video**, unlike stills, so only the owner can open it: the button is hidden for the user and demo passcodes, and both live routes answer them 403.

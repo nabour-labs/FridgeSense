@@ -325,6 +325,24 @@ describe("still links across polls", () => {
     expect(shownSrcs()).toEqual(links("c"));
   });
 
+  // Poll with fresh proof links
+  test("a poll with fresh proof links keeps the proof on screen", async () => {
+    const withProof = (tag: string) =>
+      event({ stills: links(tag), changes: [{ item: "soda", category: "beverage", direction: "added", quantity: 1, confidence: 0.9, applied: true, proof: links(tag, 2) }] });
+    const events = vi
+      .fn()
+      .mockResolvedValueOnce({ events: [withProof("a")], next: null })
+      .mockResolvedValue({ events: [withProof("b")], next: null });
+    renderPolls(events);
+    await act(async () => {});
+    const proofSrcs = () =>
+      Array.from(document.querySelectorAll('[aria-label="Proof"] img')).map((img) => img.getAttribute("src"));
+    expect(proofSrcs()).toEqual(links("a", 2));
+    await poll();
+    expect(events).toHaveBeenCalledTimes(2);
+    expect(proofSrcs()).toEqual(links("a", 2));
+  });
+
   // Poll with a fresh clip link
   test("a poll with a fresh clip link keeps the clip on screen", async () => {
     const clip = (tag: string) => `https://stills.example.com/clip.mp4?sig=${tag}#t=0.5,8.5`;
@@ -415,4 +433,64 @@ test("the Livestream button opens the Livestream dialog", async () => {
   expect(api.startLive).not.toHaveBeenCalled();
   await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+const PROOF = ["https://s3.test/still-3.jpg?sig", "https://s3.test/still-4.jpg?sig"];
+const SODA = { item: "soda", category: "beverage", direction: "added" as const, quantity: 1, confidence: 0.9, applied: true };
+const EGGS = { item: "eggs", category: "dairy", direction: "removed" as const, quantity: 2, confidence: 0.81, applied: true };
+const strip = () => screen.findByRole("region", { name: "Proof" });
+
+// Scenario: Proof beside the clip
+test("proof stills show beside the clip", async () => {
+  renderActivity([event({ clip: "https://s3.test/clip.mp4#t=0.5,8.5", changes: [{ ...SODA, proof: PROOF }] })]);
+  const proof = await strip();
+  expect(screen.getByLabelText(/^Door opening at/)).toBeInTheDocument();
+  expect(within(proof).getByRole("button", { name: "Proof for + soda, 1 of 2" })).toBeInTheDocument();
+  expect(within(proof).getByRole("button", { name: "Proof for + soda, 2 of 2" })).toBeInTheDocument();
+});
+
+// Scenario: Several changes
+test("the proof strip shows every change's proof, captioned", async () => {
+  renderActivity([event({ changes: [{ ...SODA, proof: [PROOF[0]] }, { ...EGGS, proof: PROOF }] })]);
+  const proof = await strip();
+  expect(within(proof).getAllByRole("button")).toHaveLength(3);
+  expect(within(proof).getByText("+ soda")).toBeInTheDocument();
+  expect(within(proof).getByText("− 2 eggs")).toBeInTheDocument();
+});
+
+// Scenario: No proof
+test("an event without proof shows no proof strip", async () => {
+  renderActivity([event({ clip: "https://s3.test/clip.mp4#t=0.5,8.5", changes: [{ ...SODA, proof: [] }, SODA] })]);
+  await screen.findByRole("article");
+  expect(screen.queryByRole("region", { name: "Proof" })).not.toBeInTheDocument();
+});
+
+// Scenario: Proof with stills
+test("proof shows alongside the stills when there is no clip", async () => {
+  renderActivity([event({ stills: STILLS, changes: [{ ...SODA, proof: [STILLS[2]] }] })]);
+  const proof = await strip();
+  expect(screen.getAllByRole("button", { name: /^Still \d of 4$/ })).toHaveLength(4);
+  expect(within(proof).getAllByRole("button")).toHaveLength(1);
+});
+
+// Scenario: Layout by width
+test("the media and proof sit in a grid that splits into two columns at sm", async () => {
+  renderActivity([event({ clip: "https://s3.test/clip.mp4#t=0.5,8.5", changes: [{ ...SODA, proof: PROOF }] })]);
+  const proof = await strip();
+  const grid = proof.parentElement!;
+  expect(grid).toHaveClass("grid", "grid-cols-1", "sm:grid-cols-[2fr_1fr]");
+  expect(grid.lastElementChild).toBe(proof);
+});
+
+// Scenario: Tap a proof still
+test("tapping a proof still opens it in the viewer with proof titles", async () => {
+  renderActivity([event({ changes: [{ ...SODA, proof: [PROOF[0]] }, { ...EGGS, proof: PROOF }] })]);
+  const proof = await strip();
+  await userEvent.click(within(proof).getByRole("button", { name: "Proof for − 2 eggs, 2 of 2" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByRole("img")).toHaveAttribute("src", PROOF[1]);
+  expect(within(dialog).getByRole("button", { name: "Next still" })).toBeDisabled();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Previous still" }));
+  expect(within(dialog).getByRole("heading", { name: "Proof for − 2 eggs, 1 of 2" })).toBeInTheDocument();
+  expect(within(dialog).getByRole("img")).toHaveAttribute("src", PROOF[0]);
 });
