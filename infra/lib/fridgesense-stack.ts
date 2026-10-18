@@ -132,6 +132,7 @@ export class FridgeSenseStack extends Stack {
       PipelineFunction: "/fridgesense/pipeline",
       ApiFunction: "/fridgesense/api",
       McpFunction: "/fridgesense/mcp",
+      ClipBlurFunction: "/fridgesense/clip-blur",
     };
     const logGroup = (id: string) =>
       new LogGroup(this, `${id}Logs`, {

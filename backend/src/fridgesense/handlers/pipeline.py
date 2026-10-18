@@ -106,6 +106,8 @@ def handler(event, context):
         )
     if task == "save":
         return inventory.save_task(FridgeTable(), state)
+    if task == "drop_raw_clip":
+        return door_events.drop_raw_clip(boto3.client("s3"), _bucket(), state)
     if task == "mark_failed":
         return inventory.mark_failed_task(FridgeTable(), state)
     raise ValueError(f"unknown task: {task!r}")

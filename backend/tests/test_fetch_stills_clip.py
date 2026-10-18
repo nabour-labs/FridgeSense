@@ -51,7 +51,7 @@ def ring_http():
         yield ring, http
 
 
-def run(ring_http, state=STATE20, blurrer=None, clip_dir=None, sleeps=None):
+def run(ring_http, state=STATE20, blurrer=None, clip_dir=None, sleeps=None, face_blur=True):
     ring, http = ring_http
     return fetch_stills(
         ring,
@@ -65,6 +65,7 @@ def run(ring_http, state=STATE20, blurrer=None, clip_dir=None, sleeps=None):
         sleep=(sleeps.append if sleeps is not None else lambda s: None),
         frame_interval_ms=500,
         clip_dir=clip_dir,
+        face_blur=face_blur,
     )
 
 
@@ -92,8 +93,8 @@ def serve_stills(missing=()):
 
 
 def stored_stills() -> list[str]:
-    """The stored keys other than the open-span clip."""
-    return [k for k in stored_keys() if not k.endswith("/clip.mp4")]
+    """The stored keys other than the open-span clip (raw or not)."""
+    return [k for k in stored_keys() if not k.endswith(".mp4")]
 
 
 def logged(caplog, event: str) -> dict:
@@ -207,7 +208,7 @@ def test_still_missing_frame_used(aws, ring_http, tmp_path):
 def test_door_opening_processed_stores_only_the_open_span_clip(aws, ring_http, tmp_path):
     serve_clip(tmp_path, [(4000, 12_500)])
     serve_stills()
-    run(ring_http, clip_dir=tmp_path)
+    run(ring_http, clip_dir=tmp_path, face_blur=False)
     keys = stored_keys()
     assert [k for k in keys if k.endswith(".mp4")] == [f"{PREFIX}clip.mp4"]
     assert all(k.endswith(".mp4") or (k.endswith(".jpg") and "/still-" in k) for k in keys)

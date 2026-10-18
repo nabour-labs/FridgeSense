@@ -238,8 +238,8 @@ def get_events(ctx: Context) -> dict:
         )
 
     def clip_of(e: dict) -> str | None:
-        """The open-span clip, played from open to close; never for viewers (not face-blurred)."""
-        if ctx.role == "viewer" or not e.get("clip_key"):
+        """The open-span clip, played from open to close; viewers get it only face-blurred."""
+        if not e.get("clip_key") or (ctx.role == "viewer" and not e.get("clip_blurred")):
             return None
         start_s, end_s = (float(t) for t in e["clip_span"])
         return f"{link(e['clip_key'])}#t={start_s:g},{end_s:g}"

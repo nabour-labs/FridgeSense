@@ -133,7 +133,7 @@ describe("door-event state machine", () => {
   it("passes the task name and the run state to the pipeline Lambda", () => {
     const { States } = definition();
     const tasks = { FindWindow: "find_window", FetchStills: "fetch_stills", Analyze: "analyze",
-      Save: "save", MarkFailed: "mark_failed" };
+      Save: "save", MarkFailed: "mark_failed", DropRawClip: "drop_raw_clip" };
     for (const [state, task] of Object.entries(tasks)) {
       expect(States[state].Parameters).toEqual({ task, "input.$": "$" });
     }
@@ -212,7 +212,10 @@ describe("stills bucket", () => {
   it("Stills deleted after 7 days; bucket private and encrypted", () => {
     template.hasResourceProperties("AWS::S3::Bucket", {
       LifecycleConfiguration: {
-        Rules: [{ ExpirationInDays: 7, Status: "Enabled" }],
+        Rules: [
+          { ExpirationInDays: 7, Status: "Enabled" },
+          { ExpirationInDays: 1, Status: "Enabled", TagFilters: [{ Key: "transient", Value: "true" }] },
+        ],
       },
       PublicAccessBlockConfiguration: {
         BlockPublicAcls: true,
@@ -290,10 +293,71 @@ describe("logs", () => {
       .sort();
     expect(names).toEqual([
       "/fridgesense/api",
+      "/fridgesense/clip-blur",
       "/fridgesense/http",
       "/fridgesense/mcp",
       "/fridgesense/pipeline",
       "/fridgesense/token-refresh",
     ]);
+  });
+});
+
+
+describe("clip blur", () => {
+  function blurFunction(): [string, Resource] {
+    const found = Object.entries(resourcesOf("AWS::Lambda::Function")).filter(
+      ([, r]) => r.Properties.PackageType === "Image",
+    );
+    expect(found).toHaveLength(1);
+    return found[0];
+  }
+
+  it("is an arm64 container Lambda with 3008 MB, 300 s and 2 GB of /tmp", () => {
+    const [, fn] = blurFunction();
+    expect(fn.Properties).toMatchObject({
+      Architectures: ["arm64"],
+      MemorySize: 3008,
+      Timeout: 300,
+      EphemeralStorage: { Size: 2048 },
+    });
+    const env = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    expect(Object.keys(env)).toEqual(expect.arrayContaining(["STILLS_BUCKET", "TABLE_NAME"]));
+  });
+
+  // Blur runs after save / No raw clip
+  it("runs BlurClip after Save only when the run has a raw clip", () => {
+    const { States } = definition();
+    expect(States.Save.Next).toBe("HasRawClip");
+    const choice = States.HasRawClip as State & {
+      Choices: { Variable: string; IsPresent: boolean; Next: string }[];
+      Default: string;
+    };
+    expect(choice.Choices).toEqual([{ Variable: "$.clip.raw_key", IsPresent: true, Next: "BlurClip" }]);
+    expect(choice.Default).toBe("Done");
+    expect(States.BlurClip).toMatchObject({ Type: "Task", Next: "Done" });
+    expect(States.Done.Type).toBe("Succeed");
+  });
+
+  // Blur error caught
+  it("catches any BlurClip error with DropRawClip, then ends in Done", () => {
+    const { States } = definition();
+    const blur = States.BlurClip as State & { Catch: Record<string, unknown>[] };
+    expect(blur.Catch).toEqual([
+      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "DropRawClip" },
+    ]);
+    expect(States.DropRawClip).toMatchObject({ Type: "Task", Next: "Done" });
+  });
+
+  it("can only touch clip objects and update door events", () => {
+    const [id] = blurFunction();
+    const statements = statementsFor(id.slice(0, 12));
+    const s3 = statements.filter((s) => actions(s).some((a) => a.startsWith("s3:")));
+    expect([...new Set(s3.flatMap(actions))].sort()).toEqual(["s3:DeleteObject", "s3:GetObject", "s3:PutObject"]);
+    const resources = JSON.stringify(s3.map((s) => s.Resource));
+    expect(resources).toContain("/*/clip-raw.mp4");
+    expect(resources).toContain("/*/clip.mp4");
+    expect(resources).not.toMatch(/\/\*"/);
+    const ddb = statements.filter((s) => actions(s).some((a) => a.startsWith("dynamodb:")));
+    expect(ddb.flatMap(actions)).toEqual(["dynamodb:UpdateItem"]);
   });
 });

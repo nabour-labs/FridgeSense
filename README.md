@@ -193,6 +193,12 @@ set -a; source .env; set +a; aws logs tail /fridgesense/pipeline --since 24h --f
 
 Expect $0.001 per still. Failed calls log `face_detect_failed` instead, with the still number and error. To change the price used in the log, deploy with `-c faceDetectPrice=0.0008`.
 
+Blurring faces in each door opening's clip logs its own cost in a separate log group:
+
+```bash
+set -a; source .env; set +a; aws logs tail /fridgesense/clip-blur --since 24h --filter-pattern '"clip_blur_cost"'
+```
+
 ### 7. Open the app
 
 `cdk deploy` builds the app and prints `SiteUrl`. Read it again any time:
@@ -259,6 +265,8 @@ cdk deploy -c debugTraces=false
 ### Blur faces
 
 **Config → Camera → Blur faces** is on by default. While it is on, faces are blurred in every stored still, snapshot and live frame, and debug traces keep only blurred thumbnails. Only the owner can turn it off (`PUT /api/settings/face-blur`); then no face detection runs (saving about $0.001 per still) and stills are stored as recorded for 7 days. Every role can read it (`GET /api/settings/face-blur`). Livestream is never blurred, whatever the setting.
+
+While it is on, each door opening's clip is blurred too, after the analysis is saved. A container Lambda (`clipblur/`, arm64) runs the open-source [deface](https://github.com/ORB-HD/deface) face detector (CenterFace) on every frame and blurs an ellipse over each face, 30% larger than the face. The rest of the frame stays as recorded, apart from re-encoding. Until it finishes, about a minute, Activity shows the stills. The raw cut (`clip-raw.mp4`) is private, never linked, and deleted once the blurred `clip.mp4` is stored; a tagged lifecycle rule removes any left behind within a day. If blurring fails, the clip is dropped rather than shown unblurred. Because these clips are blurred, the demo passcode sees them too. Clip blurring is best effort: CenterFace can miss a face turned away or half hidden, unlike the per-still Rekognition check. Each run logs `clip_blur_cost` (Lambda GB-seconds, about $0.001 to $0.002 per clip).
 
 ### Demo access
 

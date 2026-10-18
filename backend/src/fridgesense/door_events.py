@@ -671,13 +671,37 @@ def iso_utc(ms: int) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ms % 1000:03d}Z"
 
 
-def store_open_clip(
-    s3, bucket: str, state: dict, clip: Path, opened_ms: int, closed_ms: int | None, clip_dir=None
-) -> dict:
-    """Cut the clip to the open span and store it as `clip.mp4` next to the stills.
+def drop_raw_clip(s3, bucket: str, state: dict) -> dict:
+    """The workflow's catch after BlurClip fails: delete the raw clip and log it. The door event
+    keeps its analysis and never links an unblurred clip."""
+    s3.delete_object(Bucket=bucket, Key=state["clip"]["raw_key"])  # no error if already gone
+    log_event(
+        "clip_not_stored",
+        logging.WARNING,
+        device_id=state["device_id"],
+        reason="blur_failed",
+        error=(state.get("error") or {}).get("Error"),
+    )
+    return {**state, "outcome": "clip_dropped"}
 
-    Returns the door event's `clip_key` and `clip_span`, or {} when the cut or upload failed
-    (logged as clip_not_stored): a missing clip never costs the door event or its analysis.
+
+def store_open_clip(
+    s3,
+    bucket: str,
+    state: dict,
+    clip: Path,
+    opened_ms: int,
+    closed_ms: int | None,
+    clip_dir=None,
+    raw: bool = False,
+) -> dict:
+    """Cut the clip to the open span and store it next to the stills.
+
+    Without `raw` (face blurring off) it is `clip.mp4`, and this returns the door event's
+    `clip_key` and `clip_span`. With `raw` it is `clip-raw.mp4`, tagged transient and never
+    linked, and this returns `{"clip": {"raw_key", "clip_span"}}` for the BlurClip step.
+    Returns {} when the cut or upload failed (logged as clip_not_stored): a missing clip never
+    costs the door event or its analysis.
     """
     from fridgesense import clip_frames
 
@@ -690,9 +714,13 @@ def store_open_clip(
             "clip_not_stored", logging.WARNING, device_id=state["device_id"], reason="cut_failed"
         )
         return {}
-    key = stills_prefix(state["account_id"], state["device_id"], start_ms) + "clip.mp4"
+    name = "clip-raw.mp4" if raw else "clip.mp4"
+    key = stills_prefix(state["account_id"], state["device_id"], start_ms) + name
+    extra = {"Tagging": "transient=true"} if raw else {}
     try:
-        s3.put_object(Bucket=bucket, Key=key, Body=cut.read_bytes(), ContentType="video/mp4")
+        s3.put_object(
+            Bucket=bucket, Key=key, Body=cut.read_bytes(), ContentType="video/mp4", **extra
+        )
     except Exception as e:  # S3 trouble must not drop the door opening
         log_event(
             "clip_not_stored",
@@ -704,6 +732,8 @@ def store_open_clip(
         return {}
     finally:
         cut.unlink(missing_ok=True)
+    if raw:
+        return {"clip": {"raw_key": key, "clip_span": [start_s, end_s]}}
     return {"clip_key": key, "clip_span": [Decimal(str(start_s)), Decimal(str(end_s))]}
 
 
@@ -858,7 +888,9 @@ def _fetch_stills(
         trace.stored_keys = still_keys
         if clip and kept:
             closed = closed_ms if not results[span[-1]].is_open else None
-            clip_fields = store_open_clip(s3, bucket, state, kept[0], opened_ms, closed, clip_dir)
+            clip_fields = store_open_clip(
+                s3, bucket, state, kept[0], opened_ms, closed, clip_dir, raw=face_blur
+            )
         if len(stills) >= MIN_STILLS:
             status = "analyzing"
 
@@ -874,7 +906,7 @@ def _fetch_stills(
         "closed_at": iso_utc(closed_ms),
         "duration_s": round((closed_ms - opened_ms) / 1000),
         "still_keys": still_keys,
-        **clip_fields,
+        **{k: v for k, v in clip_fields.items() if k != "clip"},
         "status": status,
     }
     try:
@@ -896,6 +928,8 @@ def _fetch_stills(
     except TransactionConflict as e:
         if e.reasons and e.reasons[0] == "ConditionalCheckFailed":
             log_event("door_event_duplicate", account_id=account_id, ring_event=claim)
+            if "clip" in clip_fields:  # nothing will blur it
+                s3.delete_object(Bucket=bucket, Key=clip_fields["clip"]["raw_key"])
             return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
@@ -905,4 +939,7 @@ def _fetch_stills(
     )
     trace.door_sk = door_sk
     trace.opened_at, trace.closed_at = event["opened_at"], event["closed_at"]
-    return done({**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys})
+    raw_clip = {"clip": clip_fields["clip"]} if "clip" in clip_fields else {}
+    return done(
+        {**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys, **raw_clip}
+    )

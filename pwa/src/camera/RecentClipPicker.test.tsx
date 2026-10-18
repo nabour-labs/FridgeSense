@@ -61,6 +61,7 @@ function loaded() {
 }
 
 // Recent clips listed
+// Scenario: Only listed clips offered (the picker plays only the API's clip links)
 it("lists the last 7 days' openings with a clip, newest first, the first one playing cross-origin", async () => {
   const { api } = renderPicker();
   const box = await screen.findByRole("combobox", { name: "Clip" });
@@ -78,6 +79,7 @@ it("lists the last 7 days' openings with a clip, newest first, the first one pla
 });
 
 // Add a reference from a recent clip (the picker's part)
+// Scenario: Frame still blurred by the server
 it("Use this frame sends the grabbed frame to be blurred and returns only the blurred image", async () => {
   const { api, onPick, grab } = renderPicker();
   await screen.findByRole("combobox", { name: "Clip" });
@@ -91,6 +93,7 @@ it("Use this frame sends the grabbed frame to be blurred and returns only the bl
 });
 
 // No recent clips
+// Scenario: Clip being blurred not offered (its clip is null until blurred)
 it("says so when no recent opening has a clip, and Use this frame is disabled", async () => {
   renderPicker({ events: [event("e2", at(0, 9, 15), 10, null)] });
   expect(await screen.findByText("No door openings with a clip in the last 7 days.")).toBeInTheDocument();
