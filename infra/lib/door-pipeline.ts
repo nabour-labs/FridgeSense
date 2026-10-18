@@ -177,7 +177,9 @@ export class DoorPipeline extends Construct {
     const blurFn = new DockerImageFunction(this, "ClipBlurFunction", {
       code: DockerImageCode.fromImageAsset(CLIPBLUR_DIR, { platform: Platform.LINUX_ARM64 }),
       architecture: Architecture.ARM_64,
-      memorySize: 3008, // about 2 vCPU for detection and H.264 encoding
+      // About 6 vCPU: detection and H.264 encoding scale with cores (3008 MB took 211 s for a
+      // 19 s opening, close to the timeout).
+      memorySize: 10240,
       timeout: Duration.minutes(5),
       ephemeralStorageSize: Size.mebibytes(2048),
       logGroup: props.logGroup("ClipBlurFunction"),

@@ -38,7 +38,7 @@ Tracks: AWS Builder (Lambda container image, Step Functions, S3), Open Source (`
 ## Impact
 
 - New Python project `clipblur/` (`pyproject.toml`, `Dockerfile`, handler, tests). It depends on `deface` (installed without its `opencv-python` dependency), `opencv-python-headless`, `onnxruntime`, `av` and `numpy`.
-- `infra/lib/door-pipeline.ts`: a `DockerImageFunction` (arm64, 3008 MB, 5 min, 2 GB ephemeral storage), `BlurClip` and `DropRawClip` states, and the lifecycle rule. The deploy needs Docker Desktop running on the Mac. It's installed, but the daemon was off when checked.
+- `infra/lib/door-pipeline.ts`: a `DockerImageFunction` (arm64, 10240 MB, 5 min, 2 GB ephemeral storage), `BlurClip` and `DropRawClip` states, and the lifecycle rule. The deploy needs Docker Desktop running on the Mac. It's installed, but the daemon was off when checked.
 - Backend: `door_events.store_open_clip`, a `drop_raw_clip` task in `handlers/pipeline.py`, and `get_events` in `handlers/api.py`.
 - README: the Blur faces and Activity sections.
 - Depends on `face-blur-setting` (implemented, not yet archived). Archive it before this change.

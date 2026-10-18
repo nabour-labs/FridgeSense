@@ -122,3 +122,19 @@ def test_decode_error(tmp_path):
     with pytest.raises(ClipUnreadable):
         blur_clip(raw, out, FakeDetector([]))
     assert not out.exists()
+
+
+def test_detector_uses_every_available_cpu():
+    """onnxruntime can't read the CPU list on Lambda, so the thread count is set explicitly."""
+    from clipblur.blur import available_cpus, centerface
+
+    detect = centerface(640, 360)
+    assert detect.session.get_session_options().intra_op_num_threads == available_cpus()
+    assert detect.session.get_providers() == ["CPUExecutionProvider"]
+
+
+def test_available_cpus_follows_the_affinity_mask(monkeypatch):
+    from clipblur import blur
+
+    monkeypatch.setattr(blur.os, "sched_getaffinity", lambda pid: {0, 1, 2, 3, 4, 5}, raising=False)
+    assert blur.available_cpus() == 6

@@ -1,5 +1,6 @@
 """Blur every face in a clip with deface, leaving the rest of each frame as recorded."""
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,20 +30,48 @@ class BlurStats:
     frames_with_faces: int = 0
 
 
+def available_cpus() -> int:
+    """The CPUs this process may run on (Lambda: about 1 vCPU per 1769 MB)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # macOS
+        return os.cpu_count() or 1
+
+
+def _session(threads: int):
+    """deface's CenterFace ONNX model on onnxruntime's CPU provider with `threads` threads.
+    On Lambda onnxruntime can't read /sys/devices/system/cpu/possible, so its own thread-count
+    guess is unreliable; CoreML on a Mac is slower than the CPU provider for this model."""
+    import onnx
+    import onnxruntime
+    from deface.centerface import CenterFace, default_onnx_path
+
+    options = onnxruntime.SessionOptions()
+    options.intra_op_num_threads = threads
+    model = CenterFace.dynamicize_shapes(onnx.load(default_onnx_path))
+    return onnxruntime.InferenceSession(
+        model.SerializeToString(), options, providers=["CPUExecutionProvider"]
+    )
+
+
 def centerface(width: int, height: int) -> Detector:
-    """deface's CenterFace model, run at most MAX_DETECT_WIDTH px wide."""
+    """deface's CenterFace model, run at most MAX_DETECT_WIDTH px wide on every CPU."""
     from deface.centerface import CenterFace
 
     scale = min(1.0, MAX_DETECT_WIDTH / width)
-    model = CenterFace(
-        in_shape=(round(width * scale), round(height * scale)),
-        override_execution_provider="CPUExecutionProvider",  # all Lambda has; CoreML is slower
-    )
+    # Built by hand so the session gets our thread count (deface 1.5.0 takes no session options).
+    model = CenterFace.__new__(CenterFace)
+    model.in_shape = (round(width * scale), round(height * scale))
+    model.onnx_input_name = "input.1"
+    model.onnx_output_names = ["537", "538", "539", "540"]
+    model.backend = "onnxrt"
+    model.sess = _session(available_cpus())
 
     def detect(frame: np.ndarray) -> np.ndarray:
         dets, _landmarks = model(frame, threshold=THRESHOLD)
         return dets
 
+    detect.session = model.sess
     return detect
 
 
@@ -75,9 +104,10 @@ def blur_clip(src: Path, dst: Path, detector: Detector | None = None) -> BlurSta
             raise ClipUnreadable(str(e)) from e
         with source, av.open(str(dst), "w", options={"movflags": "+faststart"}) as out:
             ctx = video.codec_context
+            video.thread_type = "AUTO"  # decode with frame and slice threads
             stream = out.add_stream("libx264", rate=video.average_rate or 15)
             stream.width, stream.height, stream.pix_fmt = ctx.width, ctx.height, "yuv420p"
-            stream.options = {"crf": CRF, "preset": "veryfast"}
+            stream.options = {"crf": CRF, "preset": "veryfast", "threads": str(available_cpus())}
             detect = detector or centerface(ctx.width, ctx.height)
             try:
                 frames = source.decode(video)
