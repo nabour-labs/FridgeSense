@@ -32,8 +32,8 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 5. Zone and reference source (API)
 
-- [ ] 5.1 Write failing tests in `backend/tests/test_api_door_calibration.py` for "Reference from a clip", "Source left out", "Unknown source", "Stored before this change", "Rename keeps the source" and "Redraw on a live picture".
-- [ ] 5.2 Store, validate and return `source` on zones and references in `door_calibration.py` and `handlers/api.py`. Verify with `uv run pytest tests/test_api_door_calibration.py tests/test_door_calibration.py`.
+- [x] 5.1 Write failing tests in `backend/tests/test_api_door_calibration.py` for "Reference from a clip", "Source left out", "Unknown source", "Stored before this change", "Rename keeps the source" and "Redraw on a live picture".
+- [x] 5.2 Store, validate and return `source` on zones and references in `door_calibration.py` and `handlers/api.py`. Verify with `uv run pytest tests/test_api_door_calibration.py tests/test_door_calibration.py`.
 
 ## 6. Setup needs clip pictures
 

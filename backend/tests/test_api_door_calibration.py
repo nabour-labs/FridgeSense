@@ -519,3 +519,86 @@ def test_moved_times_reported(owner):
     assert body["alignment"]["moved"] is True
     assert body["alignment"]["moved_at"] == iso_utc(at)
     assert body["alignment"]["last_moved_at"] == iso_utc(at)
+
+
+# --- Door zones and references record their picture's source ---
+
+
+def body_of(owner) -> dict:
+    return call("GET", "/api/door-calibration", token=owner)[1]
+
+
+# Reference from a clip
+def test_reference_from_a_clip(owner):
+    zone = zone_id(owner)
+    payload = {"image": b64(CLOSED), "zone_id": zone, "status": "closed", "source": "clip"}
+    status, body = call("POST", "/api/door-calibration/references", payload, owner)
+    assert status == 200
+    assert body["references"][-1]["source"] == "clip"
+
+
+# Source left out
+def test_source_left_out(owner):
+    zone_id(owner)
+    [zone] = body_of(owner)["zones"]
+    assert zone["source"] == "live"
+    add(owner, zone["id"], CLOSED, "closed")
+    assert body_of(owner)["references"][0]["source"] == "live"
+
+
+# Unknown source
+@pytest.mark.parametrize("source", ["upload", 3])
+def test_unknown_source(owner, source):
+    error = (400, {"error": "source must be clip or live"})
+    zone_body = {"name": "Doors", "box": LEFT, "source": source}
+    assert call("POST", "/api/door-calibration/zones", zone_body, owner) == error
+    zone = zone_id(owner)
+    ref = {"image": b64(CLOSED), "zone_id": zone, "status": "closed", "source": source}
+    assert call("POST", "/api/door-calibration/references", ref, owner) == error
+    patch = {"box": LEFT, "source": source}
+    assert call("PATCH", f"/api/door-calibration/zones/{zone}", patch, owner) == error
+    body = body_of(owner)
+    assert len(body["zones"]) == 1
+    assert body["references"] == []
+
+
+# Stored before this change
+def test_stored_before_this_change(owner):
+    zone = zone_id(owner)
+    add(owner, zone, CLOSED, "closed")
+    table = FridgeTable()
+    for item in table.query(ACCOUNT, "DOORZONE#") + table.query(ACCOUNT, "DOORREF#"):
+        item.pop("source", None)
+        table.put(item)
+    body = body_of(owner)
+    assert body["zones"][0]["source"] == "live"
+    assert body["references"][0]["source"] == "live"
+
+
+# Rename keeps the source
+def test_rename_keeps_the_source(owner):
+    call(
+        "POST",
+        "/api/door-calibration/zones",
+        {"name": "Doors", "box": LEFT, "source": "clip"},
+        owner,
+    )
+    zone = body_of(owner)["zones"][0]["id"]
+    call("PATCH", f"/api/door-calibration/zones/{zone}", {"name": "Fridge doors"}, owner)
+    assert body_of(owner)["zones"][0]["source"] == "clip"
+
+
+# Redraw on a live picture
+def test_redraw_on_a_live_picture(owner):
+    call(
+        "POST",
+        "/api/door-calibration/zones",
+        {"name": "Doors", "box": LEFT, "source": "clip"},
+        owner,
+    )
+    zone = body_of(owner)["zones"][0]["id"]
+    right = {"x": 0.5, "y": 0, "width": 0.5, "height": 1}
+    call("PATCH", f"/api/door-calibration/zones/{zone}", {"box": right}, owner)
+    assert body_of(owner)["zones"][0]["source"] == "live"
+    call("PATCH", f"/api/door-calibration/zones/{zone}", {"box": LEFT, "source": "clip"}, owner)
+    assert body_of(owner)["zones"][0]["source"] == "clip"

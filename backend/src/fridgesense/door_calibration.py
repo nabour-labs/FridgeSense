@@ -32,6 +32,7 @@ MAX_NAME = 30
 MIN_SIDE = 0.02
 MIN_MARGIN = 0.01
 STATUSES = ("open", "closed")
+SOURCES = ("clip", "live")  # a frame of a recorded clip, or a live-view frame / Ring still
 
 
 def ref_prefix(device_id: str) -> str:
@@ -90,6 +91,15 @@ def validate_name(value: Any) -> str:
     return name
 
 
+def validate_source(value: Any) -> str:
+    """Where a zone's or reference's picture came from; "live" when not given."""
+    if value is None:
+        return "live"
+    if value not in SOURCES:
+        raise Invalid("source must be clip or live")
+    return value
+
+
 def validate_status(value: Any) -> str:
     if value not in STATUSES:
         raise Invalid("status must be open or closed")
@@ -118,6 +128,7 @@ class DoorZone:
     name: str
     box: Box
     created_at: str
+    source: str = "live"
 
 
 @dataclass(frozen=True)
@@ -128,6 +139,7 @@ class DoorReference:
     box: Box  # the zone's current box
     status: str
     created_at: str
+    source: str = "live"
 
 
 @dataclass(frozen=True)
@@ -158,7 +170,9 @@ def _box_of(item: dict) -> Box:
 
 
 def _zone(item: dict) -> DoorZone:
-    return DoorZone(item["sk"], item["name"], _box_of(item), item["created_at"])
+    return DoorZone(
+        item["sk"], item["name"], _box_of(item), item["created_at"], item.get("source", "live")
+    )
 
 
 def list_zones(table: FridgeTable, account_id: str, device_id: str) -> list[DoorZone]:
@@ -180,6 +194,7 @@ def list_references(table: FridgeTable, account_id: str, device_id: str) -> list
             box=boxes[i["zone_id"]],
             status=i["status"],
             created_at=i["created_at"],
+            source=i.get("source", "live"),
         )
         for i in items
         if i.get("zone_id") in boxes
@@ -198,8 +213,10 @@ def add_reference(
     zone_id: Any,
     status: str,
     now_ms: int,
+    source: Any = None,
 ) -> DoorReference:
     """Invalid("pick a door zone") unless zone_id is one of the device's zones."""
+    source = validate_source(source)
     zones = {z.sk: z for z in list_zones(table, account_id, device_id)}
     if not isinstance(zone_id, str) or zone_id not in zones:
         raise Invalid("pick a door zone")
@@ -213,17 +230,26 @@ def add_reference(
         "zone_id": zone_id,
         "status": status,
         "created_at": iso_utc(now_ms),
+        "source": source,
     }
     table.put(item)
     _mark_changed(table, account_id, device_id, now_ms)
-    return DoorReference(item["sk"], image, zone_id, zones[zone_id].box, status, item["created_at"])
+    box = zones[zone_id].box
+    return DoorReference(item["sk"], image, zone_id, box, status, item["created_at"], source)
 
 
 def add_zone(
-    table: FridgeTable, account_id: str, device_id: str, name: Any, box: Any, now_ms: int
+    table: FridgeTable,
+    account_id: str,
+    device_id: str,
+    name: Any,
+    box: Any,
+    now_ms: int,
+    source: Any = None,
 ) -> DoorZone:
     name = validate_name(name)
     box = validate_box(box)
+    source = validate_source(source)
     if len(list_zones(table, account_id, device_id)) >= MAX_ZONES:
         raise TooManyZones()
     item = {
@@ -232,6 +258,7 @@ def add_zone(
         "name": name,
         "box": box_json(box),
         "created_at": iso_utc(now_ms),
+        "source": source,
     }
     table.put(item)
     _mark_changed(table, account_id, device_id, now_ms)
@@ -246,9 +273,12 @@ def update_zone(
     now_ms: int,
     name: Any = None,
     box: Any = None,
+    source: Any = None,
 ) -> bool:
     """Rename and/or redraw a zone (None leaves a field as it is); False if there is no such
-    zone. Its references follow the new box."""
+    zone. Its references follow the new box. A new box takes `source` (default "live"): the
+    picture it was drawn on."""
+    picture = validate_source(source)
     if not sk.startswith(zone_prefix(device_id)):
         return False
     item = table.get(account_pk(account_id), sk)
@@ -258,6 +288,7 @@ def update_zone(
         item["name"] = validate_name(name)
     if box is not None:
         item["box"] = box_json(validate_box(box))
+        item["source"] = picture
     table.put(item)
     _mark_changed(table, account_id, device_id, now_ms)
     return True
