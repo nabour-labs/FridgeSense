@@ -706,6 +706,7 @@ def door_setup_body(
                 "box": door_calibration.box_json(z.box),
                 "open": count(z.sk, "open"),
                 "closed": count(z.sk, "closed"),
+                "source": z.source,
             }
             for z in zones
         ],
@@ -718,6 +719,7 @@ def door_setup_body(
                 "status": r.status,
                 "score": None if scores.get(r.sk) is None else round(scores[r.sk], 3),
                 "created_at": r.created_at,
+                "source": r.source,
             }
             for r in refs
         ],
@@ -769,7 +771,14 @@ def post_door_reference(ctx: Context, device_id: str) -> dict:
         image = door_calibration.decode_image(body.get("image"))
         status = door_calibration.validate_status(body.get("status"))
         door_calibration.add_reference(
-            ctx.table, ctx.account_id, device_id, image, zone_sk, status, now_ms=int(now() * 1000)
+            ctx.table,
+            ctx.account_id,
+            device_id,
+            image,
+            zone_sk,
+            status,
+            now_ms=int(now() * 1000),
+            source=body.get("source"),
         )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})
@@ -791,6 +800,7 @@ def post_door_zone(ctx: Context, device_id: str) -> dict:
             body.get("name"),
             body.get("box"),
             now_ms=int(now() * 1000),
+            source=body.get("source"),
         )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})
@@ -813,6 +823,7 @@ def patch_door_zone(ctx: Context, device_id: str) -> dict:
             now_ms=int(now() * 1000),
             name=body.get("name"),
             box=body.get("box"),
+            source=body.get("source"),
         )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})

@@ -90,7 +90,11 @@ DEFAULT_ZONES: tuple[Box, ...] = ((0.38, 0.32, 0.21, 0.30), (0.455, 0.60, 0.12, 
 DEFAULT_THRESHOLD = 0.01
 MIN_CHROMA = 60  # max(R,G,B) - min(R,G,B): grey steel, white and wood stay below this
 MIN_PEAK = 100  # brightest channel: keeps dark saturated clothing (navy) out
-MIN_BLUE_LEAD = 20  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
+# Fridge light: stricter than "colourful". Daylight tints the steel doors a pale blue
+# (e.g. 110,150,200) that passes the colour test; the LED-lit interior is a deep blue.
+BLUE_MIN_CHROMA = 100
+BLUE_MIN_PEAK = 120
+BLUE_MIN_LEAD = 60  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
 
 
 def still_times(start_ms: int, end_ms: int, count: int = STILL_COUNT) -> list[int]:
@@ -126,6 +130,18 @@ def open_span(scores: list[float], threshold: float) -> list[int] | None:
     return list(range(opened[0], end + 1))
 
 
+SUSPECT_MIN_FRAMES = 10
+SUSPECT_OPEN_SHARE = 0.9
+
+
+def is_suspect(opened: list[bool], zones_source: str) -> bool:
+    """A clip checked with setup rules that reads open at both bookends, or nearly
+    throughout: a recording starts and ends with the door closed, so the rules are off."""
+    if zones_source not in ("setup", "tuned") or len(opened) < SUSPECT_MIN_FRAMES:
+        return False
+    return (opened[0] and opened[-1]) or sum(opened) / len(opened) >= SUSPECT_OPEN_SHARE
+
+
 def pick(span: list[int], count: int = STILL_COUNT) -> list[int]:
     """Up to `count` evenly spaced items of `span`, always including its first and last."""
     if len(span) <= count:
@@ -151,14 +167,16 @@ def _crop_box(img: Image.Image, box: Box) -> Image.Image:
     return img.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
 
 
-def _colorful_mask(zone: Image.Image) -> Image.Image:
+def _colorful_mask(
+    zone: Image.Image, min_chroma: int = MIN_CHROMA, min_peak: int = MIN_PEAK
+) -> Image.Image:
     r, g, b = zone.split()
     peak = ImageChops.lighter(ImageChops.lighter(r, g), b)
     low = ImageChops.darker(ImageChops.darker(r, g), b)
     chroma = ImageChops.subtract(peak, low)
     return ImageChops.multiply(
-        chroma.point(lambda v: 255 if v > MIN_CHROMA else 0),
-        peak.point(lambda v: 255 if v > MIN_PEAK else 0),
+        chroma.point(lambda v: 255 if v > min_chroma else 0),
+        peak.point(lambda v: 255 if v > min_peak else 0),
     )
 
 
@@ -167,11 +185,13 @@ def _colorful(zone: Image.Image) -> float:
 
 
 def _blue_lit(zone: Image.Image) -> float:
-    """Share of colourful pixels whose blue leads red and green: the lit fridge interior."""
+    """Share of strongly colourful pixels whose blue clearly leads red and green: the lit
+    fridge interior."""
     r, g, b = zone.split()
     lead = ImageChops.subtract(b, ImageChops.lighter(r, g))
-    blue = lead.point(lambda v: 255 if v > MIN_BLUE_LEAD else 0)
-    return ImageStat.Stat(ImageChops.multiply(_colorful_mask(zone), blue)).mean[0] / 255
+    blue = lead.point(lambda v: 255 if v > BLUE_MIN_LEAD else 0)
+    mask = _colorful_mask(zone, BLUE_MIN_CHROMA, BLUE_MIN_PEAK)
+    return ImageStat.Stat(ImageChops.multiply(mask, blue)).mean[0] / 255
 
 
 def _open_rgb(still: bytes | Image.Image) -> Image.Image:
@@ -344,6 +364,11 @@ class DoorCheck:
 
         rules = tuple(replace(r, box=shift_box(r.box, dx, dy)) for r in self.rules)
         return replace(self, rules=rules)
+
+    def fridge_light(self, threshold: float) -> "DoorCheck":
+        """The same zone boxes, each judged by the fridge light alone (blue above `threshold`)."""
+        rules = tuple(ZoneRule(r.box, "blue", "above", threshold) for r in self.rules)
+        return replace(self, rules=rules, source="fallback")
 
     def evaluate(self, stills: list[bytes]) -> tuple[bool, float, int]:
         """(door open?, best still's value, its 1-based zone) over all stills."""
@@ -618,6 +643,18 @@ def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, windo
         )
 
 
+def _count_suspect(table, account_id: str, device_id: str, suspect: bool) -> None:
+    """Keep the device's suspect streak; a failure here never changes the event's outcome."""
+    from fridgesense import alignment  # alignment imports this module
+
+    try:
+        alignment.record_suspect(table, account_id, device_id, suspect)
+    except Exception as e:
+        log_event(
+            "suspect_streak_failed", logging.WARNING, device_id=device_id, error=type(e).__name__
+        )
+
+
 def _alignment_json(aligned) -> dict | None:
     if aligned is None:
         return None
@@ -720,6 +757,7 @@ def _fetch_stills(
     if paused_for is not None and paused_for(account_id, device_id):
         log_event("door_check_paused", account_id=account_id, device_id=device_id)
         return {**state, "outcome": "paused"}
+    fallback_threshold = check.threshold  # DOOR_THRESHOLD: the default rules' threshold
     base = _device_check(check, setup_for, account_id, device_id)
     plan = _follow_plan(table, account_id, device_id, base)
     check = base.shifted(plan.dx, plan.dy) if plan else base
@@ -755,17 +793,43 @@ def _fetch_stills(
         stills=downloaded, values={}, check=check, outcome="no_media", face_blur=face_blur
     )
     trace.alignment = _alignment_json(aligned)
+    suspect = False
 
     def done(result: dict) -> dict:
+        if suspect:
+            result = {**result, "suspect": True}
         if writer is not None:
             trace.outcome = result["outcome"]
             writer.door(state, trace)
         return result
 
+    def learn() -> None:
+        if not suspect:  # rules that read open throughout would teach the wrong thing
+            _learn(table, account_id, device_id, check, raw, aligned, window)
+
     if len(raw) >= MIN_STILLS:
         values = clip_values if clip else [check.zone_values(data) for _, data in raw]
         trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
         results = [check.result_of(v) for v in values]
+        opened = [r.is_open for r in results]
+        if clip is not None and check.source in ("setup", "tuned"):
+            _count_suspect(table, account_id, device_id, is_suspect(opened, check.source))
+        if clip is not None and is_suspect(opened, check.source):
+            suspect = True
+            log_event(
+                "door_check_suspect",
+                account_id=account_id,
+                device_id=device_id,
+                frames=len(opened),
+                open_share=round(sum(opened) / len(opened), 3),
+                zones_source=check.source,
+            )
+            check = check.fridge_light(fallback_threshold)
+            trace.check = check
+            rule_log = {**rule_log, "zones_source": check.source}
+            values = [check.zone_values(data) for _, data in raw]
+            trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
+            results = [check.result_of(v) for v in values]
         best = check.best(results)
         rule_log = {**rule_log, "feature": best.feature, "threshold": best.threshold}
         span = open_span([1.0 if r.is_open else 0.0 for r in results], 1.0)
@@ -778,7 +842,7 @@ def _fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
-            _learn(table, account_id, device_id, check, raw, aligned, window)
+            learn()
             return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
         opened_ms = times[raw[span[0]][0] - 1]
         if not results[span[-1]].is_open:  # the first closed still after the opening
@@ -835,7 +899,7 @@ def _fetch_stills(
             return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
-    _learn(table, account_id, device_id, check, raw, aligned, window)
+    learn()
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
     )

@@ -10,7 +10,8 @@ import pytest
 import respx
 from PIL import Image
 
-from fridgesense.door_events import DoorCheck, fetch_stills, iso_utc
+from fridgesense import door_events as door_events_module
+from fridgesense.door_events import DoorCheck, ZoneRule, fetch_stills, iso_utc
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import RingClient
 from fridgesense.store import Tokens
@@ -306,3 +307,163 @@ def test_no_frame_interval_means_stills_only(aws, ring_http):
     )
     assert out["outcome"] == "door_open"
     assert clip.call_count == 0
+
+
+# --- Clip-wide sanity guard ---
+
+WHOLE_BOX = (0.0, 0.0, 1.0, 1.0)
+# Setup rules that read every grey frame as open: a picture framed unlike the clips
+MISCALIBRATED = DoorCheck(rules=(ZoneRule(WHOLE_BOX, "brightness", "above", 0.1),), source="setup")
+SETUP_BLUE = DoorCheck(rules=(ZoneRule(WHOLE_BOX, "blue", "above", 0.02),), source="setup")
+
+
+def run_setup(ring_http, rules, end_ms, clip_dir):
+    ring, http = ring_http
+    state = {**STATE, "window": {**STATE["window"], "end_ms": START + end_ms}}
+    return fetch_stills(
+        ring,
+        http,
+        boto3.client("s3"),
+        FridgeTable(),
+        BUCKET,
+        CHECK,
+        FakeBlurrer(),
+        state,
+        sleep=lambda s: None,
+        frame_interval_ms=500,
+        clip_dir=clip_dir,
+        setup_for=lambda account_id, device_id: rules,
+    )
+
+
+# Fridge light finds the real opening
+@respx.mock
+def test_fridge_light_finds_the_real_opening(aws, ring_http, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)  # frames 18-26 of 54 lit
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert out["suspect"] is True
+    [event] = door_events()
+    assert event["opened_at"] == iso_utc(START + 8500)
+    assert event["closed_at"] == iso_utc(START + 13_000)
+    assert len(stored_stills()) == 4
+    suspect = logged(caplog, "door_check_suspect")
+    assert (suspect["frames"], suspect["open_share"], suspect["zones_source"]) == (
+        54,
+        1.0,
+        "setup",
+    )
+    assert logged(caplog, "door_event_recorded")["zones_source"] == "fallback"
+
+
+# Fridge light finds no opening
+@respx.mock
+def test_fridge_light_finds_no_opening(aws, ring_http, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [], duration_ms=20_500)  # someone walks past: 41 grey frames
+    stills = serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 20_500, tmp_path)
+    assert out["outcome"] == "not_door"
+    assert out["suspect"] is True
+    assert door_events() == []
+    assert stored_keys() == []
+    assert stills.call_count == 0
+    assert logged(caplog, "motion_not_door")["zones_source"] == "fallback"
+
+
+# Not suspect keeps the setup result
+@respx.mock
+def test_not_suspect_keeps_the_setup_result(aws, ring_http, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert "suspect" not in out
+    assert not [r for r in caplog.records if '"door_check_suspect"' in r.getMessage()]
+    assert logged(caplog, "door_event_recorded")["zones_source"] == "setup"
+
+
+@pytest.fixture
+def follows_camera(monkeypatch):
+    """A stored closed anchor (a plain grey frame), so every event aligns and is sampled."""
+    from fridgesense import alignment
+
+    grey = Image.new("RGB", (320, 180), (128, 128, 128))
+    anchor = alignment.edges_to_bytes(alignment.edge_map(grey))
+    monkeypatch.setattr(
+        door_events_module,
+        "_follow_plan",
+        lambda table, account_id, device_id, check: door_events_module.FollowPlan(anchor, 0, 0),
+    )
+
+
+def door_samples() -> list[dict]:
+    return FridgeTable().query(STATE["account_id"], "DOORSAMPLE#")
+
+
+# No sample from a suspect event
+@respx.mock
+def test_no_sample_from_a_suspect_event(aws, ring_http, tmp_path, follows_camera):
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert out["suspect"] is True
+    assert door_samples() == []
+
+
+# Normal event still samples
+@respx.mock
+def test_normal_event_still_samples(aws, ring_http, tmp_path, follows_camera):
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)
+    assert "suspect" not in out
+    assert len(door_samples()) == 1
+
+
+def suspect_streak() -> int:
+    from fridgesense import alignment
+
+    s = alignment.load_alignment(FridgeTable(), STATE["account_id"], STATE["device_id"])
+    return 0 if s is None else s.suspect_streak
+
+
+@respx.mock
+def test_suspect_event_counts_and_a_normal_one_resets(aws, ring_http, tmp_path):
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert suspect_streak() == 1
+    run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)  # same event again: a duplicate
+    assert suspect_streak() == 0
+
+
+@respx.mock
+def test_default_rules_leave_the_streak(aws, ring_http, tmp_path):
+    from fridgesense import alignment
+
+    alignment.record_suspect(FridgeTable(), STATE["account_id"], STATE["device_id"], True)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, None, 27_000, tmp_path)
+    assert suspect_streak() == 1
+
+
+# Streak write fails
+@respx.mock
+def test_streak_write_fails(aws, ring_http, tmp_path, caplog, monkeypatch):
+    from fridgesense import alignment
+
+    def broken(*args):
+        raise RuntimeError("table down")
+
+    monkeypatch.setattr(alignment, "record_suspect", broken)
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert logged(caplog, "suspect_streak_failed")["error"] == "RuntimeError"

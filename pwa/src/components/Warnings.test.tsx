@@ -136,3 +136,29 @@ test("needs relink shows its message with no link", async () => {
   expect(banner).toHaveTextContent(relink.message);
   expect(within(banner).queryAllByRole("link")).toHaveLength(0);
 });
+
+const MISMATCH: SetupWarning = {
+  code: "door_setup_mismatch",
+  message:
+    "Open/close detection doesn't match the camera's recordings, so the fridge light is used instead. " +
+    "Replace the door references with frames from recent clips and run setup again.",
+};
+
+// Mismatch banner
+test("setup mismatch links to Update door references", async () => {
+  renderWarnings([MISMATCH]);
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent(MISMATCH.message);
+  expect(within(banner).getByRole("link", { name: "Update door references" })).toHaveAttribute(
+    "href",
+    "#config/doors",
+  );
+});
+
+// Viewer sees no link
+test("a viewer sees the mismatch message with no link", async () => {
+  renderWarnings([MISMATCH], "viewer");
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent(MISMATCH.message);
+  expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
+});

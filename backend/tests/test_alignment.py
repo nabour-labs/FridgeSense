@@ -235,3 +235,41 @@ def test_reset_keeps_last_moved_at(aws):
 def test_alignment_kept_per_device(aws):
     event(2, 0)
     assert alignment.load_alignment(FridgeTable(), ACCOUNT, "ava1.ring.device.D2") is None
+
+
+# --- Suspect streak per device ---
+
+
+def streak() -> int:
+    s = alignment.load_alignment(FridgeTable(), ACCOUNT, DEVICE)
+    return 0 if s is None else s.suspect_streak
+
+
+# Three suspect events in a row
+def test_three_suspect_events_in_a_row(aws):
+    for _ in range(3):
+        alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    assert streak() == 3
+
+
+# Normal event resets the streak
+def test_normal_event_resets_the_streak(aws):
+    for _ in range(2):
+        alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, False)
+    assert streak() == 0
+
+
+def test_streak_kept_by_an_alignment(aws):
+    alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    ok = alignment.Alignment(True, 0.01, 0, 0.01, "first")
+    alignment.record(FridgeTable(), ACCOUNT, DEVICE, ok, T0)
+    assert streak() == 1
+
+
+# Setup run resets the streak
+def test_setup_run_resets_the_streak(aws):
+    for _ in range(5):
+        alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    alignment.reset(FridgeTable(), ACCOUNT, DEVICE)
+    assert streak() == 0

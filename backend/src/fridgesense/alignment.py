@@ -107,6 +107,7 @@ class AlignState:
     moved_at_ms: int | None = None
     last_moved_at_ms: int | None = None  # kept by a setup run, for the fridge-area warning
     checked_at_ms: int | None = None
+    suspect_streak: int = 0  # suspect clips in a row (rules read open throughout)
 
 
 def _opt_int(value) -> int | None:
@@ -126,6 +127,7 @@ def load_alignment(table: FridgeTable, account_id: str, device_id: str) -> Align
         moved_at_ms=_opt_int(item.get("moved_at_ms")),
         last_moved_at_ms=_opt_int(item.get("last_moved_at_ms")),
         checked_at_ms=_opt_int(item.get("checked_at_ms")),
+        suspect_streak=int(item.get("suspect_streak", 0)),
     )
 
 
@@ -134,10 +136,20 @@ def _save(table: FridgeTable, account_id: str, device_id: str, s: AlignState) ->
 
 
 def reset(table: FridgeTable, account_id: str, device_id: str) -> None:
-    """After a setup run: no shift, not moved; when the camera last moved is kept."""
+    """After a setup run: no shift, not moved, no suspect streak; when the camera last moved
+    is kept."""
     old = load_alignment(table, account_id, device_id)
     last = old.last_moved_at_ms if old else None
     _save(table, account_id, device_id, AlignState(last_moved_at_ms=last))
+
+
+def record_suspect(table: FridgeTable, account_id: str, device_id: str, suspect: bool) -> int:
+    """One more suspect clip in a row, or back to 0 after a clip the rules read normally."""
+    old = load_alignment(table, account_id, device_id) or AlignState()
+    streak = old.suspect_streak + 1 if suspect else 0
+    if streak != old.suspect_streak:
+        _save(table, account_id, device_id, replace(old, suspect_streak=streak))
+    return streak
 
 
 def record(

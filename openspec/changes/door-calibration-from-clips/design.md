@@ -19,6 +19,17 @@ Measurements behind the numbers, on stored S3 debug frames from 2026-10-17:
 | evening, door open | 0.126 | 0.099 | 0.060 | 0.038 |
 | morning (daylight), door closed | — | — | 0.113 | 0.000 |
 
+### Task 1 results (2026-10-18, strict rule 100/120/60, threshold 0.01)
+
+- **2026-10-17 S3 frames (43 events, max over setup zones):** the old rule scored every frame open in all 21 morning events. The strict rule finds compact spans only in the events that really show an opening: 3 daylit door openings at 0.056–0.067, 1 daylit drawer at 0.02, and evening openings at 0.045–0.076. It reads 0 on every walk-past event. A visual spot check of 8 frames agreed in every case except one, where face blur covered the whole frame.
+- **Labelled `tmp/*.mp4` clips (default zones):** every labelled opening still has open frames. Peaks go from 0.022–0.342 to 0.013–0.209, and the weakest are 2009 (0.013) and 1930 (0.014). Open frames above 0.01 drop from 175 to 159 of 185 (edge frames of the door swinging). The closed frames above 0.01 are unchanged (2, in 1932), and the 1920 one is gone.
+- Verdict: keep 100/120/60. The margin on the dimmest clips is thin (about 0.003), so `DOOR_THRESHOLD` stays at 0.01 and is not raised.
+
+### Before/after (task 9.2, 2026-10-18)
+
+- **Labelled clips (`scripts/door_clip_report.py`, default rules):** before TP 10, FP 0, FN 0, TN 2, with open error 0.31 s mean (0.60 max) and close error 0.32 s mean (0.70 max). After: TP 10, FP 0, FN 0, TN 2, with open error 0.36 s mean (0.60 max) and close error 0.27 s mean (0.60 max). Peak values are lower (weakest 0.013), but every opening is still found.
+- **2026-10-17 events (43, with setup rules):** the old setup rules read every frame open in every clip, so each clip is suspect and gets re-checked by the fridge light. The re-check finds an opening in 8 events (compact spans: the daylit door and drawer, and evening openings) and finds none in the other 35, which would now be `not_door` with no Nova call. Measured with the task 1 script, which uses the same pixel rule as `measure(..., "blue")`. The baseline PNGs needed for an exact replay of the `change` rules were not copied.
+
 ## Goals / Non-Goals
 
 **Goals:**

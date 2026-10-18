@@ -161,13 +161,15 @@ export class ApiClient {
   }
 
   /** `image` is a base64 JPEG; `box` is in fractions of it. */
+  /** Door setup pictures always come from a recorded clip's frame (`source: "clip"`). */
   addDoorZone(name: string, box: Box): Promise<DoorSetup> {
-    return this.request("POST", "/api/door-calibration/zones", { name, box });
+    return this.request("POST", "/api/door-calibration/zones", { name, box, source: "clip" });
   }
 
   /** Rename and/or redraw a door zone; its references follow the new box. */
   updateDoorZone(id: string, change: { name?: string; box?: Box }): Promise<DoorSetup> {
-    return this.request("PATCH", `/api/door-calibration/zones/${encodeURIComponent(id)}`, change);
+    const body = change.box ? { ...change, source: "clip" } : change;
+    return this.request("PATCH", `/api/door-calibration/zones/${encodeURIComponent(id)}`, body);
   }
 
   /** Delete a door zone and its references. */
@@ -176,7 +178,12 @@ export class ApiClient {
   }
 
   addDoorReference(image: string, zoneId: string, status: DoorStatus): Promise<DoorSetup> {
-    return this.request("POST", "/api/door-calibration/references", { image, zone_id: zoneId, status });
+    return this.request("POST", "/api/door-calibration/references", {
+      image,
+      zone_id: zoneId,
+      status,
+      source: "clip",
+    });
   }
 
   deleteDoorReference(id: string): Promise<DoorSetup> {
