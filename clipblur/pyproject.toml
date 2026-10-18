@@ -1,0 +1,40 @@
+[project]
+name = "clipblur"
+version = "0.1.0"
+description = "FridgeSense clip blur: faces in door-opening clips blurred with deface (container Lambda)"
+requires-python = ">=3.13"
+dependencies = [
+    "av>=14",
+    "deface==1.5.0",
+    "numpy>=2",
+    "onnx>=1.17",  # deface uses onnxruntime only when onnx imports too
+    "onnxruntime>=1.20",
+    "opencv-python-headless>=4.10",  # stands in for deface's opencv-python, which needs libGL
+]
+
+[dependency-groups]
+dev = [
+    "boto3>=1.35",
+    "moto[dynamodb,s3]>=5.0",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+# deface pins opencv-python (needs libGL, missing on Lambda); the headless build provides cv2.
+override-dependencies = ["opencv-python; sys_platform == 'never'"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

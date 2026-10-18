@@ -1,7 +1,17 @@
-import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { Duration, RemovalPolicy, Size, Stack } from "aws-cdk-lib";
 import type { Table } from "aws-cdk-lib/aws-dynamodb";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
-import { Architecture, type Code, Function as LambdaFn, Runtime } from "aws-cdk-lib/aws-lambda";
+import {
+  Architecture,
+  type Code,
+  DockerImageCode,
+  DockerImageFunction,
+  Function as LambdaFn,
+  Runtime,
+} from "aws-cdk-lib/aws-lambda";
+import { Platform } from "aws-cdk-lib/aws-ecr-assets";
 import type { LogGroup } from "aws-cdk-lib/aws-logs";
 import { BlockPublicAccess, Bucket, BucketEncryption, HttpMethods } from "aws-cdk-lib/aws-s3";
 import type { ISecret } from "aws-cdk-lib/aws-secretsmanager";
@@ -22,6 +32,8 @@ import {
 import { LambdaInvoke } from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { LogGroup as SfnLogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
+
+const CLIPBLUR_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../clipblur");
 
 export interface DoorPipelineProps {
   code: Code;
@@ -82,7 +94,11 @@ export class DoorPipeline extends Construct {
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
-      lifecycleRules: [{ expiration: Duration.days(7) }],
+      lifecycleRules: [
+        { expiration: Duration.days(7) },
+        // Raw clips waiting for BlurClip: deleted by the run, or here if a run died.
+        { expiration: Duration.days(1), tagFilters: { transient: "true" } },
+      ],
       // The app draws clip frames onto a canvas, which needs CORS. Any origin: reads still need a
       // presigned link, and naming the CloudFront domain here would make a dependency cycle.
       cors: [
@@ -154,7 +170,44 @@ export class DoorPipeline extends Construct {
     const analyze = step("Analyze", "analyze");
     const save = step("Save", "save");
     const markFailed = step("MarkFailed", "mark_failed");
+    const dropRawClip = step("DropRawClip", "drop_raw_clip");
     const done = new Succeed(this, "Done");
+
+    // Faces in the open-span clip are blurred (deface) before the door event links it.
+    const blurFn = new DockerImageFunction(this, "ClipBlurFunction", {
+      code: DockerImageCode.fromImageAsset(CLIPBLUR_DIR, { platform: Platform.LINUX_ARM64 }),
+      architecture: Architecture.ARM_64,
+      memorySize: 3008, // about 2 vCPU for detection and H.264 encoding
+      timeout: Duration.minutes(5),
+      ephemeralStorageSize: Size.mebibytes(2048),
+      logGroup: props.logGroup("ClipBlurFunction"),
+      description: "Door-event workflow step: blur faces in the open-span clip",
+      environment: { STILLS_BUCKET: this.bucket.bucketName, TABLE_NAME: props.table.tableName },
+    });
+    blurFn.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["s3:GetObject", "s3:DeleteObject"],
+        resources: [this.bucket.arnForObjects("*/clip-raw.mp4")],
+      }),
+    );
+    blurFn.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["s3:PutObject", "s3:DeleteObject"],
+        resources: [this.bucket.arnForObjects("*/clip.mp4")],
+      }),
+    );
+    blurFn.addToRolePolicy(
+      new PolicyStatement({ actions: ["dynamodb:UpdateItem"], resources: [props.table.tableArn] }),
+    );
+    const blurClip = new LambdaInvoke(this, "BlurClip", {
+      lambdaFunction: blurFn,
+      payloadResponseOnly: true,
+    });
+    blurClip.addCatch(dropRawClip, { errors: ["States.ALL"], resultPath: "$.error" });
+    dropRawClip.next(done);
+    const hasRawClip = new Choice(this, "HasRawClip")
+      .when(Condition.isPresent("$.clip.raw_key"), blurClip.next(done))
+      .otherwise(done);
 
     analyze.addRetry({
       errors: ["BedrockRetryable"],
@@ -193,7 +246,7 @@ export class DoorPipeline extends Construct {
       );
     fetchStills.next(
       new Choice(this, "IsDoorOpening")
-        .when(Condition.stringEquals("$.outcome", "door_open"), analyze.next(save).next(done))
+        .when(Condition.stringEquals("$.outcome", "door_open"), analyze.next(save).next(hasRawClip))
         .otherwise(new Succeed(this, "NoAnalysis")),
     );
 
