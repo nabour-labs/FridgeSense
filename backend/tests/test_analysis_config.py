@@ -17,15 +17,15 @@ def b64(data: bytes) -> str:
 
 
 # Bad annotation
-@pytest.mark.parametrize("value", [None, "", "   ", "x" * 81, 5])
+@pytest.mark.parametrize("value", [None, "", "   ", "x" * 301, 5])
 def test_bad_annotation(value):
     with pytest.raises(cfg.Invalid) as e:
         cfg.validate_annotation(value)
-    assert e.value.message == "annotation must be 1 to 80 characters"
+    assert e.value.message == "annotation must be 1 to 300 characters"
 
 
 @pytest.mark.parametrize(
-    "value, expected", [("a", "a"), ("x" * 80, "x" * 80), ("  soda can  ", "soda can")]
+    "value, expected", [("a", "a"), ("x" * 300, "x" * 300), ("  soda can  ", "soda can")]
 )
 def test_good_annotation(value, expected):
     assert cfg.validate_annotation(value) == expected

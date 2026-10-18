@@ -85,6 +85,20 @@ test("Save stays disabled until there is an annotation", async () => {
   expect(api.addReference).not.toHaveBeenCalled();
 });
 
+// Long annotation
+test("the annotation field takes 300 characters and Save sends all of them", async () => {
+  const long = "x".repeat(300);
+  const { api } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { addReference: vi.fn().mockResolvedValue({ instructions: "", references: [ref("r2", long)] }) } },
+  );
+  await openAdd();
+  fireEvent.change(screen.getByLabelText("Annotation"), { target: { value: long } });
+  expect(screen.getByLabelText("Annotation")).toHaveAttribute("maxLength", "300");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+  expect(api.addReference).toHaveBeenCalledWith(long, "/9j/RESIZED");
+});
+
 // Limit reached
 test("with 6 references the count reads 6 of 6 and Add is disabled", async () => {
   const six = Array.from({ length: 6 }, (_, n) => ref(`r${n}`, `item ${n}`));

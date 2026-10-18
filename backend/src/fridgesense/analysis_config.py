@@ -9,7 +9,7 @@ from typing import Any
 from fridgesense.door_events import iso_utc
 from fridgesense.table import FridgeTable, account_pk
 
-MAX_ANNOTATION = 80
+MAX_ANNOTATION = 300
 MAX_IMAGE_BYTES = 200_000
 MAX_INSTRUCTIONS = 1000
 MAX_REFERENCES = 6

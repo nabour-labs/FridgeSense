@@ -107,7 +107,7 @@ def test_add_reference(owner):
 
 
 # Bad annotation
-@pytest.mark.parametrize("annotation", [None, "   ", "x" * 81])
+@pytest.mark.parametrize("annotation", [None, "   ", "x" * 301])
 def test_bad_annotation(owner, annotation):
     body = (
         {"image": b64(JPEG)}
@@ -116,7 +116,7 @@ def test_bad_annotation(owner, annotation):
     )
     assert call("POST", "/api/config/references", body, owner) == (
         400,
-        {"error": "annotation must be 1 to 80 characters"},
+        {"error": "annotation must be 1 to 300 characters"},
     )
     assert call("GET", "/api/config", token=owner)[1]["references"] == []
 
