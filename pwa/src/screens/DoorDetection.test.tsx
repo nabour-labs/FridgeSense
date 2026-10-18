@@ -573,3 +573,36 @@ test("with Mock video on the reference frame comes from the mock clip picker", a
   await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
   expect(api.addDoorReference).toHaveBeenCalledWith("/9j/SNAP", "z1", "open");
 });
+
+// --- Live-picture zones and references marked for replacement ---
+
+const REPLACE_HINT = "Replace the zones and references marked 'Replace with a clip frame' first.";
+
+// Old references marked
+test("only the live reference is marked and Run setup is disabled with the hint", async () => {
+  renderTab(setupOf([doorRef("a", "open"), { ...doorRef("b", "closed"), source: "live" }]));
+  await refsRegion();
+  const items = within(zoneGroup("Doors")).getAllByRole("listitem").filter((li) => li.querySelector("img"));
+  expect(within(items[0]).queryByText("Replace with a clip frame")).not.toBeInTheDocument();
+  expect(within(items[1]).getByText("Replace with a clip frame")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Run setup" })).toBeDisabled();
+  expect(screen.getByText(REPLACE_HINT)).toBeInTheDocument();
+});
+
+// Old zone marked
+test("a live zone is marked and Run setup is disabled", async () => {
+  renderTab(setupOf([doorRef("a", "open"), doorRef("b", "closed")], null, [{ ...zoneOf("z1", "Doors"), source: "live" }]));
+  const zones = await zonesRegion();
+  expect(within(zones).getByText("Replace with a clip frame")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Run setup" })).toBeDisabled();
+  expect(screen.getByText(REPLACE_HINT)).toBeInTheDocument();
+});
+
+// All from clips
+test("with every zone and reference from clips nothing is marked and Run setup is enabled", async () => {
+  renderTab(setupOf([doorRef("a", "open"), doorRef("b", "closed")]));
+  await refsRegion();
+  expect(screen.queryByText("Replace with a clip frame")).not.toBeInTheDocument();
+  expect(screen.queryByText(REPLACE_HINT)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Run setup" })).toBeEnabled();
+});

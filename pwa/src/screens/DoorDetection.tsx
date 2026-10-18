@@ -32,6 +32,12 @@ const percent = (v: number) => `${(v * 100).toFixed(1)}%`;
 /** A camera shift as a percent of the frame, without a trailing ".0": "1.6%", "0%". */
 const shift = (v: number) => `${Number((v * 100).toFixed(1))}%`;
 
+function ReplaceNote() {
+  return (
+    <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-300">Replace with a clip frame</span>
+  );
+}
+
 /** What a zone still needs before setup can run, or null when it has both. */
 function needs(zone: DoorZone): string | null {
   if (zone.open > 0 && zone.closed > 0) return null;
@@ -119,7 +125,9 @@ export function DoorDetection() {
   }
 
   const { zones, references: refs } = data;
-  const ready = zones.length > 0 && zones.every((z) => needs(z) === null);
+  // Pictures from the live view are framed unlike the recorded clips: setup refuses them.
+  const live = zones.some((z) => z.source === "live") || refs.some((r) => r.source === "live");
+  const ready = zones.length > 0 && zones.every((z) => needs(z) === null) && !live;
   const scoreOf = (r: DoorReference) => (tried ? (tried[r.id] ?? null) : r.score);
   // References are numbered in the order they are shown: zone by zone.
   const shown = zones.flatMap((z) => refs.filter((r) => r.zone_id === z.id));
@@ -143,6 +151,7 @@ export function DoorDetection() {
           {zones.map((z) => (
             <li key={z.id} className={`${CARD} flex items-center gap-2 py-1 pl-4 pr-1`}>
               <span className="flex-1 truncate text-sm font-semibold">{z.name}</span>
+              {z.source === "live" && <ReplaceNote />}
               {editable && (
                 <>
                   <button
@@ -216,6 +225,7 @@ export function DoorDetection() {
                         <span className="flex-1 text-sm font-medium tabular-nums text-slate-600 dark:text-slate-300">
                           {score === null ? "–" : percent(score)}
                         </span>
+                        {r.source === "live" && <ReplaceNote />}
                         {editable && (
                           <button
                             type="button"
@@ -288,10 +298,17 @@ export function DoorDetection() {
         )}
         {editable && (
           <>
-            {zones.length > 0 && !ready && (
+            {live ? (
               <p className="px-1 text-sm text-slate-500 dark:text-slate-400">
-                Each zone needs at least one open and one closed reference.
+                Replace the zones and references marked 'Replace with a clip frame' first.
               </p>
+            ) : (
+              zones.length > 0 &&
+              !ready && (
+                <p className="px-1 text-sm text-slate-500 dark:text-slate-400">
+                  Each zone needs at least one open and one closed reference.
+                </p>
+              )
             )}
             <button type="button" onClick={run} disabled={running || !ready} className={PRIMARY}>
               {running ? "Running setup…" : "Run setup"}
