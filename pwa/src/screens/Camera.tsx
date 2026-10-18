@@ -70,7 +70,7 @@ export function Camera({ createPeer }: { createPeer?: () => RTCPeerConnection | 
         <Overview info={data} />
         <Details info={data} />
         <History info={data} />
-        {canEdit(role) && <Decoder createPeer={createPeer} />}
+        {isAdmin(role) && <Decoder createPeer={createPeer} />}
       </>
     );
   }
