@@ -152,6 +152,8 @@ export interface Snapshot {
 
 export type DoorStatus = "open" | "closed";
 export type DoorFeature = "blue" | "color" | "brightness" | "change";
+/** Where a door zone's or reference's picture came from: a recorded clip, or the live view. */
+export type PictureSource = "clip" | "live";
 
 /** A named box around a door or drawer; setup makes one rule per zone. */
 export interface DoorZone {
@@ -161,6 +163,7 @@ export interface DoorZone {
   /** How many open and closed references it has. */
   open: number;
   closed: number;
+  source: PictureSource;
 }
 
 /** A camera snapshot of one door zone, labeled open or closed. */
@@ -175,6 +178,7 @@ export interface DoorReference {
   /** The value of its zone's chosen feature, or null before setup. */
   score: number | null;
   created_at: string;
+  source: PictureSource;
 }
 
 export interface SetupZone extends Box {

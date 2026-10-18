@@ -129,17 +129,27 @@ it("Switch off: a live view is opened once and no picker opens", async () => {
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-it.each([
-  ["Open/close detection", "#config/doors", "Add zone"],
-  ["Fridge area", "#config/fridge", "Set area"],
-])("Switch off: %s takes its snapshot from a live view", async (_, hash, button) => {
+it("Switch off: Fridge area takes its snapshot from a live view", async () => {
   vi.stubGlobal("RTCPeerConnection", StubPeer);
   signedIn();
-  location.hash = hash;
+  location.hash = "#config/fridge";
   const api = fakeApi({ camera: vi.fn().mockResolvedValue(ONLINE) });
   render(<App api={api} />);
-  await userEvent.click(await screen.findByRole("button", { name: button }));
+  await userEvent.click(await screen.findByRole("button", { name: "Set area" }));
   await waitFor(() => expect(api.startLive).toHaveBeenCalledTimes(1));
+  expect(api.cameraSnapshot).not.toHaveBeenCalled();
+});
+
+// Open/close detection takes no live frame
+it("Switch off: Open/close detection opens the recent-clip picker, not a live view", async () => {
+  vi.stubGlobal("RTCPeerConnection", StubPeer);
+  signedIn();
+  location.hash = "#config/doors";
+  const api = fakeApi({ camera: vi.fn().mockResolvedValue(ONLINE), events: vi.fn().mockResolvedValue({ events: [] }) });
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Add zone" }));
+  expect(await screen.findByRole("dialog", { name: "Snapshot from a recent clip" })).toBeInTheDocument();
+  expect(api.startLive).not.toHaveBeenCalled();
   expect(api.cameraSnapshot).not.toHaveBeenCalled();
 });
 
@@ -155,20 +165,18 @@ it("Switch off without WebRTC: the Ring still is used", async () => {
   expect(api.cameraSnapshot).toHaveBeenCalledTimes(1);
 });
 
-it("Closing the door sheet ends the live view and sends no frame", async () => {
+it("Cancelling the door sheet's clip picker sends no frame and opens no live view", async () => {
   vi.stubGlobal("RTCPeerConnection", StubPeer);
   signedIn();
   location.hash = "#config/doors";
-  const api = fakeApi({
-    camera: vi.fn().mockResolvedValue(ONLINE),
-    startLive: vi.fn().mockResolvedValue({ answer: "v=0\r\n", session_id: "S1", max_seconds: 60 }),
-  });
+  const api = fakeApi({ camera: vi.fn().mockResolvedValue(ONLINE), events: vi.fn().mockResolvedValue({ events: [] }) });
   const errors = vi.spyOn(console, "error");
   render(<App api={api} />);
   await userEvent.click(await screen.findByRole("button", { name: "Add zone" }));
-  await waitFor(() => expect(api.startLive).toHaveBeenCalledTimes(1));
-  await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Close" }));
-  await waitFor(() => expect(api.stopLive).toHaveBeenCalledWith("S1"));
+  const dialog = await screen.findByRole("dialog", { name: "Snapshot from a recent clip" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(api.startLive).not.toHaveBeenCalled();
   expect(api.cameraFrame).not.toHaveBeenCalled();
   expect(api.cameraSnapshot).not.toHaveBeenCalled();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();

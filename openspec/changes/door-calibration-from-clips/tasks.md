@@ -42,9 +42,9 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 7. PWA: door setup pictures from recent clips
 
-- [ ] 7.1 Add `source` to the door zone and reference types and to the `api/client.ts` calls (`addDoorZone`, `updateDoorZone`, `addDoorReference`), with a failing client test first.
-- [ ] 7.2 Write failing tests in `pwa/src/screens/DoorDetection.test.tsx` for "Reference from a recent clip", "Zone drawn on a clip frame", "Another frame", "No recent clips", "Picker cancelled", "Mock video on" and camera-snapshot's "Open/close detection takes no live frame".
-- [ ] 7.3 Replace `useSnapshot` in the Open/close detection sheets with `RecentClipPicker` (or the mock clip picker while "Mock video" is on), rename "New snapshot" to "Another frame", and send `source: "clip"`. Verify with `npm test` in `pwa/`.
+- [x] 7.1 Add `source` to the door zone and reference types and to the `api/client.ts` calls (`addDoorZone`, `updateDoorZone`, `addDoorReference`), with a failing client test first.
+- [x] 7.2 Write failing tests in `pwa/src/screens/DoorDetection.test.tsx` for "Reference from a recent clip", "Zone drawn on a clip frame", "Another frame", "No recent clips", "Picker cancelled", "Mock video on" and camera-snapshot's "Open/close detection takes no live frame".
+- [x] 7.3 Replace `useSnapshot` in the Open/close detection sheets with `RecentClipPicker` (or the mock clip picker while "Mock video" is on), rename "New snapshot" to "Another frame", and send `source: "clip"`. Verify with `npm test` in `pwa/`.
 - [ ] 7.4 Write failing tests in `DoorDetection.test.tsx` for "Old references marked", "Old zone marked" and "All from clips". Then add the "Replace with a clip frame" notes and the disabled "Run setup" hint. Verify with `npm test`.
 
 ## 8. Setup mismatch warning (can be cut)

@@ -1,12 +1,14 @@
 import { Camera, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { CameraOffline, NoVideo } from "../camera/liveSnapshot";
+import { RecentClipPicker } from "../camera/RecentClipPicker";
 import { ApiError } from "../api/client";
 import type { DoorFeature, DoorReference, DoorSetup, DoorStatus, DoorZone, Snapshot } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
+import { useDebug } from "../debug/DebugContext";
 import { ago } from "../format";
 import { boxShape, shapeToBox, type Shape } from "../shapes";
 import { useLoad } from "../useLoad";
@@ -341,10 +343,17 @@ function ZoneReferences({ zone, children }: { zone: DoorZone; children: ReactNod
   );
 }
 
-/** A camera snapshot taken when the sheet opens, with "Try again" on failure. */
-function useSnapshot(onSnap: () => void) {
+/**
+ * The picture a door sheet is drawn on: a frame of a recent recorded clip, so zones and
+ * references are framed exactly like the clips the door check scores. The recent-clip picker
+ * opens with the sheet; cancelling it before any frame closes the sheet (`onCancel`). With
+ * Mock video on, the frame comes from the mock clip picker through `cameraSnapshot` instead.
+ */
+function useClipFrame(onSnap: () => void, onCancel: () => void) {
   const { api, report } = useApp();
+  const { mockVideo } = useDebug();
   const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [picking, setPicking] = useState(!mockVideo);
   const [snapping, setSnapping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const onSnapRef = useRef(onSnap);
@@ -370,11 +379,29 @@ function useSnapshot(onSnap: () => void) {
   }, [api, report]);
 
   useEffect(() => {
-    void takeSnapshot();
+    if (mockVideo) void takeSnapshot();
     return () => cancel.current?.abort();
-  }, [takeSnapshot]);
+  }, [mockVideo, takeSnapshot]);
 
-  return { snap, snapping, error, setError, takeSnapshot };
+  const another = mockVideo ? takeSnapshot : () => setPicking(true);
+  const picker = picking ? (
+    <RecentClipPicker
+      api={api}
+      report={report}
+      onPick={(frame) => {
+        setPicking(false);
+        setError(null);
+        setSnap(frame);
+        onSnapRef.current();
+      }}
+      onCancel={() => {
+        setPicking(false);
+        if (!snap) onCancel();
+      }}
+    />
+  ) : null;
+
+  return { snap, snapping, error, setError, another, picker };
 }
 
 function SnapshotView({
@@ -382,11 +409,11 @@ function SnapshotView({
   hint,
   children,
 }: {
-  snapshot: ReturnType<typeof useSnapshot>;
+  snapshot: ReturnType<typeof useClipFrame>;
   hint: string;
   children: (snap: Snapshot) => ReactNode;
 }) {
-  const { snap, snapping, error, takeSnapshot } = snapshot;
+  const { snap, snapping, error, another } = snapshot;
   return (
     <>
       {snap ? (
@@ -396,12 +423,12 @@ function SnapshotView({
             <p className="text-xs text-slate-500 dark:text-slate-400">{hint}</p>
             <button
               type="button"
-              onClick={takeSnapshot}
+              onClick={another}
               disabled={snapping}
               className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-700 disabled:opacity-50 dark:text-brand-300"
             >
               <RefreshCw aria-hidden className="size-3.5" />
-              New snapshot
+              Another frame
             </button>
           </div>
         </>
@@ -418,7 +445,7 @@ function SnapshotView({
           {!snap && (
             <button
               type="button"
-              onClick={takeSnapshot}
+              onClick={another}
               disabled={snapping}
               className="h-9 shrink-0 rounded-full bg-brand-50 px-4 text-sm font-semibold text-brand-700 disabled:opacity-50 dark:bg-brand-950 dark:text-brand-300"
             >
@@ -463,7 +490,7 @@ function ZoneSheet({
   const [shapes, setShapes] = useState<Shape[]>(initial);
   const [name, setName] = useState(zone?.name ?? "");
   const [busy, setBusy] = useState(false);
-  const snapshot = useSnapshot(() => setShapes(initial));
+  const snapshot = useClipFrame(() => setShapes(initial), onClose);
   const { snap, setError } = snapshot;
   const trimmed = name.trim();
   const valid = snap !== null && shapes.length === 1 && trimmed.length > 0;
@@ -514,6 +541,7 @@ function ZoneSheet({
           Save
         </button>
       </form>
+      {snapshot.picker}
     </Sheet>
   );
 }
@@ -531,7 +559,7 @@ function AddDoorReference({
   const [zoneId, setZoneId] = useState<string | null>(zones.length === 1 ? zones[0].id : null);
   const [status, setStatus] = useState<DoorStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const snapshot = useSnapshot(() => {});
+  const snapshot = useClipFrame(() => {}, onClose);
   const { snap, setError } = snapshot;
   const zone = zones.find((z) => z.id === zoneId) ?? null;
   const valid = snap !== null && zone !== null && status !== null;
@@ -593,6 +621,7 @@ function AddDoorReference({
           Save
         </button>
       </form>
+      {snapshot.picker}
     </Sheet>
   );
 }
