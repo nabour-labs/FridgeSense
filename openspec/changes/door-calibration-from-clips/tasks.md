@@ -55,6 +55,6 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 9. Full check
 
-- [ ] 9.1 Run `uv run pytest` and `uv run ruff check .` in `backend/`, and `npm test` and `npm run lint` (if defined) in `pwa/` and `infra/`. All must be green. Report the commands and results.
-- [ ] 9.2 Run `uv run python scripts/door_clip_report.py` over the labelled `tmp/` clips and the copied 2026-10-17 frames. Confirm door-check recall is not lower than before the change and that no closed-only event is called an opening. Record the before/after numbers in design.md.
-- [ ] 9.3 Add any Ring or AWS friction hit during this change to `docs/friction-log.md`, and add nothing if there was none.
+- [x] 9.1 Run `uv run pytest` and `uv run ruff check .` in `backend/`, and `npm test` and `npm run lint` (if defined) in `pwa/` and `infra/`. All must be green. Report the commands and results.
+- [x] 9.2 Run `uv run python scripts/door_clip_report.py` over the labelled `tmp/` clips and the copied 2026-10-17 frames. Confirm door-check recall is not lower than before the change and that no closed-only event is called an opening. Record the before/after numbers in design.md.
+- [x] 9.3 Add any Ring or AWS friction hit during this change to `docs/friction-log.md`, and add nothing if there was none.
