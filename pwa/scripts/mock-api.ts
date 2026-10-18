@@ -108,6 +108,7 @@ export function mockApi(): Plugin {
   let snapshots = 0;
   let fridgeArea: { image: string; box: unknown; updated_at: string } | null = null;
   let monitoring: { paused: boolean; since: string | null } = { paused: false, since: null };
+  let faceBlur = true;
   const doorBody = (scored = false) => ({
     device_id: "mock.device.D1",
     zones: doorZones.map((z) => ({
@@ -322,6 +323,18 @@ export function mockApi(): Plugin {
             const { paused } = JSON.parse(body);
             if (paused !== monitoring.paused || !monitoring.since) monitoring = { paused, since: new Date().toISOString() };
             send(200, monitoring);
+          });
+          return;
+        }
+        if (req.method === "GET" && url === "/settings/face-blur") return send(200, { enabled: faceBlur });
+        if (req.method === "PUT" && url === "/settings/face-blur") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          if (process.env.FRIDGESENSE_MOCK === "user") return send(403, { error: "admin only" });
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            faceBlur = JSON.parse(body).enabled;
+            send(200, { enabled: faceBlur });
           });
           return;
         }
