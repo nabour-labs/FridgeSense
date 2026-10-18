@@ -23,11 +23,11 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 4. Clip-wide sanity guard
 
-- [ ] 4.1 Write failing unit tests (new `backend/tests/test_suspect_clip.py`) for "Every frame open", "Open at both ends", "Normal opening", "Long opening that starts closed", "Short clip" and "Default rules", on synthetic per-frame results.
-- [ ] 4.2 Implement `is_suspect(results, zones_source)` in `door_events.py`. Verify the 4.1 tests.
-- [ ] 4.3 Write failing task-level tests in `backend/tests/test_fetch_stills_clip.py` (synthetic PyAV clip fixture, moto table, stubbed Ring/S3): "Fridge light finds the real opening", "Fridge light finds no opening", "Not suspect keeps the setup result" and the `door_check_suspect` log fields.
-- [ ] 4.4 Wire the guard into `_fetch_stills`: after alignment, re-score suspect clips with blue rules on the setup zone boxes at `DOOR_THRESHOLD`, set `zones_source = "fallback"` and `suspect = true` in the output. Verify that the 4.3 tests and all existing fetch-stills, clip, trace and follows-camera tests pass.
-- [ ] 4.5 Write failing tests in `test_self_tuning.py` or `test_fetch_stills_clip.py` for "No sample from a suspect event" and "Normal event still samples". Then skip `_learn` for suspect events. Verify the tests.
+- [x] 4.1 Write failing unit tests (new `backend/tests/test_suspect_clip.py`) for "Every frame open", "Open at both ends", "Normal opening", "Long opening that starts closed", "Short clip" and "Default rules", on synthetic per-frame results.
+- [x] 4.2 Implement `is_suspect(results, zones_source)` in `door_events.py`. Verify the 4.1 tests.
+- [x] 4.3 Write failing task-level tests in `backend/tests/test_fetch_stills_clip.py` (synthetic PyAV clip fixture, moto table, stubbed Ring/S3): "Fridge light finds the real opening", "Fridge light finds no opening", "Not suspect keeps the setup result" and the `door_check_suspect` log fields.
+- [x] 4.4 Wire the guard into `_fetch_stills`: after alignment, re-score suspect clips with blue rules on the setup zone boxes at `DOOR_THRESHOLD`, set `zones_source = "fallback"` and `suspect = true` in the output. Verify that the 4.3 tests and all existing fetch-stills, clip, trace and follows-camera tests pass.
+- [x] 4.5 Write failing tests in `test_self_tuning.py` or `test_fetch_stills_clip.py` for "No sample from a suspect event" and "Normal event still samples". Then skip `_learn` for suspect events. Verify the tests.
 - [ ] 4.6 Write failing tests in `backend/tests/test_alignment.py` / `test_fetch_stills_clip.py` for "Three suspect events in a row", "Normal event resets the streak", "Setup run resets the streak" and "Streak write fails". Then add `suspect_streak` to the `ALIGN#{device}` item (updated in `_fetch_stills`, zeroed by `alignment.reset`). Verify the tests.
 
 ## 5. Zone and reference source (API)

@@ -130,6 +130,18 @@ def open_span(scores: list[float], threshold: float) -> list[int] | None:
     return list(range(opened[0], end + 1))
 
 
+SUSPECT_MIN_FRAMES = 10
+SUSPECT_OPEN_SHARE = 0.9
+
+
+def is_suspect(opened: list[bool], zones_source: str) -> bool:
+    """A clip checked with setup rules that reads open at both bookends, or nearly
+    throughout: a recording starts and ends with the door closed, so the rules are off."""
+    if zones_source not in ("setup", "tuned") or len(opened) < SUSPECT_MIN_FRAMES:
+        return False
+    return (opened[0] and opened[-1]) or sum(opened) / len(opened) >= SUSPECT_OPEN_SHARE
+
+
 def pick(span: list[int], count: int = STILL_COUNT) -> list[int]:
     """Up to `count` evenly spaced items of `span`, always including its first and last."""
     if len(span) <= count:
@@ -352,6 +364,11 @@ class DoorCheck:
 
         rules = tuple(replace(r, box=shift_box(r.box, dx, dy)) for r in self.rules)
         return replace(self, rules=rules)
+
+    def fridge_light(self, threshold: float) -> "DoorCheck":
+        """The same zone boxes, each judged by the fridge light alone (blue above `threshold`)."""
+        rules = tuple(ZoneRule(r.box, "blue", "above", threshold) for r in self.rules)
+        return replace(self, rules=rules, source="fallback")
 
     def evaluate(self, stills: list[bytes]) -> tuple[bool, float, int]:
         """(door open?, best still's value, its 1-based zone) over all stills."""
@@ -728,6 +745,7 @@ def _fetch_stills(
     if paused_for is not None and paused_for(account_id, device_id):
         log_event("door_check_paused", account_id=account_id, device_id=device_id)
         return {**state, "outcome": "paused"}
+    fallback_threshold = check.threshold  # DOOR_THRESHOLD: the default rules' threshold
     base = _device_check(check, setup_for, account_id, device_id)
     plan = _follow_plan(table, account_id, device_id, base)
     check = base.shifted(plan.dx, plan.dy) if plan else base
@@ -763,17 +781,41 @@ def _fetch_stills(
         stills=downloaded, values={}, check=check, outcome="no_media", face_blur=face_blur
     )
     trace.alignment = _alignment_json(aligned)
+    suspect = False
 
     def done(result: dict) -> dict:
+        if suspect:
+            result = {**result, "suspect": True}
         if writer is not None:
             trace.outcome = result["outcome"]
             writer.door(state, trace)
         return result
 
+    def learn() -> None:
+        if not suspect:  # rules that read open throughout would teach the wrong thing
+            _learn(table, account_id, device_id, check, raw, aligned, window)
+
     if len(raw) >= MIN_STILLS:
         values = clip_values if clip else [check.zone_values(data) for _, data in raw]
         trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
         results = [check.result_of(v) for v in values]
+        opened = [r.is_open for r in results]
+        if clip is not None and is_suspect(opened, check.source):
+            suspect = True
+            log_event(
+                "door_check_suspect",
+                account_id=account_id,
+                device_id=device_id,
+                frames=len(opened),
+                open_share=round(sum(opened) / len(opened), 3),
+                zones_source=check.source,
+            )
+            check = check.fridge_light(fallback_threshold)
+            trace.check = check
+            rule_log = {**rule_log, "zones_source": check.source}
+            values = [check.zone_values(data) for _, data in raw]
+            trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
+            results = [check.result_of(v) for v in values]
         best = check.best(results)
         rule_log = {**rule_log, "feature": best.feature, "threshold": best.threshold}
         span = open_span([1.0 if r.is_open else 0.0 for r in results], 1.0)
@@ -786,7 +828,7 @@ def _fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
-            _learn(table, account_id, device_id, check, raw, aligned, window)
+            learn()
             return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
         opened_ms = times[raw[span[0]][0] - 1]
         if not results[span[-1]].is_open:  # the first closed still after the opening
@@ -843,7 +885,7 @@ def _fetch_stills(
             return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
-    _learn(table, account_id, device_id, check, raw, aligned, window)
+    learn()
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
     )

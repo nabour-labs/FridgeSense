@@ -96,7 +96,7 @@ A still's *score* is the value of its best zone, the one furthest past (or close
 ## ADDED Requirements
 
 ### Requirement: Suspect clip detected
-When the door check runs on an event clip with the device's setup rules (`zones_source = "setup"`) and at least 10 frames were checked, the clip SHALL count as *suspect* when its first and last checked frames are both open, or when at least 90% of its checked frames are open. A clip with fewer than 10 checked frames, or checked with the default rules, is never suspect.
+When the door check runs on an event clip with the device's setup rules (`zones_source` is `"setup"`, or `"tuned"` after self-tuning) and at least 10 frames were checked, the clip SHALL count as *suspect* when its first and last checked frames are both open, or when at least 90% of its checked frames are open. A clip with fewer than 10 checked frames, or checked with the default rules, is never suspect.
 
 #### Scenario: Every frame open
 - **WHEN** setup rules are used and all 41 checked frames of a 20.5 s clip are open
@@ -121,6 +121,10 @@ When the door check runs on an event clip with the device's setup rules (`zones_
 #### Scenario: Default rules
 - **WHEN** no setup result is stored and every checked frame is open
 - **THEN** the clip is not suspect
+
+#### Scenario: Tuned rules
+- **WHEN** the device's rules were re-tuned (`zones_source = "tuned"`) and all 41 checked frames are open
+- **THEN** the clip is suspect
 
 ### Requirement: Suspect clip re-scored with the fridge light
 For a suspect clip, the door check SHALL score the same frames again with one rule per setup zone: that zone's box (after the event's alignment shift) with feature `blue`, direction `above`, and threshold `DOOR_THRESHOLD` (else 0.01). This second result SHALL decide the outcome, the open span, the open and close times and the picked stills. The `motion_not_door` or `door_event_recorded` log line SHALL have `zones_source = "fallback"`, and the run output SHALL have `suspect = true`.
