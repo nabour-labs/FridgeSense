@@ -438,6 +438,8 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
             "ran_at": iso_utc(now_ms),
             # What the whole view looks like closed, for lining up later events' frames
             "anchor": alignment.edges_to_bytes(alignment.edge_map(newest_closed)),
+            # Which of those pixels the privacy mask left visible
+            "anchor_visible": alignment.visible_to_bytes(alignment.visible_map(newest_closed)),
         }
     )
     alignment.reset(table, account_id, device_id)
@@ -454,6 +456,32 @@ def load_anchor(table: FridgeTable, account_id: str, device_id: str) -> bytes | 
     if item is None or item.get("anchor") is None:
         return None
     return bytes(item["anchor"])
+
+
+def load_anchor_visible(table: FridgeTable, account_id: str, device_id: str) -> bytes | None:
+    """The anchor's visible map. A setup stored before visible maps gets one from its newest
+    closed reference, stored for next time; None without an anchor or a closed reference
+    (every pixel then counts as visible)."""
+    item = table.get(account_pk(account_id), setup_sk(device_id))
+    if item is None or item.get("anchor") is None:
+        return None
+    if item.get("anchor_visible") is not None:
+        return bytes(item["anchor_visible"])
+    closed = [r for r in list_references(table, account_id, device_id) if r.status == "closed"]
+    if not closed:
+        return None
+    visible = alignment.visible_to_bytes(alignment.visible_map(_image(closed[-1].image)))
+    table.put({**item, "anchor_visible": visible})
+    return visible
+
+
+def save_anchor_visible(
+    table: FridgeTable, account_id: str, device_id: str, visible: bytes
+) -> None:
+    """Adopt a new visible map for the anchor (a privacy mask change that hides no zone)."""
+    item = table.get(account_pk(account_id), setup_sk(device_id))
+    if item is not None:
+        table.put({**item, "anchor_visible": visible})
 
 
 def load_setup(table: FridgeTable, account_id: str, device_id: str) -> Setup | None:

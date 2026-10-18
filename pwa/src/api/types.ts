@@ -224,7 +224,8 @@ export interface Alignment {
 export type SetupWarning =
   | { code: "monitoring_paused"; message: string; since: string }
   | { code: "motion_detection_off" | "door_setup_missing" | "door_setup_mismatch" | "needs_relink"; message: string }
-  | { code: "camera_moved"; message: string; since: string; update: ("door_references" | "fridge_area")[] };
+  | { code: "camera_moved"; message: string; since: string; update: ("door_references" | "fridge_area")[] }
+  | { code: "privacy_mask_changed"; message: string; since: string; zones: string[] };
 
 export interface WarningsBody {
   warnings: SetupWarning[];

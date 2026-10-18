@@ -162,3 +162,35 @@ test("a viewer sees the mismatch message with no link", async () => {
   expect(banner).toHaveTextContent(MISMATCH.message);
   expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
 });
+
+const MASK: SetupWarning = {
+  code: "privacy_mask_changed",
+  message:
+    "The camera's privacy mask changed and now covers part of Chiller. Move those door zones or the mask, " +
+    "then retake their door references.",
+  since: "2026-10-18T21:32:14.000Z",
+  zones: ["Chiller"],
+};
+
+// Owner sees the banner and link
+test("privacy mask changed links to Update door zones", async () => {
+  renderWarnings([MASK]);
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent("The camera's privacy mask changed and now covers part of Chiller");
+  expect(within(banner).getByRole("link", { name: "Update door zones" })).toHaveAttribute("href", "#config/doors");
+});
+
+// Viewer sees no link
+test("a viewer sees the privacy mask banner with no link", async () => {
+  renderWarnings([MASK], "viewer");
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent(MASK.message);
+  expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
+});
+
+// No camera-moved banner for a mask change
+test("a privacy mask change shows no camera-moved banner", async () => {
+  renderWarnings([MASK]);
+  await screen.findByRole("alert");
+  expect(screen.queryByText(/The camera has moved or changed angle/)).not.toBeInTheDocument();
+});

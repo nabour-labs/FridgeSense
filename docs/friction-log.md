@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-18 · Ring Partner API · Privacy zones are a capability with no shapes, and no change event
+
+- **Task:** work out why the app reported "The camera has moved" after the owner changed the Indoor Cam 2K's privacy mask in the Ring app, and handle mask changes.
+- **Steps:** read the recorded `GET /v1/devices/{id}?include=status,capabilities,configurations,location` response (`tests/fixtures/ring/device_detail_recorded.json`) for the mask's geometry. Then compared the stored setup anchor with the first and last frames of the next clip.
+- **Expected:** the mask's polygons under `device-configurations` (as `motion_zones` has `vertices`), or a webhook or configuration change when the owner edits them.
+- **Actual:** `device-capabilities.image_enhancements.configurations` lists `privacy_zones`, but no resource returns the zones' shapes, and nothing signals a change. Recordings simply show the masked area painted black, with Ring's overlay text ("Device-ID / Partner / Generated-At") drawn on top. Our frame alignment counted the new black area and its border as the camera moving (best error 0.068–0.072 against a 0.05 limit, true shift `(0, 0)`), and flagged a move after 3 events.
+- **Severity:** Medium
+- **Workaround:** read the mask from the pixels: a 128×72 visible map (mostly-black neighborhoods, closed over thin overlay text), stored with the setup anchor and compared per event. Alignment counts only blocks visible in both frames.
+- **Suggestion:** return privacy-zone polygons in `device-configurations` like `motion_zones`, and send a webhook (or bump a configuration version) when they change.
+
 ### 2026-10-18 · AWS Lambda · `context.memory_limit_in_mb` is a string in the Python runtime
 
 - **Task:** log the cost of each clip-blur run from the Lambda's billed time and memory.

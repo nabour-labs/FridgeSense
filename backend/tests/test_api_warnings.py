@@ -403,3 +403,94 @@ def test_streak_unreadable(tokens, monkeypatch):
 
     monkeypatch.setattr(alignment, "load_alignment", flaky)
     assert warnings(tokens["owner"]) == []
+
+
+# --- Privacy mask changed warning ---
+
+MASK_AT = 1792359134000  # 2026-10-18T21:32:14Z
+
+
+def mask_covers(*names: str, at=MASK_AT) -> None:
+    hidden = alignment.visible_to_bytes(alignment.Image.new("L", alignment.SIZE, 0))
+    zones = [(n, (0.4, 0.3, 0.2, 0.3)) for n in names]
+    for k in range(alignment.MASK_EVENTS):
+        alignment.record_mask(FridgeTable(), ACCOUNT, DEVICE, hidden, None, zones, at - 1 + k)
+
+
+def mask_message(zones: str) -> str:
+    return (
+        f"The camera's privacy mask changed and now covers part of {zones}. Move those door "
+        "zones or the mask, then retake their door references."
+    )
+
+
+# One zone covered
+@respx.mock
+def test_one_zone_covered(tokens):
+    ring_motion("on")
+    set_up_door()
+    mask_covers("Chiller")
+    assert warnings(tokens["owner"]) == [
+        {
+            "code": "privacy_mask_changed",
+            "message": mask_message("Chiller"),
+            "since": "2026-10-18T21:32:14.000Z",
+            "zones": ["Chiller"],
+        }
+    ]
+
+
+def test_mask_zones_joined():
+    from fridgesense.setup_warnings import join_names
+
+    assert join_names(["A"]) == "A"
+    assert join_names(["A", "B"]) == "A and B"
+
+
+# Three zones covered
+@respx.mock
+def test_three_zones_covered(tokens):
+    ring_motion("on")
+    set_up_door()
+    mask_covers("Chiller", "Freezer Drawer 1", "Freezer Drawer 2")
+    [w] = warnings(tokens["owner"])
+    assert w["message"] == mask_message("Chiller, Freezer Drawer 1 and Freezer Drawer 2")
+    assert w["zones"] == ["Chiller", "Freezer Drawer 1", "Freezer Drawer 2"]
+
+
+# Mask change with no zone covered
+@respx.mock
+def test_mask_change_with_no_zone_covered(tokens):
+    ring_motion("on")
+    set_up_door()
+    mask_covers()  # confirmed change, no zones: adopted silently
+    assert warnings(tokens["owner"]) == []
+
+
+# Cleared by a setup run
+@respx.mock
+def test_mask_warning_cleared_by_a_setup_run(tokens):
+    ring_motion("on")
+    set_up_door(NOW_MS - 10 * HOUR_MS)
+    mask_covers("Chiller")
+    set_up_door(NOW_MS - HOUR_MS)
+    assert warnings(tokens["owner"]) == []
+
+
+# Alignment unreadable
+@respx.mock
+def test_mask_warning_alignment_unreadable(tokens, monkeypatch):
+    ring_motion("off")
+    set_up_door()
+    mask_covers("Chiller")
+    real = alignment.load_alignment
+    calls = {"n": 0}
+
+    def flaky(*args):
+        calls["n"] += 1
+        if calls["n"] == 3:  # camera_moved, then the streak, then the mask read fails
+            raise RuntimeError("table down")
+        return real(*args)
+
+    monkeypatch.setattr(alignment, "load_alignment", flaky)
+    assert warnings(tokens["owner"]) == [MOTION_OFF]

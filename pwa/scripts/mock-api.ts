@@ -360,7 +360,8 @@ export function mockApi(): Plugin {
           return send(200, { image: photo(snapshots % 2 ? "snapshot-closed" : "snapshot-open"), captured_at: new Date().toISOString() });
         }
         if (url === "/door-calibration" && req.method === "GET") return send(200, doorBody());
-        // FRIDGESENSE_MOCK_WARNINGS=1 adds motion detection off and a moved camera.
+        // FRIDGESENSE_MOCK_WARNINGS=1 adds motion detection off and a moved camera;
+        // FRIDGESENSE_MOCK_MASK=1 adds a privacy mask that covers a door zone.
         if (url === "/warnings" && req.method === "GET") {
           const all = !!process.env.FRIDGESENSE_MOCK_WARNINGS;
           const warnings = [
@@ -369,6 +370,9 @@ export function mockApi(): Plugin {
             ...(doorSetup ? [] : [{ code: "door_setup_missing", message: "Open/close detection is not set up, so the default zones are used and openings may be missed." }]),
             ...(all
               ? [{ code: "camera_moved", message: "The camera has moved or changed angle. Update the references so detection stays accurate.", since: iso(2 * HOUR), update: ["door_references", ...(fridgeArea ? ["fridge_area"] : [])] }]
+              : []),
+            ...(process.env.FRIDGESENSE_MOCK_MASK
+              ? [{ code: "privacy_mask_changed", message: "The camera's privacy mask changed and now covers part of Chiller. Move those door zones or the mask, then retake their door references.", since: iso(HOUR), zones: ["Chiller"] }]
               : []),
           ];
           return send(200, { warnings, checked_at: iso(0) });
