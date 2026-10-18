@@ -49,9 +49,9 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 8. Setup mismatch warning (can be cut)
 
-- [ ] 8.1 Write failing tests in `backend/tests/test_api_warnings.py` for "Three suspect events", "Two suspect events", "Listed last", "Cleared by setup" and "Streak unreadable".
-- [ ] 8.2 Add `door_setup_mismatch` to `setup_warnings.warnings_body`, reading `suspect_streak` from the `ALIGN#{device}` item it already reads. Verify the 8.1 tests and the existing warnings tests.
-- [ ] 8.3 Write failing tests in `pwa/src/components/Warnings.test.tsx` for "Mismatch banner" and "Viewer sees no link". Then add the code's link in `Warnings.tsx`. Verify with `npm test`.
+- [x] 8.1 Write failing tests in `backend/tests/test_api_warnings.py` for "Three suspect events", "Two suspect events", "Listed last", "Cleared by setup" and "Streak unreadable".
+- [x] 8.2 Add `door_setup_mismatch` to `setup_warnings.warnings_body`, reading `suspect_streak` from the `ALIGN#{device}` item it already reads. Verify the 8.1 tests and the existing warnings tests.
+- [x] 8.3 Write failing tests in `pwa/src/components/Warnings.test.tsx` for "Mismatch banner" and "Viewer sees no link". Then add the code's link in `Warnings.tsx`. Verify with `npm test`.
 
 ## 9. Full check
 

@@ -15,6 +15,8 @@ function fixes(w: SetupWarning): Fix[] {
       return [{ label: "Open Camera", href: "#config" }];
     case "door_setup_missing":
       return [{ label: "Set up detection", href: "#config/doors" }];
+    case "door_setup_mismatch":
+      return [{ label: "Update door references", href: "#config/doors" }];
     case "camera_moved":
       return w.update.map((u) =>
         u === "door_references"

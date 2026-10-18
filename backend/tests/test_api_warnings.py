@@ -333,3 +333,73 @@ def test_link_expired_before_any_camera(tokens):
 def test_linked_has_no_relink_warning(tokens):
     ring_motion("off")
     assert "needs_relink" not in [w["code"] for w in warnings(tokens["owner"])]
+
+
+# --- Door setup mismatch warning ---
+
+MISMATCH = {
+    "code": "door_setup_mismatch",
+    "message": "Open/close detection doesn't match the camera's recordings, so the fridge light "
+    "is used instead. Replace the door references with frames from recent clips and run setup "
+    "again.",
+}
+
+
+def suspect_events(n: int) -> None:
+    for _ in range(n):
+        alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+
+
+# Three suspect events
+@respx.mock
+def test_three_suspect_events(tokens):
+    ring_motion("on")
+    set_up_door()
+    suspect_events(3)
+    assert warnings(tokens["owner"]) == [MISMATCH]
+
+
+# Two suspect events
+@respx.mock
+def test_two_suspect_events(tokens):
+    ring_motion("on")
+    set_up_door()
+    suspect_events(2)
+    assert warnings(tokens["owner"]) == []
+
+
+# Listed last
+@respx.mock
+def test_mismatch_listed_last(tokens):
+    ring_motion("on")
+    suspect_events(4)  # no setup result
+    assert warnings(tokens["owner"]) == [SETUP_MISSING, MISMATCH]
+
+
+# Cleared by setup
+@respx.mock
+def test_mismatch_cleared_by_setup(tokens):
+    ring_motion("on")
+    set_up_door(NOW_MS - 10 * HOUR_MS)
+    suspect_events(3)
+    set_up_door(NOW_MS - HOUR_MS)
+    assert warnings(tokens["owner"]) == []
+
+
+# Streak unreadable
+@respx.mock
+def test_streak_unreadable(tokens, monkeypatch):
+    ring_motion("on")
+    set_up_door()
+    suspect_events(3)
+    real = alignment.load_alignment
+    calls = {"n": 0}
+
+    def flaky(*args):
+        calls["n"] += 1
+        if calls["n"] == 2:  # camera_moved reads first; the streak read fails
+            raise RuntimeError("table down")
+        return real(*args)
+
+    monkeypatch.setattr(alignment, "load_alignment", flaky)
+    assert warnings(tokens["owner"]) == []
