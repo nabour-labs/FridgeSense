@@ -63,7 +63,8 @@ def owner(tokens):
 
 
 def add_zone(token, name="Doors", box=LEFT):
-    return call("POST", "/api/door-calibration/zones", {"name": name, "box": box}, token)
+    body = {"name": name, "box": box, "source": "clip"}
+    return call("POST", "/api/door-calibration/zones", body, token)
 
 
 def zone_id(token, name="Doors", box=LEFT):
@@ -76,7 +77,7 @@ def add(token, zone, image=OPEN, status="open"):
     return call(
         "POST",
         "/api/door-calibration/references",
-        {"image": b64(image), "zone_id": zone, "status": status},
+        {"image": b64(image), "zone_id": zone, "status": status, "source": "clip"},
         token,
     )
 
@@ -539,10 +540,11 @@ def test_reference_from_a_clip(owner):
 
 # Source left out
 def test_source_left_out(owner):
-    zone_id(owner)
+    call("POST", "/api/door-calibration/zones", {"name": "Doors", "box": LEFT}, owner)
     [zone] = body_of(owner)["zones"]
     assert zone["source"] == "live"
-    add(owner, zone["id"], CLOSED, "closed")
+    ref = {"image": b64(CLOSED), "zone_id": zone["id"], "status": "closed"}
+    call("POST", "/api/door-calibration/references", ref, owner)
     assert body_of(owner)["references"][0]["source"] == "live"
 
 
@@ -602,3 +604,53 @@ def test_redraw_on_a_live_picture(owner):
     assert body_of(owner)["zones"][0]["source"] == "live"
     call("PATCH", f"/api/door-calibration/zones/{zone}", {"box": LEFT, "source": "clip"}, owner)
     assert body_of(owner)["zones"][0]["source"] == "clip"
+
+
+# --- Setup needs zones and references from clips ---
+
+
+def clip_zone(owner, name="Doors", box=LEFT, source="clip") -> str:
+    call("POST", "/api/door-calibration/zones", {"name": name, "box": box, "source": source}, owner)
+    return body_of(owner)["zones"][-1]["id"]
+
+
+def clip_ref(owner, zone, image, status, source="clip"):
+    payload = {"image": b64(image), "zone_id": zone, "status": status, "source": source}
+    return call("POST", "/api/door-calibration/references", payload, owner)
+
+
+# Live reference refused
+def test_live_reference_refused(owner, monkeypatch):
+    zone = clip_zone(owner)
+    clip_ref(owner, zone, OPEN, "open")
+    monkeypatch.setattr(api, "now", lambda: NOW + 1)  # listed second
+    clip_ref(owner, zone, CLOSED, "closed", source="live")
+    status, body = call("POST", "/api/door-calibration/run", token=owner)
+    assert status == 422
+    assert body["error"] == (
+        "reference 2 is not from a recorded clip. Replace it with a frame from a recent clip."
+    )
+    assert len(body["references"]) == 2
+    assert body_of(owner)["setup"] is None
+
+
+# Live zone refused
+def test_live_zone_refused(owner):
+    zone = clip_zone(owner, source="live")
+    clip_ref(owner, zone, OPEN, "open", source="live")
+    clip_ref(owner, zone, CLOSED, "closed")
+    status, body = call("POST", "/api/door-calibration/run", token=owner)
+    assert status == 422
+    assert body["error"] == (
+        "zone Doors was drawn on a live picture. Redraw it on a frame from a recent clip."
+    )
+
+
+# Everything from clips
+def test_everything_from_clips(owner):
+    zone = clip_zone(owner)
+    clip_ref(owner, zone, OPEN, "open")
+    clip_ref(owner, zone, CLOSED, "closed")
+    status, body = call("POST", "/api/door-calibration/run", token=owner)
+    assert status == 200
+    assert body["setup"]["zones"][0]["feature"] == "blue"

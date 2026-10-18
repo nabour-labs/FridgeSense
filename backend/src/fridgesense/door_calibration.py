@@ -364,6 +364,21 @@ def run(table: FridgeTable, account_id: str, device_id: str, now_ms: int) -> Set
         raise SetupFailed(f"at most {MAX_ZONES} door zones", scores)
     if not zones:
         raise SetupFailed("add a door zone first", scores)
+    # Pictures not from a recorded clip are framed differently from what the door check scores.
+    for z in zones:
+        if z.source != "clip":
+            raise SetupFailed(
+                f"zone {z.name} was drawn on a live picture. "
+                "Redraw it on a frame from a recent clip.",
+                scores,
+            )
+    for n, r in enumerate(refs, start=1):
+        if r.source != "clip":
+            raise SetupFailed(
+                f"reference {n} is not from a recorded clip. "
+                "Replace it with a frame from a recent clip.",
+                scores,
+            )
 
     chosen: list[SetupZone] = []
     for z in zones:

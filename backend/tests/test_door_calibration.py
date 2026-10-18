@@ -18,7 +18,9 @@ WHOLE = {"x": 0, "y": 0, "width": 1, "height": 1}
 
 
 def add(image, zone_id, status, device=D1, at=T0):
-    return dc.add_reference(FridgeTable(), ACCOUNT, device, image, zone_id, status, now_ms=at)
+    return dc.add_reference(
+        FridgeTable(), ACCOUNT, device, image, zone_id, status, now_ms=at, source="clip"
+    )
 
 
 def run(device=D1, at=T0 + 60_000):
@@ -34,7 +36,7 @@ def plain(level: int) -> bytes:
 
 
 def zone(box=LEFT, name="Doors", device=D1, at=T0):
-    return dc.add_zone(FridgeTable(), ACCOUNT, device, name, box, now_ms=at)
+    return dc.add_zone(FridgeTable(), ACCOUNT, device, name, box, now_ms=at, source="clip")
 
 
 def zones(device=D1):

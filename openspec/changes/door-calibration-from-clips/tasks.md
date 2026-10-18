@@ -37,8 +37,8 @@ Before archiving: archive `door-zones-defined` and `door-auto-calibration` first
 
 ## 6. Setup needs clip pictures
 
-- [ ] 6.1 Write failing tests in `test_api_door_calibration.py` for "Live reference refused", "Live zone refused" and "Everything from clips".
-- [ ] 6.2 Make `door_calibration.run` refuse `live` zones (checked first) and references, with the spec's 422 messages and the setup unchanged. Verify the 6.1 tests and the existing setup tests. Update any existing test fixtures to post `source = "clip"` rather than weakening the tests.
+- [x] 6.1 Write failing tests in `test_api_door_calibration.py` for "Live reference refused", "Live zone refused" and "Everything from clips".
+- [x] 6.2 Make `door_calibration.run` refuse `live` zones (checked first) and references, with the spec's 422 messages and the setup unchanged. Verify the 6.1 tests and the existing setup tests. Update any existing test fixtures to post `source = "clip"` rather than weakening the tests.
 
 ## 7. PWA: door setup pictures from recent clips
 

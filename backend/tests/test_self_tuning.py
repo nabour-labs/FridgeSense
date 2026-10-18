@@ -110,9 +110,9 @@ def test_sample_uses_the_shifted_zone(aws):
 
 def set_up():
     table = FridgeTable()
-    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0).sk
-    dc.add_reference(table, ACCOUNT, DEVICE, block(0.06), z, "open", T0)
-    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1)
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0, source="clip").sk
+    dc.add_reference(table, ACCOUNT, DEVICE, block(0.06), z, "open", T0, source="clip")
+    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1, source="clip")
     dc.run(table, ACCOUNT, DEVICE, T0 + 2)
 
 
@@ -207,9 +207,9 @@ BRIGHT_LIT = color_jpeg(
 
 def test_retune_keeps_blue(aws):
     table = FridgeTable()
-    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0).sk
-    dc.add_reference(table, ACCOUNT, DEVICE, BRIGHT_LIT, z, "open", T0)
-    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1)
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0, source="clip").sk
+    dc.add_reference(table, ACCOUNT, DEVICE, BRIGHT_LIT, z, "open", T0, source="clip")
+    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1, source="clip")
     dc.run(table, ACCOUNT, DEVICE, T0 + 2)
     for k in range(3):
         learn([CLOSED, BRIGHT_LIT, CLOSED], check=check(), at=T0 + 10 + k)
