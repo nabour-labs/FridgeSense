@@ -92,7 +92,7 @@ def handler(event: dict, context) -> dict:
         dst.unlink(missing_ok=True)
 
     billed_ms = round((monotonic() - started) * 1000)
-    memory_mb = context.memory_limit_in_mb
+    memory_mb = int(context.memory_limit_in_mb)  # a string in the Lambda runtime
     log_event(
         "clip_blurred",
         device_id=device_id,

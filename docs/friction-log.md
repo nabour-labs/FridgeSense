@@ -23,6 +23,26 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-18 · AWS Lambda · `context.memory_limit_in_mb` is a string in the Python runtime
+
+- **Task:** log the cost of each clip-blur run from the Lambda's billed time and memory.
+- **Steps:** in a Python 3.13 container-image Lambda (`public.ecr.aws/lambda/python:3.13-arm64`, 3008 MB), computed `billed_ms / 1000 * context.memory_limit_in_mb / 1024 * 0.0000133334`. Unit tests used a fake context with `memory_limit_in_mb = 3008`.
+- **Expected:** an int, as the name and the configured `MemorySize` suggest.
+- **Actual:** the first real run failed after the work was done: `[ERROR] TypeError: can't multiply sequence by non-int of type 'float'` at `handler.py` line 108. The value is the string `"3008"`. The Step Functions catch then treated a successful blur as failed.
+- **Severity:** Low
+- **Workaround:** `int(context.memory_limit_in_mb)`, and a fake context with a string value in the tests.
+- **Suggestion:** document the type on the Python context object page, or expose it as an int.
+
+### 2026-10-18 · AWS Lambda · Container image init hits the 10 s limit, and onnxruntime can't read the CPU list
+
+- **Task:** blur faces in a 19 s door-opening clip (466 frames, 2560×1440) with deface/CenterFace on onnxruntime in an arm64 container Lambda (3008 MB, 300 s).
+- **Steps:** deployed with CDK `DockerImageFunction`, then opened the fridge once.
+- **Expected:** init in a few seconds, and onnxruntime using the function's vCPUs, about as fast as the same image in Docker Desktop (360 frames in 51.5 s).
+- **Actual:** `INIT_REPORT Init Duration: 10000.15 ms` (init cut off at 10 s and run again inside the invoke), then six lines of `Error in cpuinfo: failed to parse the list of possible processors in /sys/devices/system/cpu/possible`. The run took 210,772 ms for 466 frames (0.45 s a frame, about 3× slower than Docker Desktop), within reach of the 300 s timeout.
+- **Severity:** Medium
+- **Workaround:** none yet. Options are more memory (more vCPUs), setting onnxruntime's thread count explicitly, and detecting on fewer pixels.
+- **Suggestion:** document the 10 s init limit for container images next to the image size limits, and expose `/sys/devices/system/cpu/possible` so common runtimes (onnxruntime's cpuinfo) can size their thread pools.
+
 ### 2026-10-17 · Ring Partner API · Still at a clip frame's time shows a different moment
 
 - **Task:** store sharp stills of a door opening for Nova, at the times the door check found the door open in the event clip.
