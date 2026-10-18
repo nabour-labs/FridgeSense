@@ -58,8 +58,12 @@ def test_analyze_task_returns_changes_and_records_cost(setup):
     )
     out = run(setup)
     assert out["analysis"] == {
-        "added": [{"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.92}],
-        "removed": [{"item": "eggs", "category": "dairy", "quantity": 2, "confidence": 0.71}],
+        "added": [
+            {"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.92, "images": []}
+        ],
+        "removed": [
+            {"item": "eggs", "category": "dairy", "quantity": 2, "confidence": 0.71, "images": []}
+        ],
     }
     assert door(table)["nova_usd"] == 0.000653
 

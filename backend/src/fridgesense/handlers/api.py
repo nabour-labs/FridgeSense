@@ -244,9 +244,15 @@ def get_events(ctx: Context) -> dict:
         start_s, end_s = (float(t) for t in e["clip_span"])
         return f"{link(e['clip_key'])}#t={start_s:g},{end_s:g}"
 
+    def with_proof(c: dict, keys: list[str]) -> dict:
+        """The change with `proof` as links to the stills it names (indexes into `keys`)."""
+        named = [int(i) for i in c.get("proof", []) if 0 <= int(i) < len(keys)]
+        return {**c, "proof": [link(keys[i]) for i in named]}
+
     events = []
     for e in found:
         recent = e.get("opened_at", "") >= stills_since
+        keys = e.get("still_keys", []) if recent else []
         events.append(
             {
                 "id": encode_id(e["sk"]),
@@ -254,9 +260,9 @@ def get_events(ctx: Context) -> dict:
                 "closed_at": e.get("closed_at"),
                 "duration_s": e.get("duration_s"),
                 "status": e.get("status"),
-                "changes": e.get("changes", []),
+                "changes": [with_proof(c, keys) for c in e.get("changes", [])],
                 "pending_count": e.get("pending_count", 0),
-                "stills": [link(key) for key in (e.get("still_keys", []) if recent else [])],
+                "stills": [link(key) for key in keys],
                 "clip": clip_of(e) if recent else None,
             }
         )

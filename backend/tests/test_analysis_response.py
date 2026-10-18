@@ -399,3 +399,44 @@ def test_call_record_without_metrics():
     [call], _ = records(NoMetrics(), Clock(0.0, 1.0))
     assert call.latency_ms is None
     assert call.wall_ms == 1000
+
+
+def soda(images):
+    return {
+        "item": "soda can",
+        "category": "beverage",
+        "quantity": 1,
+        "confidence": 0.9,
+        "images": images,
+    }
+
+
+# Scenario: Out-of-range, duplicate and extra numbers
+def test_out_of_range_duplicate_and_extra_numbers():
+    changes = parse_response(tool_response({"added": [soda([0, 2, 2, 5, 3, 4])], "removed": []}), 4)
+    assert changes.added[0].images == [2, 3]
+
+
+# Scenario: Images missing or malformed
+def test_images_missing_or_malformed(bedrock):
+    client, stub = bedrock
+    plain = {"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.9}
+    stub.add_response("converse", tool_response({"added": [plain, soda("2")], "removed": []}))
+    result = NovaAnalyzer(client).analyze(STILLS, [])
+    stub.assert_no_pending_responses()  # one request: the answer was not retried
+    assert [c.images for c in result.changes.added] == [[], []]
+
+
+# Scenario: Non-integer numbers
+def test_non_integer_numbers():
+    resp = tool_response({"added": [soda([1.0, "2", True, 2.5])], "removed": []})
+    changes = parse_response(resp, 4)
+    assert changes.added[0].images == [1]
+
+
+# Scenario: Proof kept (numbers kept against the stills actually sent)
+def test_images_checked_against_the_stills_sent(bedrock):
+    client, stub = bedrock
+    stub.add_response("converse", tool_response({"added": [soda([2, 3])], "removed": []}))
+    result = NovaAnalyzer(client).analyze(STILLS[:2], [])
+    assert result.changes.added[0].images == [2]

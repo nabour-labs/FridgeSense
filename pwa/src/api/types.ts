@@ -29,6 +29,8 @@ export interface Change {
   confidence: number;
   applied?: boolean;
   rejected?: boolean;
+  /** Links to up to 2 stills that show this change (door event listings only). */
+  proof?: string[];
 }
 
 export interface DoorEvent {
