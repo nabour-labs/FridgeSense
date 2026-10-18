@@ -254,14 +254,15 @@ test("with no history the tab says none is recorded", async () => {
 
 // Scenario: Before any check
 test("before a check the decoder card explains itself", async () => {
-  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "user");
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "owner");
   expect(await screen.findByText(CHECK_HINT)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Check decoder" })).toBeInTheDocument();
 });
 
 // Scenario: No Decoder card for a viewer
-test("the viewer sees no decoder card", async () => {
-  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "viewer");
+// Scenario: No Decoder card for a user
+test.each(["viewer", "user"] as const)("the %s sees no decoder card", async (role) => {
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, role);
   expect(await screen.findByRole("region", { name: "FridgeSense" })).toBeInTheDocument();
   expect(screen.queryByText(CHECK_HINT)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Check decoder" })).not.toBeInTheDocument();

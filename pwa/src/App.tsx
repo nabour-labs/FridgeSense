@@ -42,14 +42,18 @@ export default function App({ api: injected }: { api?: Api }) {
   const debug = import.meta.env.DEV;
   const [mockVideo, setMockVideo] = useState(() => debug && loadMockVideo());
   const [picking, setPicking] = useState<{ resolve: (s: Snapshot) => void; reject: (e: Error) => void } | null>(null);
-  // Snapshots come from a live frame (the Ring still as fallback); in debug mode with Mock
+  // The owner's snapshots come from a live frame (the Ring still as fallback); everyone else's
+  // from the newest recording, since live video is the owner's only. In debug mode with Mock
   // video on, from a local clip the owner picks.
+  const owner = session?.role === "owner";
   const screenApi = useMemo<Api>(
     () =>
       debug && mockVideo
         ? withSnapshot(api, () => new Promise<Snapshot>((resolve, reject) => setPicking({ resolve, reject })))
-        : withSnapshot(api, (signal) => liveSnapshot(api, { signal })),
-    [api, debug, mockVideo],
+        : owner
+          ? withSnapshot(api, (signal) => liveSnapshot(api, { signal }))
+          : api,
+    [api, debug, mockVideo, owner],
   );
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [offline, setOffline] = useState(false);

@@ -59,8 +59,8 @@ export function Activity() {
           onChange={(e) => pickDay(e.target.value)}
           className="h-11 min-w-0 flex-1 scroll-mt-24 rounded-xl border border-slate-300 bg-white px-3 font-semibold outline-none [color-scheme:light] focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950 dark:[color-scheme:dark]"
         />
-        {/* Live video is never face-blurred, so the read-only demo role doesn't get it. */}
-        {canEdit(role) && (
+        {/* Live video is never face-blurred, so only the owner gets it. */}
+        {isAdmin(role) && (
           <button
             onClick={() => setWatching(true)}
             className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-600 px-4 font-semibold text-white transition hover:bg-brand-700 active:scale-[0.98]"
