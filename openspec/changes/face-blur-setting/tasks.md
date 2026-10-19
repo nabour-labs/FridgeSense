@@ -46,8 +46,9 @@
 
 - [x] 7.1 Write failing tests in `pwa/src/api/client.test.ts` for `faceBlur()` (`GET`) and `setFaceBlur(false)` (`PUT` with `{"enabled": false}`).
 - [x] 7.2 Implement the client methods and add them to the `Api` type and the `test-utils` mock. Verify that 7.1 passes.
-- [x] 7.3 Write failing tests in `pwa/src/screens/Camera.test.tsx`: "Owner sees it on by default", "Owner turns it off", "Save fails" and "Others see it read-only" (user and viewer). Add "Only the blur switch is editable", and keep "Camera tab shows details", "Camera offline", "Ring unreachable" and "No camera linked" passing.
+- [x] 7.3 Write failing tests in `pwa/src/screens/Camera.test.tsx`: "Owner sees it on by default", "Owner turns it off", "Save fails" and "Hidden from others" (user and viewer). Add "Only the blur switch is editable", and keep "Camera tab shows details", "Camera offline", "Ring unreachable" and "No camera linked" passing.
 - [x] 7.4 Add the "Blur faces" section to `Camera.tsx`. Verify that 7.3 passes.
+- [x] 7.5 Hide the "Privacy" section from the user and the viewer, and skip its `GET` for them: rewrite the read-only test as "Hidden from others" (red), then render the section only for the owner (green).
 
 ## 8. Docs and wrap-up
 
