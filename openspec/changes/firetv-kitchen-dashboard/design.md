@@ -47,7 +47,7 @@ The dashboard renders no buttons, links or inputs and adds no key handlers, so D
 
 `manifest.toml` keeps the template's defaults. No cleartext policy is needed because the site is HTTPS.
 
-**Fallback (Fire OS).** If the Vega SDK or Vega Virtual Device doesn't work on the Mac within about 2 hours, replace `firetv/` with an Android Studio "TV" project: one `Activity` with a full-screen `WebView` (`settings.domStorageEnabled = true`, `javaScriptEnabled = true`), the same URL rule in a Kotlin `tvUrl` with a JUnit test, and the same failure screen. Fire OS sticks take it by `adb install`. The PWA part doesn't change. Record the switch and its reason in the friction log.
+**Fallback.** There is no Fire TV device; the Vega Virtual Device is the only simulator that counts for the track (Amazon ships no Fire OS simulator, and an Android TV emulator is not Fire TV). If the Vega SDK or Vega Virtual Device doesn't work on the Mac within about 2 hours, stop and ask whether to buy a stick. With a Vega OS stick, nothing else changes. With a Fire OS stick, replace `firetv/` with an Android Studio "TV" project: one `Activity` with a full-screen `WebView` (`settings.domStorageEnabled = true`, `javaScriptEnabled = true`), the same URL rule in a Kotlin `tvUrl` with a JUnit test, and the same failure screen. Fire OS sticks take it by `adb install`. The PWA part doesn't change. Record the switch and its reason in the friction log.
 
 ### 6. No credentials in the TV app
 

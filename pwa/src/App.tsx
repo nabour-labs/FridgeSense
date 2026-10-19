@@ -15,6 +15,7 @@ import { Config } from "./screens/Config";
 import { Fridge } from "./screens/Fridge";
 import { Review } from "./screens/Review";
 import { Stats } from "./screens/Stats";
+import { TvDashboard } from "./tv/TvDashboard";
 import { SignIn } from "./screens/SignIn";
 import { clearSession, loadSession, saveSession, type StoredSession } from "./session";
 
@@ -25,6 +26,11 @@ const TABS: { id: Tab; label: string; Icon: typeof Refrigerator }[] = [
   { id: "stats", label: "Stats", Icon: ChartColumn },
   { id: "ask", label: "Ask", Icon: Mic },
 ];
+
+/** The kitchen TV dashboard (the Fire TV app opens the site at #tv). */
+function isTv(): boolean {
+  return location.hash === "#tv";
+}
 
 function tabFromHash(): Tab {
   const id = location.hash.replace("#", "");
@@ -56,11 +62,15 @@ export default function App({ api: injected }: { api?: Api }) {
     [api, debug, mockVideo, owner],
   );
   const [tab, setTab] = useState<Tab>(tabFromHash);
+  const [tv, setTv] = useState(isTv);
   const [offline, setOffline] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    const onHash = () => setTab(tabFromHash());
+    const onHash = () => {
+      setTab(tabFromHash());
+      setTv(isTv());
+    };
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);
@@ -118,6 +128,14 @@ export default function App({ api: injected }: { api?: Api }) {
           setSession(stored);
         }}
       />
+    );
+  }
+
+  if (tv) {
+    return (
+      <AppContext.Provider value={{ api, role: session.role, report, online, go }}>
+        <TvDashboard />
+      </AppContext.Provider>
     );
   }
 
