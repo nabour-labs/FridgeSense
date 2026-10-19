@@ -58,8 +58,8 @@ The "Recent changes" panel SHALL show the newest door openings of the last 7 day
 - **WHEN** an opening with no changes sits between two openings with changes
 - **THEN** its row shows "No changes" with no opening count
 
-#### Scenario: Older openings ignored
-- **WHEN** the only opening loaded is 10 days old
+#### Scenario: Quiet week
+- **WHEN** the only opening loaded is 10 days old, or none is
 - **THEN** the panel shows "No door openings this week"
 
 ### Requirement: Opens panel
@@ -85,7 +85,30 @@ The "Opens" panel SHALL show the number of door openings today, today's open tim
 - **WHEN** the openings include 4 on Mondays at 8 am local time and 1 on a Tuesday at 6 pm, all within the last 28 days
 - **THEN** the heatmap has 7 rows of 24 cells, the Monday 8 am cell is labelled "Mon 8 am: 4 opens" at level 4, the Tuesday 6 pm cell is labelled "Tue 6 pm: 1 open" at level 1, and every other cell is at level 0
 
+### Requirement: Panels fail on their own
+A panel or line whose data has never loaded and whose last request failed SHALL show "No Data" in place of its content; the others SHALL keep showing their data. A failed refresh SHALL keep the data already shown. Errors SHALL be reported as elsewhere in the app (a 401 returns to the passcode screen).
+
+#### Scenario: Events fail, inventory loads
+- **WHEN** `GET /api/events` fails and `GET /api/inventory` succeeds
+- **THEN** the Recent changes and Opens panels show "No Data" and the In the fridge panel shows the items
+
+#### Scenario: Camera fails, panels load
+- **WHEN** `GET /api/camera` fails and the other two requests succeed
+- **THEN** the camera line shows "Camera: No Data" and all three panels show their data
+
+#### Scenario: Session expired on the TV
+- **WHEN** `GET /api/inventory` answers 401 while the TV dashboard is shown
+- **THEN** the passcode screen is shown
+
+## REMOVED Requirements
+
 ### Requirement: Nothing private or interactive on the TV
+**Reason**: Replaced by "Nothing private or interactive on the TV dashboard", which allows a third endpoint (`GET /api/camera`).
+**Migration**: None; the same rules apply, plus the camera image is never shown.
+
+## ADDED Requirements
+
+### Requirement: Nothing private or interactive on the TV dashboard
 The TV dashboard SHALL show no stills, clips, live view, reference images, the camera's product image or other camera pictures, and SHALL have no buttons, links or inputs. It SHALL request only `GET /api/inventory`, `GET /api/events` and `GET /api/camera`, and SHALL NOT handle the Back (Escape) key, so the Fire TV app can close on Back.
 
 #### Scenario: Stills not shown
@@ -108,22 +131,6 @@ The TV dashboard SHALL show no stills, clips, live view, reference images, the c
 - **WHEN** the Escape key is pressed on the TV dashboard
 - **THEN** the event is not default-prevented and the hash stays `#tv`
 
-### Requirement: Panels fail on their own
-A panel or line whose data has never loaded and whose last request failed SHALL show "No Data" in place of its content; the others SHALL keep showing their data. A failed refresh SHALL keep the data already shown. Errors SHALL be reported as elsewhere in the app (a 401 returns to the passcode screen).
-
-#### Scenario: Events fail, inventory loads
-- **WHEN** `GET /api/events` fails and `GET /api/inventory` succeeds
-- **THEN** the Recent changes and Opens panels show "No Data" and the In the fridge panel shows the items
-
-#### Scenario: Camera fails, panels load
-- **WHEN** `GET /api/camera` fails and the other two requests succeed
-- **THEN** the camera line shows "Camera: No Data" and all three panels show their data
-
-#### Scenario: Session expired on the TV
-- **WHEN** `GET /api/inventory` answers 401 while the TV dashboard is shown
-- **THEN** the passcode screen is shown
-
-## ADDED Requirements
 
 ### Requirement: Openings loaded for the dashboard
 The TV dashboard SHALL load door openings with `GET /api/events?days=28` and use them for the Recent changes and Opens panels.

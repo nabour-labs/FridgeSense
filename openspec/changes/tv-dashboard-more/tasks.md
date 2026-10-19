@@ -2,7 +2,7 @@
 
 ## 0. Base spec
 
-- [ ] 0.1 Archive `firetv-kitchen-dashboard` (mark 4.1 done: it ran on the Vega Virtual Device with live data) so `openspec/specs/tv-dashboard/` exists; verify with `openspec validate tv-dashboard-more`
+- [x] 0.1 Archive `firetv-kitchen-dashboard` (mark 4.1 done: it ran on the Vega Virtual Device with live data) so `openspec/specs/tv-dashboard/` exists; verify with `openspec validate tv-dashboard-more`
 
 ## 1. TV helpers (`pwa/src/tv/tv.ts`)
 
