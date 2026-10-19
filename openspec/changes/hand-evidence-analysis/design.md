@@ -65,6 +65,12 @@ Labels: Jayson approved the drafts on 2026-10-18 ("ok go ahead"). 6 openings are
 | Run | TP | FP | FN | Direction errors | Precision | Recall |
 |---|---|---|---|---|---|---|
 | baseline (4 stills, old prompt) | 0 | 10 | 2 | 1 | 0.0 | 0.0 |
+| video-v1 (analysis video, hand evidence) | 1 | 0 | 1 | 0 | 1.0 | 0.5 |
+
+video-v1 ran on 2026-10-18 against the 12 downloaded `clip.mp4` cuts, which are already face-blurred, with the inventory names `[bread, broccoli, carrots, cheese, condiment, cup, eggs, soda can]`. It cost $0.024495 in total ($0.0010–0.0036 per opening, 5–39 frames). The target is met: no direction errors, precision up from 0.0 to 1.0, and recall up from 0.0 to 0.5.
+- Water-dispenser visits and the false motion now come back empty. Before, they came back as 2 invented changes each.
+- The miss is the 23:40Z eggs: Nova saw the girl "searching" but no item in her hands. Eggs are small at 0.5 s spacing over 29 frames.
+- On skipped openings: 23:06Z returned `cup` removed (unverified), and 23:46Z returned `cup` both in and out, which is correctly dropped as `in_and_out`.
 
 ## Test strategy
 
