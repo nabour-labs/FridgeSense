@@ -115,6 +115,11 @@ export class ApiClient {
     return this.request("POST", "/api/config/references", { annotation, image });
   }
 
+  /** Change a reference's annotation and/or image (base64 JPEG); it keeps its id and place. */
+  updateReference(id: string, changes: { annotation?: string; image?: string }): Promise<Config> {
+    return this.request("PATCH", `/api/config/references/${encodeURIComponent(id)}`, changes);
+  }
+
   deleteReference(id: string): Promise<Config> {
     return this.request("DELETE", `/api/config/references/${encodeURIComponent(id)}`);
   }

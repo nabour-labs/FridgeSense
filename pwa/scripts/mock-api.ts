@@ -484,6 +484,24 @@ export function mockApi(): Plugin {
           });
           return;
         }
+        const refEdit = url.match(/^\/config\/references\/([^/]+)$/);
+        if (req.method === "PATCH" && refEdit) {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { annotation, image } = JSON.parse(body || "{}");
+            const id = decodeURIComponent(refEdit[1]);
+            if (!config.references.some((r) => r.id === id)) return send(404, { error: "not found" });
+            config = {
+              ...config,
+              references: config.references.map((r) =>
+                r.id === id ? { ...r, ...(annotation !== undefined && { annotation: String(annotation).trim() }), ...(image !== undefined && { image }) } : r,
+              ),
+            };
+            send(200, config);
+          });
+          return;
+        }
         const ref = url.match(/^\/config\/references\/(.+)$/);
         if (req.method === "DELETE" && ref) {
           const before = config.references.length;
