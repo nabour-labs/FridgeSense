@@ -356,6 +356,38 @@ Then test in the simulator under [Alexa+ add-ons](https://developer.amazon.com/a
 
 "Today" uses the household's time zone (default `America/Toronto`). Change it with `cdk deploy -c timeZone=America/Vancouver`. A schedule pings the MCP Lambda every 5 minutes so the first question after a quiet spell still answers within Alexa's 500 ms budget.
 
+### Kitchen TV (Fire TV)
+
+The app has a read-only TV view at `<SiteUrl>/#tv`: what is in the fridge, the five latest door openings and today's opens, sized for a 1080p TV across the room. It shows no photos and has nothing to select, so it is safe to leave on in a shared kitchen. It refreshes the inventory every 10 s and the openings every 30 s. Sign in once with the demo passcode.
+
+![TV dashboard](docs/screenshots/dark/tv-dashboard.jpg)
+
+`firetv/` is a Vega OS app for Fire TV that opens that page full screen in a WebView. It holds no passcode: you sign in on the TV with the remote, and the session stays in the WebView for 24 hours. If the site can't be reached, it shows "Can't reach FridgeSense" with a **Try again** button. Run it on the Vega Virtual Device (the Fire TV simulator) or on a Vega OS Fire TV stick:
+
+```bash
+curl -fsSL https://sdk-installer.vega.labcollab.net/get_vvm.sh | bash && source ~/vega/env
+```
+
+```bash
+cd firetv && cp site.config.example.json site.config.json
+```
+
+Put the `SiteUrl` deploy output in `site.config.json`, then build, start the simulator and install the app:
+
+```bash
+npm install && npm run build:release
+```
+
+```bash
+vega virtual-device start --no-gui
+```
+
+```bash
+vega run-app build/aarch64-release/fridgesensetv_aarch64.vpkg ca.nabour.fridgesense.main -d VirtualDevice
+```
+
+Use the `aarch64` package on an Apple Silicon Mac, `x86_64` on an Intel Mac or Linux, and `armv7` on a Fire TV stick. On macOS 26 the simulator's window crashes at boot, so start it with `--no-gui` and take screenshots through the emulator console (`screenrecord screenshot <dir>` on `localhost:5554`).
+
 ### Debug traces
 
 When traces are on, every motion the camera reports leaves a trace for 7 days. **Config → Debug** lists them by day; tap one, or the bug icon on an Activity card, to see:
@@ -408,7 +440,8 @@ The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpe
 - `backend/`: Python 3.13 package `fridgesense` (Ring client, Lambda handlers, Nova analysis, MCP server, CLI). uv + pytest.
 - `clipblur/`: the container Lambda that blurs faces in clips with deface. uv + pytest.
 - `infra/`: AWS CDK app in TypeScript. Vitest.
-- `pwa/`: the phone app (Vite, React, Tailwind, Recharts, vite-plugin-pwa). Vitest + Testing Library.
+- `pwa/`: the phone app (Vite, React, Tailwind, Recharts, vite-plugin-pwa), including the `#tv` kitchen view. Vitest + Testing Library.
+- `firetv/`: the Fire TV (Vega OS) app that hosts the kitchen view. React Native for Vega + Jest.
 - `openspec/`: specs and changes.
 - `docs/`: hackathon plan, [product feedback](docs/product-feedback.md), [friction log](docs/friction-log.md) and screenshots.
 
@@ -430,6 +463,10 @@ cd infra && npm ci && npm test
 
 ```bash
 cd pwa && npm ci && npm test
+```
+
+```bash
+cd firetv && npm ci && npm test
 ```
 
 Tests never call Ring, AWS or Bedrock: Ring responses come from `backend/tests/fixtures/`, AWS is mocked with moto, and Nova answers are canned. CI runs the same commands on every pull request to `main`.

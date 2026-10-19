@@ -1,0 +1,15 @@
+*.iml
+*.swp
+.idea
+.DS_Store
+.vscode
+.tmp
+
+dist
+build
+node_modules
+CMakeUserPresets.json
+npm-debug.log
+# The deployed site (SiteUrl output); copy from site.config.example.json
+site.config.json
+buildinfo.json
