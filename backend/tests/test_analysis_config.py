@@ -128,3 +128,24 @@ def test_config_kept_per_account(table):
     milk = cfg.load(table, A).references[0]
     assert cfg.delete_reference(table, B, milk.sk) is False
     assert len(cfg.load(table, A).references) == 1
+
+
+# Edit the annotation / Replace the image / Edit an unknown reference
+def test_update_reference(table):
+    milk = add(table, A, "milk bag", now_ms=1)
+    add(table, A, "soda can", now_ms=2)
+    assert cfg.update_reference(table, A, milk.sk, "chocolate milk", None, now_ms=3) is True
+    first = cfg.load(table, A).references[0]
+    assert (first.sk, first.annotation, first.image, first.created_at) == (
+        milk.sk,
+        "chocolate milk",
+        milk.image,
+        milk.created_at,
+    )
+    assert cfg.update_reference(table, A, milk.sk, None, JPEG + b"new", now_ms=4) is True
+    first = cfg.load(table, A).references[0]
+    assert (first.annotation, first.image) == ("chocolate milk", JPEG + b"new")
+    assert [r.annotation for r in cfg.load(table, A).references] == ["chocolate milk", "soda can"]
+    assert cfg.update_reference(table, A, "REF#nope", "x", None, now_ms=5) is False
+    assert cfg.update_reference(table, B, milk.sk, "x", None, now_ms=5) is False
+    assert cfg.update_reference(table, A, "CONFIG#instructions", "x", None, now_ms=5) is False
