@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -128,6 +128,26 @@ def open_span(scores: list[float], threshold: float) -> list[int] | None:
         return None
     end = min(opened[-1] + 1, len(scores) - 1)
     return list(range(opened[0], end + 1))
+
+
+# A closed run this long ends an opening: someone blocking the zone for a moment does not.
+MIN_CLOSED_GAP_MS = 10_000
+
+
+def open_spans(
+    opened: list[bool], times_ms: list[int], min_gap_ms: int = MIN_CLOSED_GAP_MS
+) -> list[list[int]]:
+    """One open span per opening: a closed run of `min_gap_ms` or more (from its first closed
+    still to the next open one) splits them. Each span runs from its first open still through
+    the first still after its last open one, as `open_span` does."""
+    groups: list[list[int]] = []
+    for i in (i for i, is_open in enumerate(opened) if is_open):
+        if groups and times_ms[i] - times_ms[groups[-1][-1] + 1] < min_gap_ms:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    last = len(opened) - 1
+    return [list(range(g[0], min(g[-1] + 1, last) + 1)) for g in groups]
 
 
 SUSPECT_MIN_FRAMES = 10
@@ -450,6 +470,16 @@ class Downloaded:
     status: int | None = None
 
 
+OPENING_DIR = "opening_dir"  # in a media state only: opening k >= 2's folder under the prefix
+
+
+def media_prefix(state: dict) -> str:
+    """Where a door opening's stills, clips and analysis video go: the motion's stills prefix,
+    plus `opening-<k>/` for the second and later openings of the motion."""
+    prefix = stills_prefix(state["account_id"], state["device_id"], state["window"]["start_ms"])
+    return prefix + state.get(OPENING_DIR, "")
+
+
 def download_all_stills(
     ring: RingClient,
     http: httpx.Client,
@@ -499,7 +529,7 @@ def store_blurred_stills(
 
     Returns (key, blurred bytes) pairs. Only blurred stills are ever stored.
     """
-    prefix = stills_prefix(state["account_id"], state["device_id"], state["window"]["start_ms"])
+    prefix = media_prefix(state)
     saved = []
     for n, data in raw:
         blurred = blurrer.blur(
@@ -814,8 +844,7 @@ def store_analysis_video(
         img = Image.open(io.BytesIO(data)).convert("RGB")
         return _crop_box(img, crop) if crop is not None else img
 
-    key = stills_prefix(state["account_id"], state["device_id"], state["window"]["start_ms"])
-    key += "analysis.mp4"
+    key = media_prefix(state) + "analysis.mp4"
     try:
         body = clip_frames.encode_video([cropped(frames[i][1]) for i in indexes])
     except Exception as e:  # a missing video only costs the analysis its best input
@@ -873,7 +902,7 @@ def store_open_clip(
         )
         return {}
     name = "clip-raw.mp4" if raw else "clip.mp4"
-    key = stills_prefix(state["account_id"], state["device_id"], start_ms) + name
+    key = media_prefix(state) + name
     extra = {"Tagging": "transient=true"} if raw else {}
     try:
         s3.put_object(
@@ -977,12 +1006,8 @@ def _fetch_stills(
             if clip is not None:  # frames were scored with the stored shift: score them again
                 clip_values = [check.zone_values(data) for _, data in raw]
     times = [d.at_ms for d in downloaded]
-    opened_ms, closed_ms = window["start_ms"], window["end_ms"]
-    still_keys: list[str] = []
-    still_ms: list[int] = []
-    clip_fields: dict = {}
-    video_span: list[int] | None = None
-    status = "no_media"
+    # Too few stills: one no_media door event over the whole window.
+    openings = [_Opening(1, None, window["start_ms"], window["end_ms"])]
     rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
     trace = DoorTrace(
         stills=downloaded, values={}, check=check, outcome="no_media", face_blur=face_blur
@@ -1029,8 +1054,9 @@ def _fetch_stills(
             results = [check.result_of(v) for v in values]
         best = check.best(results)
         rule_log = {**rule_log, "feature": best.feature, "threshold": best.threshold}
-        span = open_span([1.0 if r.is_open else 0.0 for r in results], 1.0)
-        if span is None:
+        raw_ms = [times[n - 1] for n, _ in raw]
+        spans = open_spans([r.is_open for r in results], raw_ms)
+        if not spans:
             log_event(
                 "motion_not_door",
                 account_id=account_id,
@@ -1041,44 +1067,35 @@ def _fetch_stills(
             )
             learn()
             return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
-        opened_ms = times[raw[span[0]][0] - 1]
-        if not results[span[-1]].is_open:  # the first closed still after the opening
-            closed_ms = times[raw[span[-1]][0] - 1]
-        picks = pick(span)
-        video_span = span
-        trace.open_span = [raw[i][0] for i in span]
-        trace.picked = [raw[i][0] for i in picks]
-        # On the clip path these are the scored frames themselves: a Ring still at the same
-        # time can show another moment (it is the nearest frame within ±10 s).
-        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(picks, start=1)]
-        stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
-        still_keys = [k for k, _ in stills]
-        pick_ms = {f"still-{k}.jpg": times[raw[i][0] - 1] for k, i in enumerate(picks, start=1)}
-        still_ms = [pick_ms[key.rsplit("/", 1)[1]] for key in still_keys]
-        trace.stored_keys = still_keys
-        if clip and kept:
-            closed = closed_ms if not results[span[-1]].is_open else None
-            clip_fields = store_open_clip(
-                s3, bucket, state, kept[0], opened_ms, closed, clip_dir, raw=face_blur
-            )
-        if len(stills) >= MIN_STILLS:
-            status = "analyzing"
+        openings = []
+        for k, span in enumerate(spans, start=1):
+            # the first closed still after the opening, or the window end if it never closed
+            closed = None if results[span[-1]].is_open else raw_ms[span[-1]]
+            o = _Opening(k, span, raw_ms[span[0]], closed or window["end_ms"])
+            o_state = o.media_state(state)
+            picks = pick(span)
+            o.picked = [raw[i][0] for i in picks]
+            # On the clip path these are the scored frames themselves: a Ring still at the same
+            # time can show another moment (it is the nearest frame within ±10 s).
+            picked = [(j, crop_still(raw[i][1], crop)) for j, i in enumerate(picks, start=1)]
+            stills = store_blurred_stills(s3, bucket, blurrer, o_state, picked)
+            o.still_keys = [key for key, _ in stills]
+            pick_ms = {f"still-{j}.jpg": raw_ms[i] for j, i in enumerate(picks, start=1)}
+            o.still_ms = [pick_ms[key.rsplit("/", 1)[1]] for key in o.still_keys]
+            if clip and kept:
+                o.clip_fields = store_open_clip(
+                    s3, bucket, o_state, kept[0], o.opened_ms, closed, clip_dir, raw=face_blur
+                )
+            if len(stills) >= MIN_STILLS:
+                o.status = "analyzing"
+            openings.append(o)
 
-    door_sk = f"DOOR#{iso_utc(window['start_ms'])}#{device_id}"
+    first = openings[0]
+    trace.open_span = [raw[i][0] for i in first.span or []]
+    trace.picked, trace.stored_keys = first.picked, first.still_keys
     claim = window["ring_event_id"] or f"ts-{state['timestamp_ms']}"
     pk = account_pk(account_id)
-    event = {
-        "pk": pk,
-        "sk": door_sk,
-        "device_id": device_id,
-        "ring_event_id": window["ring_event_id"],
-        "opened_at": iso_utc(opened_ms),
-        "closed_at": iso_utc(closed_ms),
-        "duration_s": round((closed_ms - opened_ms) / 1000),
-        "still_keys": still_keys,
-        **{k: v for k, v in clip_fields.items() if k != "clip"},
-        "status": status,
-    }
+    items = [o.event(pk, window, device_id) for o in openings]
     try:
         table.transact(
             [
@@ -1087,46 +1104,94 @@ def _fetch_stills(
                         "Item": {
                             "pk": pk,
                             "sk": f"RINGEVENT#{device_id}#{claim}",
-                            "door_sk": door_sk,
+                            "door_sk": first.door_sk(window, device_id),
                         },
                         "ConditionExpression": "attribute_not_exists(sk)",
                     }
                 },
-                {"Put": {"Item": event}},
+                *({"Put": {"Item": item}} for item in items),
             ]
         )
     except TransactionConflict as e:
         if e.reasons and e.reasons[0] == "ConditionalCheckFailed":
             log_event("door_event_duplicate", account_id=account_id, ring_event=claim)
-            if "clip" in clip_fields:  # nothing will blur it
-                s3.delete_object(Bucket=bucket, Key=clip_fields["clip"]["raw_key"])
+            for o in openings:
+                if "clip" in o.clip_fields:  # nothing will blur it
+                    s3.delete_object(Bucket=bucket, Key=o.clip_fields["clip"]["raw_key"])
             return done({**state, "outcome": "duplicate"})
         raise
-    outcome = "door_open" if status == "analyzing" else "no_media"
-    video: dict = {}
-    if outcome == "door_open" and clip is not None and video_span is not None:
-        indexes, step = video_frame_indexes(video_span)
-        video = store_analysis_video(
-            s3, bucket, state, raw, indexes, step, crop, frame_interval_ms or 0
+    analyzed = []
+    for o, item in zip(openings, items, strict=True):
+        outcome = "door_open" if o.status == "analyzing" else "no_media"
+        video: dict = {}
+        if outcome == "door_open" and clip is not None and o.span is not None:
+            indexes, step = video_frame_indexes(o.span)
+            video = store_analysis_video(
+                s3, bucket, o.media_state(state), raw, indexes, step, crop, frame_interval_ms or 0
+            )
+            if video:
+                video = {**video, "start_ms": times[raw[indexes[0]][0] - 1]}
+        log_event(
+            "door_event_recorded",
+            account_id=account_id,
+            door_sk=item["sk"],
+            outcome=outcome,
+            **rule_log,
         )
-        if video:
-            video = {**video, "start_ms": times[raw[indexes[0]][0] - 1]}
+        if outcome == "door_open":
+            analyzed.append(o.output(state, item["sk"], video))
     learn()
-    log_event(
-        "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
-    )
-    trace.door_sk = door_sk
-    trace.opened_at, trace.closed_at = event["opened_at"], event["closed_at"]
-    raw_clip = {"clip": clip_fields["clip"]} if "clip" in clip_fields else {}
-    analysis_video = {"analysis_video": video} if video else {}
-    return done(
-        {
-            **state,
-            "outcome": outcome,
-            "door_sk": door_sk,
-            "still_keys": still_keys,
-            "still_ms": still_ms,
-            **raw_clip,
-            **analysis_video,
+    trace.door_sk = items[0]["sk"]
+    trace.opened_at, trace.closed_at = items[0]["opened_at"], items[0]["closed_at"]
+    if analyzed:
+        return done({**analyzed[0], "openings": analyzed})
+    return done({**first.output(state, items[0]["sk"], {}), "outcome": "no_media"})
+
+
+@dataclass
+class _Opening:
+    """One door opening in a motion: its span (None: too few stills) and what was stored."""
+
+    k: int
+    span: list[int] | None
+    opened_ms: int
+    closed_ms: int
+    picked: list[int] = field(default_factory=list)
+    still_keys: list[str] = field(default_factory=list)
+    still_ms: list[int] = field(default_factory=list)
+    clip_fields: dict = field(default_factory=dict)
+    status: str = "no_media"
+
+    def door_sk(self, window: dict, device_id: str) -> str:
+        sk = f"DOOR#{iso_utc(window['start_ms'])}#{device_id}"
+        return sk if self.k == 1 else f"{sk}#{self.k}"
+
+    def media_state(self, state: dict) -> dict:
+        """The state the media helpers key from: opening k >= 2 stores under opening-<k>/."""
+        return state if self.k == 1 else {**state, OPENING_DIR: f"opening-{self.k}/"}
+
+    def event(self, pk: str, window: dict, device_id: str) -> dict:
+        return {
+            "pk": pk,
+            "sk": self.door_sk(window, device_id),
+            "device_id": device_id,
+            "ring_event_id": window["ring_event_id"],
+            "opened_at": iso_utc(self.opened_ms),
+            "closed_at": iso_utc(self.closed_ms),
+            "duration_s": round((self.closed_ms - self.opened_ms) / 1000),
+            "still_keys": self.still_keys,
+            **{k: v for k, v in self.clip_fields.items() if k != "clip"},
+            "status": self.status,
         }
-    )
+
+    def output(self, state: dict, door_sk: str, video: dict) -> dict:
+        raw_clip = {"clip": self.clip_fields["clip"]} if "clip" in self.clip_fields else {}
+        return {
+            **state,
+            "outcome": "door_open",
+            "door_sk": door_sk,
+            "still_keys": self.still_keys,
+            "still_ms": self.still_ms,
+            **raw_clip,
+            **({"analysis_video": video} if video else {}),
+        }

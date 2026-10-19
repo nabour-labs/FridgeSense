@@ -2,13 +2,13 @@
 
 ## 1. Split the open span
 
-- [ ] 1.1 Write failing tests in `backend/tests/test_open_spans.py` for "Short closed run stays inside the opening" and "Long closed run splits the opening": a gap of exactly 10 s splits, an opening runs to the end, no open frame gives no span. Run `uv run pytest tests/test_open_spans.py` and see them fail.
-- [ ] 1.2 Implement `open_spans(opened, times_ms, min_gap_ms=MIN_CLOSED_GAP_MS)` in `door_events.py` (keep `open_span` only if something else still uses it). Verify with `uv run pytest tests/test_open_spans.py` green.
+- [x] 1.1 Write failing tests in `backend/tests/test_open_spans.py` for "Short closed run stays inside the opening" and "Long closed run splits the opening": a gap of exactly 10 s splits, an opening runs to the end, no open frame gives no span. Run `uv run pytest tests/test_open_spans.py` and see them fail.
+- [x] 1.2 Implement `open_spans(opened, times_ms, min_gap_ms=MIN_CLOSED_GAP_MS)` in `door_events.py` (keep `open_span` only if something else still uses it). Verify with `uv run pytest tests/test_open_spans.py` green.
 
 ## 2. One door event per opening
 
-- [ ] 2.1 Write failing tests in `backend/tests/test_fetch_stills_split.py` (synthetic clip `[(1000, 6000), (18000, 24000)]`, 30 s window) for "Two openings in one clip", "Brief closed run in one opening", "Stills from each opening", "Keys per opening", "Media from its own span only" (blur on: `clip-raw.mp4` and `analysis.mp4` per prefix), "Output for two openings", "Output for one opening", "Each opening has its own status" and "Two openings in a re-run". Add a stills-path test for "Two openings in one window". Run them and see each fail for the right reason.
-- [ ] 2.2 Refactor `_fetch_stills` to run the per-opening branch (picks, blurred stills, open clip, status, door-event item) once per span, with opening-k keys and prefixes. Write all door events and the claim in one transaction, and build the analysis video per opening. Return `openings`, with top-level fields from opening 1. Verify that 2.1 passes and that `tests/test_fetch_stills_clip.py`, `test_fetch_stills_task.py`, `test_door_clip_store.py`, `test_analysis_video_store.py` and `test_analyze_video.py` stay green.
+- [x] 2.1 Write failing tests in `backend/tests/test_fetch_stills_split.py` (synthetic clip `[(1000, 6000), (18000, 24000)]`, 30 s window) for "Two openings in one clip", "Brief closed run in one opening", "Stills from each opening", "Keys per opening", "Media from its own span only" (blur on: `clip-raw.mp4` and `analysis.mp4` per prefix), "Output for two openings", "Output for one opening", "Each opening has its own status" and "Two openings in a re-run". Add a stills-path test for "Two openings in one window". Run them and see each fail for the right reason.
+- [x] 2.2 Refactor `_fetch_stills` to run the per-opening branch (picks, blurred stills, open clip, status, door-event item) once per span, with opening-k keys and prefixes. Write all door events and the claim in one transaction, and build the analysis video per opening. Return `openings`, with top-level fields from opening 1. Verify that 2.1 passes and that `tests/test_fetch_stills_clip.py`, `test_fetch_stills_task.py`, `test_door_clip_store.py`, `test_analysis_video_store.py` and `test_analyze_video.py` stay green.
 
 ## 3. Traces and trace lookup
 
