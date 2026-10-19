@@ -20,9 +20,9 @@ State as of Oct 17: repo is public on GitHub with an MIT license; `main` has the
 - [ ] Set `demo_passcode` in `fridgesense/ring-app` (README, "Demo access"). Currently **not set** (secret has only `client_id`, `client_secret`, `hmac_key`, `mcp_key`, `passcode`, `user_passcode`)
 - [ ] Replace the README placeholders `<SiteUrl>` and `<demo passcode>` in "Try it (judges)" and remove the TODO note. Decide whether the demo passcode goes in the public README or only in the Devpost "testing instructions" field
 - [ ] Sign in with the demo passcode on a phone: Fridge, Activity, Stats, Ask all show data; editing is disabled; "Demo · read-only" badge visible
-- [x] **Live view privacy:** the demo passcode can open **Livestream**, which is not face-blurred. Accepted: Livestream stays open to every role, and Config → Camera says it is never blurred
+- [x] **Live view privacy:** live video is not face-blurred, so **Livestream** is owner-only: the button is hidden for the user and demo passcodes, and the live routes answer them 403
 - [x] Debug traces: off by default when deployed (`-c debugTraces=true` turns them on), and while **Blur faces** is on they keep only blurred 160 px thumbnails. Keep **Blur faces** on for recording and judging
-- [ ] Ring plan/trial stays active through **Nov 20** (trial started ~Oct 14 ends ~Nov 14). Pay for a month if needed
+- [x] Ring plan stays active through **Nov 20**: Jayson subscribed monthly (Oct 18), so it no longer depends on the trial
 - [ ] Keep using the fridge normally during judging so the 7-day Activity and stills are never empty
 - [ ] Ring token refresh is healthy: `uv run fridgesense-devices` lists the camera; no `token_refresh_rejected` in logs
 - [ ] AWS budget alert confirmed (SNS subscription email clicked); `askAgentDailyLimit` sensible for judge traffic
