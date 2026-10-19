@@ -38,16 +38,33 @@ def test_request_built_from_stills_and_inventory():
     assert req["inferenceConfig"]["temperature"] == 0
 
 
-def test_tool_schema_follows_nova_rules():
+# Schema order and required fields
+def test_schema_order_and_required_fields():
     req = build_request(DEFAULT_MODEL_ID, STILLS, [])
     [tool] = req["toolConfig"]["tools"]
     schema = tool["toolSpec"]["inputSchema"]["json"]
     assert set(schema) == {"type", "properties", "required"}
-    assert schema["required"] == ["added", "removed"]
-    item = schema["properties"]["added"]["items"]
-    assert item["required"] == ["item", "category", "quantity", "confidence"]
+    assert list(schema["properties"]) == ["observations", "items"]
+    assert schema["required"] == ["observations", "items"]
+    assert schema["properties"]["observations"]["type"] == "string"
+    item = schema["properties"]["items"]["items"]
+    assert item["required"] == ["item", "category", "quantity", "going_in", "coming_out"]
     assert item["properties"]["category"]["enum"] == CATEGORIES
-    assert schema["properties"]["removed"]["items"] == item
+    assert item["properties"]["going_in"]["type"] == "boolean"
+    assert item["properties"]["coming_out"]["type"] == "boolean"
+
+
+# Hand-evidence instructions
+def test_hand_evidence_instructions():
+    text = content_of(build_request(DEFAULT_MODEL_ID, STILLS, ["milk"]))[-1]["text"]
+    assert "in a person's hand" in text
+    assert "crossing the fridge opening" in text
+    assert "resting on shelves or in the door are not changes" in text
+    assert (
+        "Names already in the inventory (reuse them for the same kind of item; "
+        "do not report them unless you see them carried): [milk]"
+    ) in text
+    assert "Compare" not in text
 
 
 # Empty inventory
@@ -224,8 +241,8 @@ def test_retry_sends_the_same_cached_request():
 def test_schema_and_prompt_ask_for_images():
     req = build_request(DEFAULT_MODEL_ID, STILLS, [])
     [tool] = req["toolConfig"]["tools"]
-    item = tool["toolSpec"]["inputSchema"]["json"]["properties"]["added"]["items"]
-    assert item["properties"]["images"]["type"] == "array"
-    assert item["properties"]["images"]["items"] == {"type": "integer"}
-    assert "images" not in item["required"]
-    assert "images" in content_of(req)[-1]["text"]
+    item = tool["toolSpec"]["inputSchema"]["json"]["properties"]["items"]["items"]
+    assert item["properties"]["moments"]["type"] == "array"
+    assert item["properties"]["moments"]["items"] == {"type": "number"}
+    assert "moments" not in item["required"]
+    assert "moments" in content_of(req)[-1]["text"]

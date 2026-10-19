@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
-from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
 
 from fridgesense.logs import log_event
 from fridgesense.usage import Prices, Tokens, price
@@ -37,50 +37,69 @@ RETRYABLE = {
     "InternalServerException",
 }
 
-_CHANGE_SCHEMA = {
+_ITEM_SCHEMA = {
     "type": "object",
     "properties": {
         "item": {"type": "string", "description": "Item type, e.g. milk, eggs, soda can"},
         "category": {"type": "string", "enum": CATEGORIES},
         "quantity": {"type": "integer", "description": "How many whole items"},
         "confidence": {"type": "number", "description": "0 to 1; below 0.7 means unsure"},
-        "images": {
+        "going_in": {
+            "type": "boolean",
+            "description": "Seen in a hand moving into the fridge, and not carried back out",
+        },
+        "coming_out": {
+            "type": "boolean",
+            "description": "Seen in a hand moving out of the fridge, and not put back",
+        },
+        "moments": {
             "type": "array",
-            "items": {"type": "integer"},
-            "description": "The 1 or 2 image numbers where this item is most clearly visible",
+            "items": {"type": "number"},
+            "description": "The 1 or 2 moments where the item is clearest in the hand",
         },
     },
-    "required": ["item", "category", "quantity", "confidence"],
+    "required": ["item", "category", "quantity", "going_in", "coming_out"],
 }
 TOOL_SPEC = {
     "toolSpec": {
         "name": TOOL_NAME,
-        "description": "Record the items put into and taken out of the fridge in this opening.",
+        "description": "Record the items carried into and out of the fridge in this opening.",
         "inputSchema": {
             "json": {
                 "type": "object",
                 "properties": {
-                    "added": {"type": "array", "items": _CHANGE_SCHEMA},
-                    "removed": {"type": "array", "items": _CHANGE_SCHEMA},
+                    "observations": {
+                        "type": "string",
+                        "description": "What the hands did, in time order, in a few sentences",
+                    },
+                    "items": {"type": "array", "items": _ITEM_SCHEMA},
                 },
-                "required": ["added", "removed"],
+                "required": ["observations", "items"],
             }
         },
     }
 }
+INVENTORY_LINE = (
+    "Names already in the inventory (reuse them for the same kind of item; "
+    "do not report them unless you see them carried): {inventory}\n"
+)
 INSTRUCTIONS = (
-    "The images above are stills from a camera watching a fridge, in time order, "
-    "while the door was open. Compare them and report what was put into the fridge "
-    "(added) and what was taken out (removed).\n"
+    "The media above shows a camera watching a fridge, in time order, while the door was open. "
+    "Report only items you see in a person's hand crossing the fridge opening.\n"
+    "- First write observations: what the hands did, in time order.\n"
+    "- Items resting on shelves or in the door are not changes, even if you can see them "
+    "clearly. Do not list what is in the fridge.\n"
+    "- going_in: the item is in a hand moving into the fridge and the hand comes out "
+    "without it. coming_out: a hand comes out of the fridge holding it. If a hand takes it "
+    "out and puts it back, set both. If you are unsure, set both to false.\n"
     "- Name item types, not brands (milk, eggs, chocolate bar, soda can).\n"
-    "- Reuse a name from the current inventory when it is the same kind of item.\n"
     "- Count whole items; use quantity 1 if unsure of the count.\n"
     "- Set confidence from 0 to 1; use less than 0.7 when you are unsure.\n"
-    "- For each change, set images to the 1 or 2 image numbers where that item is most "
-    "clearly visible.\n"
-    "- If nothing was added or removed, return empty lists.\n"
-    "Current inventory: {inventory}\n"
+    "- Set moments to the 1 or 2 {moment_unit} where the item is clearest in the hand.\n"
+    "- If nothing was carried in or out, return an empty items list.\n"
 )
+STILL_MOMENTS = "image numbers"
+VIDEO_MOMENTS = "seconds from the start of the video"
 TOOL_LINE = f"Call {TOOL_NAME} with your answer."
 # Bedrock prompt caching (opt-in): the account's references, then the stills, become a cached
 # prefix that a burst of openings and the invalid-answer retry can read back.
@@ -153,9 +172,63 @@ class Change(BaseModel):
         return kept[:MAX_PROOF]
 
 
+DropReason = Literal["no_hand_evidence", "in_and_out"]
+
+
+class Dropped(BaseModel):
+    """An item Nova listed without one clear direction: never applied or saved as pending."""
+
+    item: str
+    reason: DropReason
+
+
 class FridgeChanges(BaseModel):
     added: list[Change]
     removed: list[Change]
+    dropped: list[Dropped] = []
+    observations: str = ""
+
+
+class _Item(Change):
+    """One `items` entry of the tool input: a change plus where it was seen in a hand."""
+
+    images: list[int] = Field(default=[], validation_alias="moments")
+    going_in: bool = False
+    coming_out: bool = False
+
+    @field_validator("going_in", "coming_out", mode="before")
+    @classmethod
+    def _flag(cls, v: Any) -> bool:
+        return v is True  # only JSON true counts: "yes", 1 and null are not evidence
+
+
+class _Answer(BaseModel):
+    observations: str = ""
+    items: list[_Item]
+
+    @field_validator("observations", mode="before")
+    @classmethod
+    def _observations(cls, v: Any) -> str:
+        return v if isinstance(v, str) else ""
+
+
+def changes_from(answer: dict, images: int = MAX_IMAGES) -> FridgeChanges:
+    """Direction from the evidence flags, not from any label of Nova's. Raises ValidationError
+    for a malformed answer."""
+    parsed = _Answer.model_validate(answer, context={"images": images})
+    added, removed, dropped = [], [], []
+    for it in parsed.items:
+        change = Change.model_validate(it.model_dump(include=set(Change.model_fields)))
+        if it.going_in and not it.coming_out:
+            added.append(change)
+        elif it.coming_out and not it.going_in:
+            removed.append(change)
+        else:
+            reason = "in_and_out" if it.going_in else "no_hand_evidence"
+            dropped.append(Dropped(item=it.item, reason=reason))
+    return FridgeChanges(
+        added=added, removed=removed, dropped=dropped, observations=parsed.observations
+    )
 
 
 @dataclass
@@ -220,7 +293,8 @@ def build_request(
         content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
     if cache:
         content.append(CACHE_POINT)
-    text = INSTRUCTIONS.format(inventory="[" + ", ".join(inventory) + "]")
+    text = INSTRUCTIONS.format(moment_unit=STILL_MOMENTS)
+    text += INVENTORY_LINE.format(inventory="[" + ", ".join(inventory) + "]")
     if instructions:
         text += f"Owner's instructions: {instructions}\n"
     content.append({"text": text + TOOL_LINE})
@@ -238,8 +312,11 @@ def parse_response(resp: dict, images: int = MAX_IMAGES) -> FridgeChanges | None
     for block in resp.get("output", {}).get("message", {}).get("content", []):
         tool = block.get("toolUse")
         if tool and tool.get("name") == TOOL_NAME:
+            answer = tool.get("input")
+            if not isinstance(answer, dict):
+                return None
             try:
-                return FridgeChanges.model_validate(tool.get("input"), context={"images": images})
+                return changes_from(answer, images)
             except ValidationError:
                 return None
     return None
@@ -358,6 +435,8 @@ class NovaAnalyzer:
                 latency_ms=None if latency is None else int(latency),
             )
             if changes is not None:
+                for d in changes.dropped:
+                    log_event("change_dropped", item=d.item, reason=d.reason, **(context or {}))
                 result.changes = changes
                 return result
             log_event(

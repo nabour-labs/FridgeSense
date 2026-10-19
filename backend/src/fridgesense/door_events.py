@@ -806,6 +806,7 @@ def _fetch_stills(
     face_blur: bool = True,
     paused_for: Callable[[str, str], bool] | None = None,
     kept: list[Path] | None = None,
+    area_for: Callable[[str, str], Box | None] | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
@@ -828,6 +829,10 @@ def _fetch_stills(
     if paused_for is not None and paused_for(account_id, device_id):
         log_event("door_check_paused", account_id=account_id, device_id=device_id)
         return {**state, "outcome": "paused"}
+    if area_for is not None:  # the owner's fridge area, once per motion, wins over STILL_CROP
+        from fridgesense.fridge_area import analysis_box  # fridge_area imports this module
+
+        crop = analysis_box(area_for(account_id, device_id), crop)
     fallback_threshold = check.threshold  # DOOR_THRESHOLD: the default rules' threshold
     base = _device_check(check, setup_for, account_id, device_id)
     plan = _follow_plan(table, account_id, device_id, base)

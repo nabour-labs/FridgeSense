@@ -68,33 +68,65 @@ def test_text_before_the_tool_call():
     assert as_tuples(changes.added) == [("milk", "dairy", 1, 0.92)]
 
 
+def item(
+    name, category="other", quantity=1, confidence=0.9, going_in=True, coming_out=False, **extra
+):
+    return {
+        "item": name,
+        "category": category,
+        "quantity": quantity,
+        "confidence": confidence,
+        "going_in": going_in,
+        "coming_out": coming_out,
+        **extra,
+    }
+
+
+def answer(*items, observations="Hands moved things."):
+    return {"observations": observations, "items": list(items)}
+
+
 # Values out of range
 def test_values_out_of_range():
     resp = tool_response(
-        {
-            "added": [
-                {"item": "cookies", "category": "snacks & treats", "quantity": 0, "confidence": 1.4}
-            ],
-            "removed": [{"item": "jam", "category": "condiment", "quantity": -2, "confidence": -1}],
-        }
+        answer(
+            item("cookies", "snacks & treats", quantity=0, confidence=1.4),
+            item("jam", "condiment", quantity=-2, confidence=-1, going_in=False, coming_out=True),
+        )
     )
     changes = parse_response(resp)
     assert as_tuples(changes.added) == [("cookies", "other", 1, 1.0)]
     assert as_tuples(changes.removed) == [("jam", "condiment", 1, 0.0)]
 
 
+# Evidence flags that are not booleans
+def test_evidence_flags_that_are_not_booleans():
+    changes = parse_response(tool_response(answer(item("milk", going_in="yes", coming_out=1))))
+    assert changes is not None
+    assert changes.added == [] and changes.removed == []
+    assert [(d.item, d.reason) for d in changes.dropped] == [("milk", "no_hand_evidence")]
+
+
+def test_observations_default_to_empty():
+    changes = parse_response(tool_response({"items": [item("milk")]}))
+    assert changes.observations == ""
+    assert as_tuples(changes.added) == [("milk", "other", 1, 0.9)]
+
+
+# Old answer shape
+def test_old_answer_shape():
+    assert parse_response(load_fixture("nova/converse_old_shape.json")) is None
+
+
 @pytest.mark.parametrize(
     "tool_input",
     [
-        {"added": []},
-        {"removed": []},
-        {
-            "added": [{"item": "  ", "category": "dairy", "quantity": 1, "confidence": 0.9}],
-            "removed": [],
-        },
-        {"added": "milk", "removed": []},
+        {"observations": "x"},
+        {"observations": "x", "items": "milk"},
+        answer(item("  ")),
+        answer("milk"),
     ],
-    ids=["no-removed", "no-added", "empty-item", "added-not-list"],
+    ids=["no-items", "items-not-list", "empty-item", "item-not-object"],
 )
 def test_incomplete_answers_are_invalid(tool_input):
     assert parse_response(tool_response(tool_input)) is None
@@ -119,7 +151,7 @@ def test_invalid_answer_retried_once(bedrock):
 def test_invalid_answer_twice(bedrock):
     client, stub = bedrock
     stub.add_response("converse", load_fixture("nova/converse_end_turn.json"))
-    stub.add_response("converse", tool_response({"added": []}))
+    stub.add_response("converse", load_fixture("nova/converse_old_shape.json"))
     result = NovaAnalyzer(client).analyze(STILLS, [])
     stub.assert_no_pending_responses()
     assert result.changes is None
@@ -339,7 +371,7 @@ def test_call_record_for_a_valid_answer(bedrock):
     assert call.error_code is None
     assert call.request["modelId"] == "us.amazon.nova-2-lite-v1:0"
     assert call.response["stopReason"] == "tool_use"
-    assert call.response["output"]["message"]["content"][0]["toolUse"]["input"]["added"]
+    assert call.response["output"]["message"]["content"][0]["toolUse"]["input"]["items"]
     assert "ResponseMetadata" not in call.response
 
 
@@ -401,27 +433,20 @@ def test_call_record_without_metrics():
     assert call.wall_ms == 1000
 
 
-def soda(images):
-    return {
-        "item": "soda can",
-        "category": "beverage",
-        "quantity": 1,
-        "confidence": 0.9,
-        "images": images,
-    }
+def soda(moments):
+    return item("soda can", "beverage", moments=moments)
 
 
 # Scenario: Out-of-range, duplicate and extra numbers
 def test_out_of_range_duplicate_and_extra_numbers():
-    changes = parse_response(tool_response({"added": [soda([0, 2, 2, 5, 3, 4])], "removed": []}), 4)
+    changes = parse_response(tool_response(answer(soda([0, 2, 2, 5, 3, 4]))), 4)
     assert changes.added[0].images == [2, 3]
 
 
 # Scenario: Images missing or malformed
 def test_images_missing_or_malformed(bedrock):
     client, stub = bedrock
-    plain = {"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.9}
-    stub.add_response("converse", tool_response({"added": [plain, soda("2")], "removed": []}))
+    stub.add_response("converse", tool_response(answer(item("milk", "dairy"), soda("2"))))
     result = NovaAnalyzer(client).analyze(STILLS, [])
     stub.assert_no_pending_responses()  # one request: the answer was not retried
     assert [c.images for c in result.changes.added] == [[], []]
@@ -429,7 +454,7 @@ def test_images_missing_or_malformed(bedrock):
 
 # Scenario: Non-integer numbers
 def test_non_integer_numbers():
-    resp = tool_response({"added": [soda([1.0, "2", True, 2.5])], "removed": []})
+    resp = tool_response(answer(soda([1.0, "2", True, 2.5])))
     changes = parse_response(resp, 4)
     assert changes.added[0].images == [1]
 
@@ -437,6 +462,6 @@ def test_non_integer_numbers():
 # Scenario: Proof kept (numbers kept against the stills actually sent)
 def test_images_checked_against_the_stills_sent(bedrock):
     client, stub = bedrock
-    stub.add_response("converse", tool_response({"added": [soda([2, 3])], "removed": []}))
+    stub.add_response("converse", tool_response(answer(soda([2, 3]))))
     result = NovaAnalyzer(client).analyze(STILLS[:2], [])
     assert result.changes.added[0].images == [2]

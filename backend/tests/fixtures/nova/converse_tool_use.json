@@ -3,8 +3,13 @@
   "output": {"message": {"role": "assistant", "content": [
     {"toolUse": {"toolUseId": "tooluse_abc123", "name": "record_fridge_changes",
       "input": {
-        "added": [{"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.92}],
-        "removed": [{"item": "eggs", "category": "dairy", "quantity": 2, "confidence": 0.71}]
+        "observations": "A hand puts milk on the top shelf, then takes eggs out.",
+        "items": [
+          {"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.92,
+           "going_in": true, "coming_out": false, "moments": [2]},
+          {"item": "eggs", "category": "dairy", "quantity": 2, "confidence": 0.71,
+           "going_in": false, "coming_out": true, "moments": [4]}
+        ]
       }}}
   ]}},
   "stopReason": "tool_use",

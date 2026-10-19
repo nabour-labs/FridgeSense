@@ -1,0 +1,18 @@
+{
+  "ResponseMetadata": {"HTTPStatusCode": 200},
+  "output": {"message": {"role": "assistant", "content": [
+    {"toolUse": {"toolUseId": "tooluse_drop22", "name": "record_fridge_changes",
+      "input": {
+        "observations": "A hand rests on the door shelf; nothing is carried.",
+        "items": [
+          {"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.9,
+           "going_in": false, "coming_out": false, "moments": [1]},
+          {"item": "soda can", "category": "beverage", "quantity": 1, "confidence": 0.9,
+           "going_in": true, "coming_out": true, "moments": [2, 3]}
+        ]
+      }}}
+  ]}},
+  "stopReason": "tool_use",
+  "usage": {"inputTokens": 1180, "outputTokens": 96, "totalTokens": 1276},
+  "metrics": {"latencyMs": 2140}
+}

@@ -240,6 +240,29 @@ def test_analysis_sees_the_cropped_still(env, faces, monkeypatch):
     assert all(Image.open(io.BytesIO(i)).size == (160, 180) for i in images)
 
 
+# Fridge area wins over STILL_CROP (the pipeline loads the device's fridge area)
+@respx.mock
+def test_pipeline_crops_to_the_fridge_area(env, faces, monkeypatch):
+    from fridgesense import fridge_area
+
+    monkeypatch.setenv("STILL_CROP", "0.25,0.0,0.5,1.0")
+    area = {"x": 0.25, "y": 0.2, "width": 0.5, "height": 0.6}
+    fridge_area.save(FridgeTable(), ACCOUNT, DEVICE, b"\xff\xd8\xff", area, 1786715600000)
+    ring_serves(OPEN)  # 320x180
+    box = fridge_area.analysis_box((0.25, 0.2, 0.5, 0.6), None)
+    cropped = crop_still(OPEN, box)
+    for _ in range(4):
+        faces.add_response(
+            "detect_faces",
+            {"FaceDetails": []},
+            {"Image": {"Bytes": cropped}, "Attributes": ["DEFAULT"]},
+        )
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+    body = boto3.client("s3").get_object(Bucket=BUCKET, Key=state["still_keys"][0])["Body"].read()
+    assert Image.open(io.BytesIO(body)).size == (192, 118)
+
+
 def blurring_off() -> None:
     face_blur.save(FridgeTable(), ACCOUNT, False, now_ms=1786715500000)
 

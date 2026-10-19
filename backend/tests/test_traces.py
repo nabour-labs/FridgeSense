@@ -426,7 +426,7 @@ def test_nova_request_in_order(aws):
     assert texts[1] == "Reference 1: oat milk"
     assert texts[2] == "Reference 2: eggs"
     assert texts[3] == "Image 1 of 4"
-    assert "Current inventory: [milk]" in texts[-1]
+    assert "do not report them unless you see them carried): [milk]" in texts[-1]
 
 
 # Image keys are retrievable

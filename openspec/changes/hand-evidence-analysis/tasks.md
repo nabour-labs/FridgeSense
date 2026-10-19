@@ -17,20 +17,20 @@
 
 ## 3. Hand-evidence prompt and schema
 
-- [ ] 3.1 Write failing tests for "Schema order and required fields", "Hand-evidence instructions", "Schema and prompt ask for images", and an updated "Request built from stills and inventory" / "Empty inventory" / "Stills sent as bytes"
-- [ ] 3.2 Rewrite `TOOL_SPEC` and `INSTRUCTIONS` in `analysis.py` and verify 3.1 passes, with the existing owner's-config and cache-point tests still green
-- [ ] 3.3 Write failing tests for parsing: "Valid answer", "Text before the tool call", "Values out of range", "Evidence flags that are not booleans", "Old answer shape", "Invalid answer retried once", "Invalid answer twice" (new canned responses `converse_items.json`, `converse_items_dropped.json`, `converse_old_shape.json`)
-- [ ] 3.4 Write failing tests for direction: "Seen going in", "Seen coming out", "Item only seen on a shelf", "Taken out and put back", "Every item dropped", "Low confidence with evidence"
-- [ ] 3.5 Implement evidence parsing, deriving `FridgeChanges` and returning dropped items with `change_dropped` logs, and verify 3.3–3.4 pass
-- [ ] 3.6 Write failing tests for "Proof kept", "Out-of-range, duplicate and extra numbers", "Non-integer numbers", "Images missing or malformed", and "Observations not stored on the event"; implement moments → proof for stills and verify they pass
-- [ ] 3.7 Update existing tests that built `{added, removed}` answers (analyze task, save task, traces, fixtures) to the new shape without weakening any assertion, and verify `uv run pytest` is green
+- [x] 3.1 Write failing tests for "Schema order and required fields", "Hand-evidence instructions", "Schema and prompt ask for images", and an updated "Request built from stills and inventory" / "Empty inventory" / "Stills sent as bytes"
+- [x] 3.2 Rewrite `TOOL_SPEC` and `INSTRUCTIONS` in `analysis.py` and verify 3.1 passes, with the existing owner's-config and cache-point tests still green
+- [x] 3.3 Write failing tests for parsing: "Valid answer", "Text before the tool call", "Values out of range", "Evidence flags that are not booleans", "Old answer shape", "Invalid answer retried once", "Invalid answer twice" (new canned responses `converse_items.json`, `converse_items_dropped.json`, `converse_old_shape.json`)
+- [x] 3.4 Write failing tests for direction: "Seen going in", "Seen coming out", "Item only seen on a shelf", "Taken out and put back", "Every item dropped", "Low confidence with evidence"
+- [x] 3.5 Implement evidence parsing, deriving `FridgeChanges` and returning dropped items with `change_dropped` logs, and verify 3.3–3.4 pass
+- [x] 3.6 Write failing tests for "Proof kept", "Out-of-range, duplicate and extra numbers", "Non-integer numbers", "Images missing or malformed", and "Observations not stored on the event"; implement moments → proof for stills and verify they pass
+- [x] 3.7 Update existing tests that built `{added, removed}` answers (analyze task, save task, traces, fixtures) to the new shape without weakening any assertion, and verify `uv run pytest` is green
 
 ## 4. Analysis crop
 
-- [ ] 4.1 Write failing tests for "Box from the fridge area", "Box clamped at the frame edge", "No fridge area"
-- [ ] 4.2 Implement `analysis_box` and verify 4.1 passes
-- [ ] 4.3 Write failing tests for "Fridge area wins over STILL_CROP", plus the existing crop scenarios ("Crop to the visible strip", "Analysis sees the cropped still", "No crop configured", "Door check ignores the crop", "Invalid crop config") with a device that has no fridge area
-- [ ] 4.4 Load the fridge area once per motion in `fetch_stills` / `handlers/pipeline.py`, crop stills to the analysis box, and verify 4.3 passes
+- [x] 4.1 Write failing tests for "Box from the fridge area", "Box clamped at the frame edge", "No fridge area"
+- [x] 4.2 Implement `analysis_box` and verify 4.1 passes
+- [x] 4.3 Write failing tests for "Fridge area wins over STILL_CROP", plus the existing crop scenarios ("Crop to the visible strip", "Analysis sees the cropped still", "No crop configured", "Door check ignores the crop", "Invalid crop config") with a device that has no fridge area
+- [x] 4.4 Load the fridge area once per motion in `fetch_stills` / `handlers/pipeline.py`, crop stills to the analysis box, and verify 4.3 passes
 
 ## 5. Analysis video in fetch-stills
 
