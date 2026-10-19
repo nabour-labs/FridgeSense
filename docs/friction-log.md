@@ -23,6 +23,26 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-19 · Fire TV (Vega SDK) · `vega build` makes an app with no JavaScript, and nothing says so
+
+- **Task:** build the `vegaWebview` template app and run it on the Vega Virtual Device.
+- **Steps:** `vega project generate -t vegaWebview ...`, `npm install`, then `vega build` (the first command in the generator's "next steps"), then `vega run-app build/aarch64-release/fridgesensetv_aarch64.vpkg ca.nabour.fridgesense.main -d VirtualDevice`.
+- **Expected:** a package with the app's React Native bundle that opens the WebView.
+- **Actual:** `vega build` exited 0 and wrote a 1,963-byte `.vpkg` per architecture. `run-app` printed "Installed ... Successfully launched the app", but the simulator stayed on "Your apps" with the app not running. No error in either command.
+- **Severity:** Medium
+- **Workaround:** `npm run build:release` (`react-native build-vega --build-type Release`) builds the JS bundle and the native package: a 153 KB `.vpkg` that runs.
+- **Suggestion:** have `vega build` build the JS bundle for React Native projects, or fail (or warn) when a React Native app package has no bundle. Have `run-app` report when the launched app exits right away.
+
+### 2026-10-19 · Fire TV (Vega SDK) · Vega Virtual Device window crashes at boot on macOS 26
+
+- **Task:** start the Vega Virtual Device on an Apple Silicon Mac (macOS 26, Darwin 25.5) to run the Fire TV app.
+- **Steps:** installed Vega SDK 0.24.12112 with the documented `get_vvm.sh` script, then `vega virtual-device start --timeout 300 --display-res=1920,1080`.
+- **Expected:** a simulator window, then "Virtual device ready."
+- **Actual:** "Deadline reached (240s) but virtual device unresponsive." `virtual_device.err` shows `ERROR | detected a hanging thread 'QEMU2 main loop'. No response for 15010 ms`, `Fatal: QThread: Destroyed while thread is still running` and `UniversalExceptionRaise: (os/kern) failure (5)` from the bundled Android emulator 34.1.15. `vega virtual-device status` then reports `{"running":false,"process_ids":{"qemu":-1}}`.
+- **Severity:** Medium
+- **Workaround:** `vega virtual-device start --no-gui` boots in about 40 s. Screenshots come from the emulator console: `auth <~/.emulator_console_auth_token>` then `screenrecord screenshot <dir>` on `localhost:5554` (`vda` has no `emu` command).
+- **Suggestion:** update the bundled emulator for macOS 26, add a `vega device screenshot` command for headless use, and say in the install docs which macOS versions the Vega Virtual Device supports.
+
 ### 2026-10-18 · Ring Partner API · Privacy zones are a capability with no shapes, and no change event
 
 - **Task:** work out why the app reported "The camera has moved" after the owner changed the Indoor Cam 2K's privacy mask in the Ring app, and handle mask changes.

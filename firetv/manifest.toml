@@ -1,0 +1,44 @@
+schema-version = 1
+
+[package]
+title = "FridgeSense"
+version = "0.1.0"
+id = "ca.nabour.fridgesense"
+
+[os.version]
+min = "1.2"
+target = "1.2"
+
+[needs]
+[[needs.module]]
+id = "/com.amazon.vega.os@IVega_1_2"
+
+[[needs.module]]
+id = "/com.amazon.kepler.keplerscript_4@IKeplerScript_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.webview_4@IWebview_4"
+
+
+
+[components]
+[[components.interactive]]
+id = "ca.nabour.fridgesense.main"
+runtime-module = "/com.amazon.kepler.runtime.react_native_kepler_4@IReactNativeKepler_0"
+launch-type = "singleton"
+categories = ["com.amazon.category.main"]
+
+[wants]
+# Web renderer service for rendering web content
+[[wants.service]]
+id = "com.amazon.webview.renderer_service"
+
+# If Web App needs keyboard support
+[[wants.service]]
+id = "com.amazon.inputmethod.service"
+
+# To enable accessibility support for your app, we recommend you add the UCC service with the Service Registrar
+[[wants.service]]
+id = "com.amazon.kepler.ucc.publisher"
+
+# The kitchen dashboard plays no media: the template's media, audio, DRM and Group-IPC services are left out.
