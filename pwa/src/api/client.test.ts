@@ -296,6 +296,13 @@ test("one debug motion is read by id", async () => {
   expect(fetch.mock.calls[0][1].method).toBe("GET");
 });
 
+test("debugUsage asks for one day's LLM usage", async () => {
+  const fetch = respond(200, { day: "2026-10-20" });
+  await new ApiClient(() => "t", fetch).debugUsage("2026-10-20");
+  expect(fetch.mock.calls[0][0]).toBe("/api/debug/usage?day=2026-10-20");
+  expect(fetch.mock.calls[0][1].method).toBe("GET");
+});
+
 test("setMonitoring sends the paused state", async () => {
   const fetch = respond(200, { paused: true, since: "2026-10-18T14:05:00.000Z" });
   const result = await new ApiClient(() => "t", fetch).setMonitoring(true);

@@ -333,6 +333,33 @@ def get_motion(ctx: Context) -> dict:
     )
 
 
+@route("GET", "/api/debug/usage", owner=True)
+def get_usage(ctx: Context) -> dict:
+    """One household day's LLM totals; input counts cached input too."""
+    day = ctx.req.query.get("day", "")
+    try:
+        if datetime.strptime(day, "%Y-%m-%d").date().isoformat() != day:
+            raise ValueError
+    except ValueError:
+        return json_response(400, {"error": "day must be YYYY-MM-DD"})
+    item = ctx.table.get(account_pk(ctx.account_id), f"USAGE#{day}") or {}
+    input_tokens = sum(
+        int(item.get(f, 0)) for f in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
+    )
+    output_tokens = int(item.get("output_tokens", 0))
+    return json_response(
+        200,
+        {
+            "day": day,
+            "calls": int(item.get("calls", 0)),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "usd": round(float(item.get("usd", 0)), 6),
+        },
+    )
+
+
 @route("DELETE", "/api/events/{id}", write=True)
 def delete_event(ctx: Context) -> dict:
     sk = decode_id(ctx.params["id"], "DOOR#")

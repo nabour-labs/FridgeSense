@@ -263,6 +263,16 @@ export interface DebugMotion {
   nova: NovaTotals;
 }
 
+/** One household day's LLM totals; input counts cached input too. */
+export interface UsageTotals {
+  day: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  usd: number;
+}
+
 export interface MotionPage {
   motions: DebugMotion[];
   next: string | null;

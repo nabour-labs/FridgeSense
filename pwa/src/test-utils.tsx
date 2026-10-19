@@ -52,6 +52,14 @@ export function fakeApi(overrides: Partial<Record<keyof Api, unknown>> = {}): Ap
     warnings: vi.fn().mockResolvedValue({ warnings: [], checked_at: "2026-10-17T12:00:00.000Z" }),
     debugMotions: vi.fn().mockResolvedValue({ motions: [], next: null }),
     debugMotion: vi.fn().mockReturnValue(new Promise(() => {})),
+    debugUsage: vi.fn().mockResolvedValue({
+      day: "2026-10-20",
+      calls: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+      usd: 0,
+    }),
     ...overrides,
   } as Api;
 }

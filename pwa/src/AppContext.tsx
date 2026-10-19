@@ -41,6 +41,7 @@ export type Api = Pick<
   | "warnings"
   | "debugMotions"
   | "debugMotion"
+  | "debugUsage"
 >;
 
 export interface AppContextValue {

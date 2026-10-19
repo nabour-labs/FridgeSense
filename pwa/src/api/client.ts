@@ -17,6 +17,7 @@ import type {
   Pending,
   Session,
   Snapshot,
+  UsageTotals,
   WarningsBody,
 } from "./types";
 
@@ -207,6 +208,11 @@ export class ApiClient {
   /** Replaces the fridge area. `image` is a base64 JPEG; `box` is in fractions of it. */
   saveFridgeArea(image: string, box: Box): Promise<FridgeAreaBody> {
     return this.request("PUT", "/api/fridge-area", { image, box });
+  }
+
+  /** LLM tokens and cost for one `YYYY-MM-DD` day (owner only). */
+  debugUsage(day: string): Promise<UsageTotals> {
+    return this.request("GET", `/api/debug/usage?${new URLSearchParams({ day })}`);
   }
 
   /** Traced motions in [from, to), newest first, `limit` at a time (owner only). */
