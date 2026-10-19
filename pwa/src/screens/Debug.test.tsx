@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "../api/client";
 import type { DebugMotion, DoorTrace, MotionTrace, NovaCall, TracedStill } from "../api/types";
@@ -354,4 +354,53 @@ test("an invalid answer is marked and shows its stop reason", async () => {
   expect(within(call).getByText("Invalid answer")).toBeInTheDocument();
   expect(within(call).getByText("Stop reason: end_turn")).toBeInTheDocument();
   expect(within(call).getByText(/"Milk\."/)).toBeInTheDocument();
+});
+
+function localDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const USAGE = { day: "2026-10-20", calls: 2, input_tokens: 4380, output_tokens: 136, total_tokens: 4516, usd: 0.001324 };
+
+// Totals shown
+test("the picked day's LLM usage is shown below the day picker", async () => {
+  location.hash = "#config/debug";
+  const api = renderDebug({ debugUsage: vi.fn().mockResolvedValue(USAGE) });
+  const card = await screen.findByRole("region", { name: "LLM usage" });
+  for (const [label, value] of [
+    ["Total tokens", "4,516"],
+    ["Input tokens", "4,380"],
+    ["Output tokens", "136"],
+    ["Cost", "$0.0013"],
+  ]) {
+    expect(within(card).getByText(label).nextElementSibling).toHaveTextContent(value);
+  }
+  expect(api.debugUsage).toHaveBeenCalledWith(localDay(new Date()));
+  const picker = screen.getByLabelText("Day");
+  expect(picker.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+// Picking another day
+test("picking another day loads that day's usage", async () => {
+  location.hash = "#config/debug";
+  const api = renderDebug({ debugUsage: vi.fn().mockResolvedValue(USAGE) });
+  await screen.findByRole("region", { name: "LLM usage" });
+  const day = new Date();
+  day.setDate(day.getDate() - 1);
+  const picker = screen.getByLabelText("Day");
+  fireEvent.change(picker, { target: { value: localDay(day) } });
+  await waitFor(() => expect(api.debugUsage).toHaveBeenLastCalledWith(localDay(day)));
+});
+
+// Usage fails to load
+test("a usage failure shows no data and keeps the motions list", async () => {
+  location.hash = "#config/debug";
+  renderDebug({
+    debugUsage: vi.fn().mockRejectedValue(new ApiError(500, "boom")),
+    debugMotions: vi.fn().mockResolvedValue({ motions: [motion()], next: null }),
+  });
+  const card = await screen.findByRole("region", { name: "LLM usage" });
+  expect(await within(card).findByText("No Data")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: new RegExp(clock(AT)) })).toBeInTheDocument();
+  expect(within(card).queryByText("Total tokens")).not.toBeInTheDocument();
 });

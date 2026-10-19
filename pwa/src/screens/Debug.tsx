@@ -10,6 +10,7 @@ import type {
   NovaCall,
   RequestBlock,
   TracedStill,
+  UsageTotals,
 } from "../api/types";
 import { useApp } from "../AppContext";
 import { EmptyState } from "../components/EmptyState";
@@ -82,6 +83,7 @@ function MotionList({ onOpen }: { onOpen: (id: string) => void }) {
         onChange={(e) => pickDay(e.target.value)}
         className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 font-semibold outline-none [color-scheme:light] focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950 dark:[color-scheme:dark]"
       />
+      <UsageCard key={dateValue(day)} day={dateValue(day)} />
       <MotionPage
         key={`${dateValue(day)}/${cursors.at(-1) ?? ""}`}
         day={day}
@@ -168,6 +170,54 @@ function MotionPage({
         </nav>
       )}
     </div>
+  );
+}
+
+/** The picked day's LLM tokens and cost. */
+function UsageCard({ day }: { day: string }) {
+  const { api, report } = useApp();
+  const [usage, setUsage] = useState<UsageTotals | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let current = true;
+    api.debugUsage(day).then(
+      (totals) => current && setUsage(totals),
+      (error) => {
+        if (!current) return;
+        report(error);
+        setFailed(true);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [api, day, report]);
+  const figures: [string, string][] = usage
+    ? [
+        ["Total tokens", whole(usage.total_tokens)],
+        ["Input tokens", whole(usage.input_tokens)],
+        ["Output tokens", whole(usage.output_tokens)],
+        ["Cost", `$${usage.usd.toFixed(4)}`],
+      ]
+    : [];
+  return (
+    <section aria-label="LLM usage" className={`${CARD} space-y-2 p-3`}>
+      <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400">LLM usage</h2>
+      {usage ? (
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm sm:grid-cols-4">
+          {figures.map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt>
+              <dd className="font-semibold tabular-nums">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : failed ? (
+        <NoData />
+      ) : (
+        <div aria-hidden className="h-10 animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-800" />
+      )}
+    </section>
   );
 }
 
