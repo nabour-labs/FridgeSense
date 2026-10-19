@@ -58,6 +58,14 @@ The owner decided (2026-10-18) that Nova input need not be blurred, but anything
 - **Live run:** `scripts/analysis_eval.py --live <run>` builds the analysis video from each local clip with the production encoder and crop, calls Nova (≈ 12 × $0.005), and writes `fixtures/analysis_eval/<run>/`. It runs only with Jayson's OK, since it costs money. The local clips are already blurred, which matches the production input closely enough for this purpose.
 - **Target** (a goal, not a test assertion): direction errors 0, and precision at least double the baseline's, without recall dropping below the baseline's.
 
+### D7 results
+
+Labels: Jayson approved the drafts on 2026-10-18 ("ok go ahead"). 6 openings are judged and 6 are skipped because the item or direction can't be told from the clip. 4 of the 6 judged openings moved nothing (3 water-dispenser visits and 1 false motion); the other 2 removed a soda can and 2 eggs.
+
+| Run | TP | FP | FN | Direction errors | Precision | Recall |
+|---|---|---|---|---|---|---|
+| baseline (4 stills, old prompt) | 0 | 10 | 2 | 1 | 0.0 | 0.0 |
+
 ## Test strategy
 
 - **Unit (pytest, no network):**

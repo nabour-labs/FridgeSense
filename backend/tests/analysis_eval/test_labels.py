@@ -46,3 +46,12 @@ def test_bad_quantity(tmp_path, item, field):
 def test_missing_list_rejected(tmp_path):
     with pytest.raises(LabelError, match=r"1790000000000.*removed"):
         load_labels(write(tmp_path, {"1790000000000": {"added": []}}))
+
+
+# Opening that could not be judged
+def test_opening_that_could_not_be_judged(tmp_path):
+    labels = load_labels(
+        write(tmp_path, {"1790000000000": {"skip": "item not visible in the clip"}})
+    )
+    assert labels["1790000000000"].skip == "item not visible in the clip"
+    assert labels["1790000000000"].added == [] and labels["1790000000000"].removed == []

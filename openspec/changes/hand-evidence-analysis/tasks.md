@@ -4,7 +4,7 @@
 
 - [x] 1.1 Download `clip.mp4` for the 12 openings from 2026-10-18T21:32Z to 2026-10-19T00:01Z to `tmp/analysis-eval/<start_ms>.mp4`, and check that `git check-ignore tmp/analysis-eval/*.mp4` lists all 12 (S3 read only; covers "Eval clips ignored by git")
 - [x] 1.2 Copy each opening's last `ok` Nova tool input from its `debug/nova-*.json` trace to `backend/tests/fixtures/analysis_eval/baseline/<start_ms>.json`, holding only the tool input, and check that 12 files exist
-- [ ] 1.3 Draft `labels.json` from frames dumped to `tmp/analysis-eval/frames/`, then have Jayson confirm or correct every opening; verify the file has 12 openings and Jayson's OK is recorded in the commit message
+- [x] 1.3 Draft `labels.json` from frames dumped to `tmp/analysis-eval/frames/`, then have Jayson confirm or correct every opening; verify the file has 12 openings and Jayson's OK is recorded in the commit message
 
 ## 2. Eval scorer and report
 
@@ -12,8 +12,8 @@
 - [x] 2.2 Implement the label loader in `backend/tests/analysis_eval/` and verify 2.1 passes
 - [x] 2.3 Write failing tests for scoring: "Perfect opening", "Inventory echo", "Direction flipped", "Alias matches", "Totals", "Nothing predicted and nothing labelled", "Baseline answers in the old shape", "Missing answer"
 - [x] 2.4 Implement the scorer, reusing `inventory.normalize_name` and reading old-shape answers, and verify 2.3 passes
-- [ ] 2.5 Write failing tests for the report command: "Compare baseline with a new run" (using a second fixture run), "Offline by default" (network blocked), and a test that the totals of `baseline/` against `labels.json` equal the per-opening sums
-- [ ] 2.6 Implement `backend/scripts/analysis_eval.py --run` and verify 2.5 passes; record the baseline totals in the change's design.md under D7
+- [x] 2.5 Write failing tests for the report command: "Compare baseline with a new run" (using a second fixture run), "Offline by default" (network blocked), and a test that the totals of `baseline/` against `labels.json` equal the per-opening sums
+- [x] 2.6 Implement `backend/scripts/analysis_eval.py --run` and verify 2.5 passes; record the baseline totals in the change's design.md under D7
 
 ## 3. Hand-evidence prompt and schema
 

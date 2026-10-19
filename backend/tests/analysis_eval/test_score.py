@@ -100,3 +100,18 @@ def test_new_answers_in_the_evidence_shape():
         "items": [it("eggs", False, True), it("milk", False, False), it("can", True, True)],
     }
     assert score_opening(label(removed=["eggs"]), answer) == Score(1, 0, 0, 0)
+
+
+# Skipped openings left out of the totals
+def test_skipped_openings_left_out_of_the_totals():
+    labels = {
+        "1": label(added=["a"]),
+        "2": label(),
+        "3": label(removed=["b"]),
+        "4": OpeningLabel(added=[], removed=[], skip="can't see the item"),
+    }
+    answers = {"1": old(added=["a"]), "2": old(), "3": old(removed=["b"]), "4": old(added=["x"])}
+    report = score_run(labels, answers)
+    assert (report.total.tp, report.total.fp, report.total.fn) == (2, 0, 0)
+    assert report.skipped == {"4": "can't see the item"}
+    assert "4" not in report.per_opening

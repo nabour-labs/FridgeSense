@@ -45,6 +45,9 @@ def report_lines(run: str, report: RunReport) -> list[str]:
     lines.append(f"{_row('TOTAL', report.total)}  {rates}")
     if report.missing:
         lines.append(f"missing answers: {', '.join(report.missing)}")
+    if report.skipped:
+        why = ", ".join(f"{k} ({reason})" for k, reason in report.skipped.items())
+        lines.append(f"skipped: {why}")
     return lines
 
 

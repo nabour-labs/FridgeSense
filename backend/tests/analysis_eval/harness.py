@@ -39,6 +39,7 @@ class OpeningLabel:
     added: list[LabelItem]
     removed: list[LabelItem]
     note: str = ""
+    skip: str = ""  # why nobody could judge this opening: left out of the totals
 
 
 def _item(opening: str, raw) -> LabelItem:
@@ -59,6 +60,11 @@ def _item(opening: str, raw) -> LabelItem:
 def _opening(opening: str, entry) -> OpeningLabel:
     if not isinstance(entry, dict):
         raise LabelError(f"{opening}: must be an object")
+    skip = entry.get("skip")
+    if skip is not None:
+        if not isinstance(skip, str) or not skip.strip():
+            raise LabelError(f"{opening}: skip must be the reason, as text")
+        return OpeningLabel(added=[], removed=[], skip=skip.strip())
     lists = {}
     for direction in DIRECTIONS:
         raw = entry.get(direction)
@@ -146,6 +152,7 @@ def score_opening(label: OpeningLabel, answer: dict) -> Score:
 class RunReport:
     per_opening: dict[str, Score]
     missing: list[str] = field(default_factory=list)
+    skipped: dict[str, str] = field(default_factory=dict)
 
     @property
     def total(self) -> Score:
@@ -163,10 +170,11 @@ class RunReport:
 
 
 def score_run(labels: dict[str, OpeningLabel], answers: dict[str, dict]) -> RunReport:
-    """Every labelled opening; one without an answer scores as an empty answer."""
-    missing = [k for k in labels if k not in answers]
+    """Every labelled opening that is not skipped; one without an answer scores as empty."""
+    judged = {k: lbl for k, lbl in labels.items() if not lbl.skip}
     empty = {"added": [], "removed": []}
     return RunReport(
-        per_opening={k: score_opening(lbl, answers.get(k, empty)) for k, lbl in labels.items()},
-        missing=missing,
+        per_opening={k: score_opening(lbl, answers.get(k, empty)) for k, lbl in judged.items()},
+        missing=[k for k in judged if k not in answers],
+        skipped={k: lbl.skip for k, lbl in labels.items() if lbl.skip},
     )

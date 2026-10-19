@@ -5,7 +5,7 @@ Measures how well the item analysis tells items put into the fridge apart from i
 ## ADDED Requirements
 
 ### Requirement: Opening labels fixture
-The repository SHALL hold `backend/tests/fixtures/analysis_eval/labels.json`, shaped `{"openings": {"<window start_ms>": {"added": [{"item", "quantity", "also"?}], "removed": [...], "note"?}}}`. `also` lists other names that count as the same item. Loading SHALL reject a malformed file with an error naming the opening and the problem. The file SHALL hold no images, video or personal data.
+The repository SHALL hold `backend/tests/fixtures/analysis_eval/labels.json`, shaped `{"openings": {"<window start_ms>": {"added": [{"item", "quantity", "also"?}], "removed": [...], "note"?, "skip"?}}}`. `also` lists other names that count as the same item. `skip` gives the reason an opening could not be judged; a skipped opening needs no `added`/`removed`. Loading SHALL reject a malformed file with an error naming the opening and the problem. The file SHALL hold no images, video or personal data.
 
 #### Scenario: Valid labels load
 - **WHEN** opening `1790000000000` is labelled `{"added": [], "removed": [{"item": "chocolate milk", "quantity": 1, "also": ["chocomilk"]}]}`
@@ -18,6 +18,10 @@ The repository SHALL hold `backend/tests/fixtures/analysis_eval/labels.json`, sh
 #### Scenario: Bad quantity
 - **WHEN** a labelled item has `quantity = 0` or no `item`
 - **THEN** loading fails with an error naming that opening and the field
+
+#### Scenario: Opening that could not be judged
+- **WHEN** an opening is labelled `{"skip": "item not visible in the clip"}`
+- **THEN** it loads as skipped with that reason
 
 ### Requirement: Recorded answers as fixtures
 Recorded answers SHALL be stored per run under `backend/tests/fixtures/analysis_eval/<run name>/<window start_ms>.json`, each holding the `record_fridge_changes` tool input. `baseline/` SHALL hold the answers the pipeline gave the 12 labelled openings on 2026-10-18, from their Nova call traces. A run SHALL be scored with the analysis's own parsing and direction rules for its answer shape.
@@ -56,6 +60,10 @@ For each opening, a predicted change SHALL match a labelled one when the directi
 #### Scenario: Totals
 - **WHEN** a run over 2 openings has 3 true positives, 1 false positive and 2 false negatives in total
 - **THEN** the report's totals are precision `0.75` and recall `0.6`
+
+#### Scenario: Skipped openings left out of the totals
+- **WHEN** a run covers 3 labelled openings and 1 skipped opening that its answer gets wrong
+- **THEN** the totals count only the 3 labelled openings, and the report lists the skipped opening with its reason
 
 #### Scenario: Nothing predicted and nothing labelled
 - **WHEN** every opening is labelled empty and every answer is empty

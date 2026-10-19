@@ -103,3 +103,25 @@ def test_live_run_needs_clips(report, fixtures, tmp_path, monkeypatch, capsys):
     assert saved["items"][0]["item"] == "milk"
     assert not (fixtures / "v2" / "2.json").exists()
     assert "total cost $" in out
+
+
+def test_skipped_opening_listed(report, fixtures, capsys):
+    labels = json.loads((fixtures / "labels.json").read_text())
+    labels["openings"]["3"] = {"skip": "too dark"}
+    (fixtures / "labels.json").write_text(json.dumps(labels))
+    report.main(["--run", "v1"], fixtures=fixtures)
+    assert "skipped: 3 (too dark)" in capsys.readouterr().out
+
+
+def test_baseline_against_the_committed_labels(report, capsys):
+    """The recorded baseline scores against labels.json, and the totals add up."""
+    from tests.analysis_eval.harness import FIXTURES, Score, load_labels, load_run, score_run
+
+    labels = load_labels()
+    assert len(labels) == 12
+    run = score_run(labels, load_run(FIXTURES / "baseline"))
+    assert run.missing == []
+    assert run.total == sum(run.per_opening.values(), Score(0, 0, 0, 0))
+    assert len(run.per_opening) + len(run.skipped) == 12
+    assert report.main(["--run", "baseline"]) == 0
+    assert "TOTAL" in capsys.readouterr().out
