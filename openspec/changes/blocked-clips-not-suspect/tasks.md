@@ -13,5 +13,5 @@
 ## 3. Finish
 
 - [x] 3.1 Run `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .` in `backend/`; all green
-- [ ] 3.2 Merge into `local` (test the merge first), and deploy with Jayson's OK
-- [ ] 3.3 With Jayson's OK, reset `suspect_streak` to 0 on the prod `ALIGN#` item and confirm the warnings list no `door_setup_mismatch`
+- [x] 3.2 Merge into `local` (test the merge first), and deploy with Jayson's OK
+- [x] 3.3 With Jayson's OK, reset `suspect_streak` to 0 on the prod `ALIGN#` item and confirm the warnings list no `door_setup_mismatch`
