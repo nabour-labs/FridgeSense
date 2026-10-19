@@ -131,6 +131,13 @@ test.each([
     "/api/config/references",
     { annotation: "soda can", image: "/9j/AAA=" },
   ],
+  [
+    "updateReference",
+    (api: ApiClient) => api.updateReference("UkVGIzE=", { annotation: "chocomilk" }),
+    "PATCH",
+    "/api/config/references/UkVGIzE%3D",
+    { annotation: "chocomilk" },
+  ],
   ["deleteReference", (api: ApiClient) => api.deleteReference("UkVGIzE="), "DELETE", "/api/config/references/UkVGIzE%3D", undefined],
 ])("%s sends the right request", async (_, callApi, method, path, body) => {
   const fetch = respond(200, CONFIG);

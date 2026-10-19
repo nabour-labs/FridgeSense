@@ -559,6 +559,28 @@ def delete_reference(ctx: Context) -> dict:
     return json_response(200, config_body(ctx.table, ctx.account_id))
 
 
+@route("PATCH", "/api/config/references/{id}", write=True)
+def patch_reference(ctx: Context) -> dict:
+    body = _json_body(ctx.req) or {}
+    if "annotation" not in body and "image" not in body:
+        return json_response(400, {"error": "send an annotation or an image"})
+    try:
+        annotation = (
+            analysis_config.validate_annotation(body["annotation"])
+            if "annotation" in body
+            else None
+        )
+        image = analysis_config.decode_image(body["image"]) if "image" in body else None
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    sk = decode_id(ctx.params["id"], analysis_config.REF_PREFIX)
+    if sk is None or not analysis_config.update_reference(
+        ctx.table, ctx.account_id, sk, annotation, image, now_ms=int(now() * 1000)
+    ):
+        return json_response(404, {"error": "not found"})
+    return json_response(200, config_body(ctx.table, ctx.account_id))
+
+
 @route("GET", "/api/settings/face-blur")
 def get_face_blur(ctx: Context) -> dict:
     return json_response(200, {"enabled": face_blur.load(ctx.table, ctx.account_id)})

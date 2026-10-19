@@ -1,9 +1,9 @@
-import { Camera, Clapperboard, Crop as CropIcon, ImagePlus, Trash2, Undo2 } from "lucide-react";
+import { Camera, Clapperboard, Crop as CropIcon, ImagePlus, Pencil, Trash2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { CameraOffline, NoVideo } from "../camera/liveSnapshot";
 import { RecentClipPicker } from "../camera/RecentClipPicker";
 import { ApiError } from "../api/client";
-import type { Config as ConfigData } from "../api/types";
+import type { Config as ConfigData, Reference } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
@@ -29,6 +29,7 @@ export function ReferenceImages({ resize = toJpeg, crop = cropJpeg }: { resize?:
     60_000,
   );
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Reference | null>(null);
 
   if (!config) {
     if (failed) return <NoData />;
@@ -68,6 +69,16 @@ export function ReferenceImages({ resize = toJpeg, crop = cropJpeg }: { resize?:
                 {editable && (
                   <button
                     type="button"
+                    aria-label={`Edit ${r.annotation}`}
+                    onClick={() => setEditing(r)}
+                    className="grid size-9 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-950 dark:hover:text-brand-300"
+                  >
+                    <Pencil aria-hidden className="size-4" />
+                  </button>
+                )}
+                {editable && (
+                  <button
+                    type="button"
                     aria-label={`Delete ${r.annotation}`}
                     onClick={() => remove(r.id, r.annotation)}
                     className="grid size-9 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
@@ -103,14 +114,20 @@ export function ReferenceImages({ resize = toJpeg, crop = cropJpeg }: { resize?:
           <p className={`${CARD} whitespace-pre-wrap p-4 text-sm`}>{config.instructions || "None yet."}</p>
         )}
       </section>
-      {adding && (
-        <AddReference
+      {(adding || editing) && (
+        <ReferenceSheet
+          key={editing?.id ?? "new"}
+          editing={editing}
           resize={resize}
           crop={crop}
-          onClose={() => setAdding(false)}
-          onAdded={(next) => {
+          onClose={() => {
+            setAdding(false);
+            setEditing(null);
+          }}
+          onSaved={(next) => {
             setConfig(next);
             setAdding(false);
+            setEditing(null);
           }}
         />
       )}
@@ -192,29 +209,36 @@ interface Picked {
   shapes: Shape[];
 }
 
-function AddReference({
+/** Adds a reference, or edits `editing`, starting from its image and annotation. */
+function ReferenceSheet({
+  editing,
   resize,
   crop,
   onClose,
-  onAdded,
+  onSaved,
 }: {
+  editing: Reference | null;
   resize: Resize;
   crop: Crop;
   onClose: () => void;
-  onAdded: (config: ConfigData) => void;
+  onSaved: (config: ConfigData) => void;
 }) {
   const { api, report } = useApp();
-  const [source, setSource] = useState<Blob | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  // Kept once, so Undo after a crop gets back to this very Blob and it counts as unchanged.
+  const [original] = useState(() => (editing ? jpegBlob(editing.image) : null));
+  const [source, setSource] = useState<Blob | null>(original);
+  const [preview, setPreview] = useState<string | null>(editing && `data:image/jpeg;base64,${editing.image}`);
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [beforeCrop, setBeforeCrop] = useState<Picked[]>([]);
   const [cropping, setCropping] = useState(false);
-  const [annotation, setAnnotation] = useState("");
+  const [annotation, setAnnotation] = useState(editing?.annotation ?? "");
   const [busy, setBusy] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const valid = source !== null && annotation.trim().length > 0;
+  const imageChanged = source !== original || shapes.length > 0;
+  const annotationChanged = annotation.trim() !== editing?.annotation;
+  const valid = source !== null && annotation.trim().length > 0 && (!editing || imageChanged || annotationChanged);
 
   function use(next: Blob | null, url: string | null) {
     for (const old of [preview, ...beforeCrop.map((p) => p.preview)]) if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
@@ -284,8 +308,15 @@ function AddReference({
     setBusy(true);
     setError(null);
     try {
-      const image = shapes.length ? await resize(source, shapes) : await resize(source);
-      onAdded(await api.addReference(annotation.trim(), image));
+      const image = !imageChanged ? null : shapes.length ? await resize(source, shapes) : await resize(source);
+      if (!editing) onSaved(await api.addReference(annotation.trim(), image!));
+      else
+        onSaved(
+          await api.updateReference(editing.id, {
+            ...(annotationChanged && { annotation: annotation.trim() }),
+            ...(image !== null && { image }),
+          }),
+        );
     } catch (err) {
       if (err instanceof ApiError && (err.status === 400 || err.status === 409)) setError(err.message);
       else report(err);
@@ -295,7 +326,7 @@ function AddReference({
   }
 
   return (
-    <Sheet title="Add a reference" onClose={onClose}>
+    <Sheet title={editing ? "Edit reference" : "Add a reference"} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">

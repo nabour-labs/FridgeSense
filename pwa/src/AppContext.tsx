@@ -20,6 +20,7 @@ export type Api = Pick<
   | "config"
   | "saveInstructions"
   | "addReference"
+  | "updateReference"
   | "deleteReference"
   | "camera"
   | "setMonitoring"

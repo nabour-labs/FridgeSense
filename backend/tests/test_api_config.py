@@ -169,12 +169,82 @@ def test_viewer_cannot_change_config(tokens):
         ("PUT", "/api/config/instructions", {"instructions": "x"}),
         ("POST", "/api/config/references", {"annotation": "x", "image": b64(JPEG)}),
         ("DELETE", f"/api/config/references/{ref_id}", None),
+        ("PATCH", f"/api/config/references/{ref_id}", {"annotation": "x"}),
     ]:
         assert call(method, path, payload, viewer) == (403, {"error": "read-only"})
     assert call("GET", "/api/config", token=viewer)[1] == {
         "instructions": "",
         "references": body["references"],
     }
+
+
+def edit(token, ref_id, payload):
+    return call("PATCH", f"/api/config/references/{ref_id}", payload, token)
+
+
+@pytest.fixture
+def milk_and_soda(owner, monkeypatch):
+    add(owner, "milk bag")
+    monkeypatch.setattr(api, "now", lambda: NOW + 1)
+    _, body = add(owner, "soda can")
+    return body["references"]
+
+
+# Edit the annotation
+def test_edit_the_annotation(owner, milk_and_soda):
+    milk = milk_and_soda[0]
+    status, body = edit(owner, milk["id"], {"annotation": " chocolate milk "})
+    assert status == 200
+    assert body["references"] == [{**milk, "annotation": "chocolate milk"}, milk_and_soda[1]]
+
+
+# Replace the image
+def test_replace_the_image(owner, milk_and_soda):
+    milk = milk_and_soda[0]
+    new = b"\xff\xd8\xff\xe1" + b"\x01" * 500
+    status, body = edit(owner, milk["id"], {"image": b64(new)})
+    assert status == 200
+    assert body["references"][0] == {**milk, "image": b64(new)}
+
+
+# Edit both
+def test_edit_both(owner, milk_and_soda):
+    milk = milk_and_soda[0]
+    new = b"\xff\xd8\xff\xe1" + b"\x01" * 500
+    _, body = edit(owner, milk["id"], {"annotation": "chocomilk", "image": b64(new)})
+    assert body["references"][0] == {**milk, "annotation": "chocomilk", "image": b64(new)}
+
+
+# Nothing to change
+def test_nothing_to_change(owner, milk_and_soda):
+    ref_id = milk_and_soda[0]["id"]
+    assert edit(owner, ref_id, {}) == (400, {"error": "send an annotation or an image"})
+    headers = {"content-type": "application/json", "Authorization": f"Bearer {owner}"}
+    event = api_event("PATCH", f"/api/config/references/{ref_id}", "{nope", headers, None)
+    resp = api.handler(event, None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"]) == {"error": "send an annotation or an image"}
+    assert call("GET", "/api/config", token=owner)[1]["references"] == milk_and_soda
+
+
+# Bad edit
+@pytest.mark.parametrize(
+    "payload, error",
+    [
+        ({"annotation": "   "}, "annotation must be 1 to 300 characters"),
+        ({"annotation": "ok", "image": b64(PNG)}, "image must be a JPEG of at most 200 KB"),
+    ],
+)
+def test_bad_edit(owner, milk_and_soda, payload, error):
+    assert edit(owner, milk_and_soda[0]["id"], payload) == (400, {"error": error})
+    assert call("GET", "/api/config", token=owner)[1]["references"] == milk_and_soda
+
+
+# Edit an unknown reference
+@pytest.mark.parametrize("ref_id", ["bm9wZQ", "!!", api.encode_id("PENDING#x")])
+def test_edit_an_unknown_reference(owner, milk_and_soda, ref_id):
+    assert edit(owner, ref_id, {"annotation": "x"})[0] == 404
+    assert call("GET", "/api/config", token=owner)[1]["references"] == milk_and_soda
 
 
 # No token

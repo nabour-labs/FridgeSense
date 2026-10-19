@@ -571,3 +571,92 @@ test("a snapshot from an offline camera warns and keeps Choose photo", async () 
   expect(screen.queryByRole("img", { name: "Reference to draw on" })).not.toBeInTheDocument();
   expect(api.addReference).not.toHaveBeenCalled();
 });
+
+const CHOCO = ref("r1", "chocomilk");
+
+async function openEdit(name = "chocomilk") {
+  await userEvent.click(await screen.findByRole("button", { name: `Edit ${name}` }));
+  return screen.getByRole("dialog", { name: "Edit reference" });
+}
+
+// Edit an annotation
+test("editing an annotation sends only the annotation and updates the card", async () => {
+  const edited = { instructions: "", references: [{ ...CHOCO, annotation: "chocolate milk carton" }] };
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockResolvedValue(edited) } },
+  );
+  const sheet = await openEdit();
+  expect(within(sheet).getByRole("img", { name: "Reference to draw on" })).toHaveAttribute("src", "data:image/jpeg;base64,/9j/AAAA");
+  const field = within(sheet).getByLabelText("Annotation");
+  expect(field).toHaveValue("chocomilk");
+  await userEvent.clear(field);
+  await userEvent.type(field, " chocolate milk carton ");
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  expect(api.updateReference).toHaveBeenCalledWith("r1", { annotation: "chocolate milk carton" });
+  expect(resize).not.toHaveBeenCalled();
+  const refs = screen.getByRole("region", { name: "Reference images" });
+  expect(await within(refs).findByText("chocolate milk carton")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+// Replace the image
+test("replacing the image sends only the resized new image", async () => {
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockResolvedValue({ instructions: "", references: [CHOCO] }) } },
+  );
+  const sheet = await openEdit();
+  await userEvent.upload(within(sheet).getByLabelText("Choose photo"), PHOTO);
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  expect(resize).toHaveBeenCalledWith(PHOTO);
+  expect(api.updateReference).toHaveBeenCalledWith("r1", { image: "/9j/RESIZED" });
+});
+
+// Draw on the current image
+test("drawing a box on the current image sends only the image, with that box", async () => {
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockResolvedValue({ instructions: "", references: [CHOCO] }) } },
+  );
+  const sheet = await openEdit();
+  drag([10, 10], [40, 50]);
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  const [blob, shapes] = resize.mock.calls[0];
+  expect((blob as Blob).type).toBe("image/jpeg");
+  expect(shapes).toEqual([{ kind: "box", x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.5 }]);
+  expect(api.updateReference).toHaveBeenCalledWith("r1", { image: "/9j/RESIZED" });
+});
+
+// Nothing changed
+test("Save is disabled in the edit sheet until something changes", async () => {
+  renderConfig({ instructions: "", references: [CHOCO] });
+  const sheet = await openEdit();
+  const save = within(sheet).getByRole("button", { name: "Save" });
+  expect(save).toBeDisabled();
+  await userEvent.type(within(sheet).getByLabelText("Annotation"), "!");
+  expect(save).toBeEnabled();
+  await userEvent.clear(within(sheet).getByLabelText("Annotation"));
+  expect(save).toBeDisabled();
+});
+
+// Edit refused
+test("an edit the API refuses shows its error and leaves the list unchanged", async () => {
+  renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockRejectedValue(new ApiError(400, "annotation must be 1 to 300 characters")) } },
+  );
+  const sheet = await openEdit();
+  await userEvent.type(within(sheet).getByLabelText("Annotation"), "!");
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  expect(await within(sheet).findByRole("alert")).toHaveTextContent("annotation must be 1 to 300 characters");
+  const refs = screen.getByRole("region", { name: "Reference images" });
+  expect(within(refs).getByText("chocomilk")).toBeInTheDocument();
+});
+
+// Viewer has no edit
+test("a viewer gets no Edit button", async () => {
+  renderConfig({ instructions: "", references: [CHOCO] }, { role: "viewer" });
+  await screen.findByText("chocomilk");
+  expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
+});
