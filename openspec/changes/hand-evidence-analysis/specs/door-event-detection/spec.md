@@ -59,6 +59,25 @@ When the device has a fridge area, the system SHALL crop each still of a door op
 - **WHEN** `STILL_CROP` is `0.8,0,0.5,1` (past the right edge) or `0,0,1` (three numbers)
 - **THEN** the fetch-stills task fails with an error naming `STILL_CROP`, before any Ring request is made
 
+### Requirement: Clips never stored
+The full event clip SHALL only be held in memory or in a temporary file in Lambda `/tmp`. The temporary file SHALL be deleted when the step ends, whether it succeeds or fails. The only clip objects written to S3 SHALL be a door opening's open-span `clip.mp4`, while face blurring is on its transient `clip-raw.mp4` (see `clip-face-blur`), and its transient `analysis.mp4` (see "Analysis video built from the open span"). Apart from those clips, the stored stills and the debug-trace frames, no frame SHALL be written to S3.
+
+#### Scenario: Door opening processed
+- **WHEN** a door opening is processed from a clip with debug traces off and face blurring off
+- **THEN** the only S3 objects the fetch step writes are `still-<n>.jpg`, one `clip.mp4` and one `analysis.mp4`, `clip.mp4` is shorter than the event clip, and after the run only `still-<n>.jpg` and `clip.mp4` remain
+
+#### Scenario: Door opening processed with blurring on
+- **WHEN** a door opening is processed from a clip with debug traces off and face blurring on, and the blur step succeeds
+- **THEN** after the run the only S3 objects under the event's prefix are `still-<n>.jpg` and one `clip.mp4`, and no `clip-raw.mp4` or `analysis.mp4` remains
+
+#### Scenario: Temporary file removed on error
+- **WHEN** decoding fails partway through the clip
+- **THEN** the temporary clip file no longer exists after the step
+
+#### Scenario: Temporary file removed after the cut
+- **WHEN** a door opening's clip is cut and stored
+- **THEN** neither the downloaded clip nor the cut leaves a file behind in the clip directory
+
 ## ADDED Requirements
 
 ### Requirement: Analysis crop from the fridge area

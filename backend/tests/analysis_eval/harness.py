@@ -9,6 +9,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "analysis_eval"
+REPO = Path(__file__).resolve().parents[3]
+
+
+def eval_clips_dir() -> Path:
+    """Labelled openings' clips: <clips folder>/analysis-eval/<window start ms>.mp4."""
+    import os
+
+    return Path(os.environ.get("FRIDGESENSE_CLIPS_DIR") or REPO / "tmp") / "analysis-eval"
+
+
 LABELS = FIXTURES / "labels.json"
 DIRECTIONS = ("added", "removed")
 
@@ -73,7 +83,15 @@ def load_run(directory: Path) -> dict[str, dict]:
 
 
 def answer_changes(answer: dict) -> list[tuple[str, str]]:
-    """(direction, item) pairs the pipeline would apply for a recorded answer."""
+    """(direction, item) pairs the pipeline would apply for a recorded answer: the evidence
+    shape goes through the analysis's own direction rules; the old shape is read as is."""
+    if "items" in answer:
+        from fridgesense.analysis import changes_from
+
+        changes = changes_from(answer)
+        return [("added", c.item) for c in changes.added] + [
+            ("removed", c.item) for c in changes.removed
+        ]
     return [
         (direction, str(c.get("item", "")))
         for direction in DIRECTIONS

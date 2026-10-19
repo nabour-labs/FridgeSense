@@ -1,6 +1,7 @@
 """The pipeline Lambda driven in state-machine order, end to end (all external calls stubbed)."""
 
 import io
+import json
 import logging
 import time
 
@@ -470,3 +471,44 @@ def test_paused_camera_stops_before_ring_media(env, faces):
     assert state["outcome"] == "paused"
     assert not respx.routes[2].called  # image download
     assert FridgeTable().query(ACCOUNT, "DOOR#") == []
+
+
+# door-event-detection: Analysis video never shown (clip path, face blurring on, tracing on)
+@respx.mock
+def test_analysis_video_never_shown(env, faces, monkeypatch, tmp_path):
+    from fridgesense.handlers import api
+    from fridgesense.store import load_app_config
+    from tests.api_helpers import call, configure, sign_in
+    from tests.clip_video import door_clip
+
+    respx.get(HISTORY).respond(200, json=load_fixture("ring/history_events.json"))
+    clip = door_clip(tmp_path / "served.mp4", [(4000, 12_500)], duration_ms=25_000).read_bytes()
+    respx.post(CLIP).respond(303, headers={"Location": "https://clip.example.com/c.mp4"})
+    respx.get("https://clip.example.com/c.mp4").respond(200, content=clip)
+    no_faces(faces)
+    env.add_response("converse", load_fixture("nova/converse_tool_use.json"))
+
+    state = step("fetch_stills", step("find_window", RUN_INPUT))
+    assert state["outcome"] == "door_open"
+    assert state["analysis_video"]["key"].endswith("/analysis.mp4")
+    state = step("save", step("analyze", state))
+
+    s3 = boto3.client("s3")
+    prefix = state["analysis_video"]["key"].rsplit("/", 1)[0] + "/"
+    keys = [o["Key"] for o in s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix)["Contents"]]
+    assert not any(k.endswith("analysis.mp4") for k in keys)  # deleted after the analysis
+    event = FridgeTable().get(account_pk(ACCOUNT), state["door_sk"])
+    assert "analysis.mp4" not in json.dumps(event, default=str)
+
+    monkeypatch.setattr(api, "now", lambda: 1786715700.0)
+    configure()
+    load_app_config(refresh=True)
+    owner = sign_in()
+    status, events = call("GET", "/api/events", token=owner)
+    assert status == 200 and events["events"]
+    assert "analysis.mp4" not in json.dumps(events)
+    status, trace = call("GET", f"/api/debug/motions/{events['events'][0]['id']}", token=owner)
+    assert status == 200
+    assert "analysis.mp4" not in json.dumps(trace)
+    videos = [b for n in trace["nova"] for b in n["request"]["content"] if b["type"] == "video"]
+    assert videos and all("url" not in v and "key" not in v for v in videos)

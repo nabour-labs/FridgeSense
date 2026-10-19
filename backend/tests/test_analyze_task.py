@@ -59,10 +59,24 @@ def test_analyze_task_returns_changes_and_records_cost(setup):
     out = run(setup)
     assert out["analysis"] == {
         "added": [
-            {"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.92, "images": [2]}
+            {
+                "item": "milk",
+                "category": "dairy",
+                "quantity": 1,
+                "confidence": 0.92,
+                "images": [2],
+                "seconds": [],
+            }
         ],
         "removed": [
-            {"item": "eggs", "category": "dairy", "quantity": 2, "confidence": 0.71, "images": [4]}
+            {
+                "item": "eggs",
+                "category": "dairy",
+                "quantity": 2,
+                "confidence": 0.71,
+                "images": [4],
+                "seconds": [],
+            }
         ],
         "dropped": [],
         "observations": "A hand puts milk on the top shelf, then takes eggs out.",

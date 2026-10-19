@@ -51,7 +51,15 @@ def ring_http():
         yield ring, http
 
 
-def run(ring_http, state=STATE20, blurrer=None, clip_dir=None, sleeps=None, face_blur=True):
+def run(
+    ring_http,
+    state=STATE20,
+    blurrer=None,
+    clip_dir=None,
+    sleeps=None,
+    face_blur=True,
+    area_for=None,
+):
     ring, http = ring_http
     return fetch_stills(
         ring,
@@ -66,6 +74,7 @@ def run(ring_http, state=STATE20, blurrer=None, clip_dir=None, sleeps=None, face
         frame_interval_ms=500,
         clip_dir=clip_dir,
         face_blur=face_blur,
+        area_for=area_for,
     )
 
 
@@ -210,7 +219,8 @@ def test_door_opening_processed_stores_only_the_open_span_clip(aws, ring_http, t
     serve_stills()
     run(ring_http, clip_dir=tmp_path, face_blur=False)
     keys = stored_keys()
-    assert [k for k in keys if k.endswith(".mp4")] == [f"{PREFIX}clip.mp4"]
+    # the fetch step's videos: the open-span clip and the transient analysis video
+    assert [k for k in keys if k.endswith(".mp4")] == [f"{PREFIX}analysis.mp4", f"{PREFIX}clip.mp4"]
     assert all(k.endswith(".mp4") or (k.endswith(".jpg") and "/still-" in k) for k in keys)
 
 

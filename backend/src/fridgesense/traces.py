@@ -121,15 +121,30 @@ class NullTraceWriter:
 
 
 def _request_content(
-    request: dict, n_references: int, ref_keys: list[str], still_keys: list[str]
+    request: dict,
+    n_references: int,
+    ref_keys: list[str],
+    still_keys: list[str],
+    video: dict | None = None,
 ) -> list[dict]:
-    """The request's content blocks, images replaced by what they were and where they are."""
+    """The request's content blocks, images replaced by what they were and where they are.
+    The analysis video is unblurred, so it is described but never given a `key` (the trace
+    API turns every key into a download link)."""
     content, images = [], 0
     for block in request["messages"][0]["content"]:
         if "text" in block:
             content.append({"type": "text", "text": block["text"]})
         elif "cachePoint" in block:
             content.append({"type": "cache_point"})
+        elif "video" in block:
+            content.append(
+                {
+                    "type": "video",
+                    "frames": (video or {}).get("frames"),
+                    "frame_ms": (video or {}).get("frame_ms"),
+                    "bytes": len(block["video"]["source"]["bytes"]),
+                }
+            )
         elif "image" in block:
             images += 1
             if images <= n_references:
@@ -331,7 +346,13 @@ class TraceWriter:
                 "model_id": request["modelId"],
                 "outcome": record.outcome,
                 "request": {
-                    "content": _request_content(request, len(references), ref_keys, still_keys),
+                    "content": _request_content(
+                        request,
+                        len(references),
+                        ref_keys,
+                        still_keys,
+                        state.get("analysis_video"),
+                    ),
                     "inferenceConfig": request.get("inferenceConfig"),
                     "toolConfig": request.get("toolConfig"),
                 },

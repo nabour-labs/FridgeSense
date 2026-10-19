@@ -3,6 +3,7 @@
 The full clip only ever lives in Lambda /tmp (or memory). Only its cut to the open span is stored.
 """
 
+import io
 import os
 import tempfile
 from collections.abc import Callable, Iterable, Iterator
@@ -200,3 +201,26 @@ def cut_clip(
         out_path.unlink(missing_ok=True)
         raise
     return out_path, (round((open_ms - first_ms) / 1000, 1), round((end_ms - first_ms) / 1000, 1))
+
+
+VIDEO_FPS = 1  # Nova 2 Lite samples video at 1 fps: each frame we encode is one it sees
+
+
+def encode_video(images: list[Image.Image]) -> bytes:
+    """The images, all the same size, as an H.264 MP4 at VIDEO_FPS (sizes trimmed to even)."""
+    import av
+
+    width, height = images[0].width // 2 * 2, images[0].height // 2 * 2
+    buf = io.BytesIO()
+    with av.open(buf, "w", format="mp4") as out:
+        stream = out.add_stream("libx264", rate=VIDEO_FPS)
+        stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+        stream.options = {"crf": "23"}
+        for n, image in enumerate(images):
+            frame = av.VideoFrame.from_image(image.convert("RGB").crop((0, 0, width, height)))
+            frame.pts = n
+            for packet in stream.encode(frame):
+                out.mux(packet)
+        for packet in stream.encode():
+            out.mux(packet)
+    return buf.getvalue()

@@ -414,9 +414,7 @@ def test_still_crop_without_a_fridge_area(aws, ring_http):
     big_open = color_jpeg(GREY, [((0.4, 0.4, 0.15, 0.4), (40, 90, 200))], size=(2560, 1440))
     ring_serves([big_open])
     check = DoorCheck(zones=((0.4, 0.4, 0.15, 0.4),), threshold=0.02)
-    out = run(
-        ring_http, check=check, crop=(0.30, 0.0, 0.34, 1.0), area_for=lambda a, d: None
-    )
+    out = run(ring_http, check=check, crop=(0.30, 0.0, 0.34, 1.0), area_for=lambda a, d: None)
     body = boto3.client("s3").get_object(Bucket=BUCKET, Key=out["still_keys"][0])["Body"].read()
     w, h = size(body)
     assert abs(w - 870) <= 1 and h == 1440

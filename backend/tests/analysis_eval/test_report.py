@@ -78,3 +78,28 @@ def test_offline_by_default(report, fixtures, monkeypatch, capsys):
     monkeypatch.setattr(socket, "create_connection", refuse)
     assert report.main(["--run", "baseline"], fixtures=fixtures) == 0
     assert "TOTAL" in capsys.readouterr().out
+
+
+# Live run needs clips
+def test_live_run_needs_clips(report, fixtures, tmp_path, monkeypatch, capsys):
+    from fridgesense.analysis import NovaAnalyzer
+    from tests.clip_video import door_clip
+    from tests.conftest import load_fixture
+    from tests.test_analyze_video import FakeBedrock
+
+    clips = tmp_path / "clips"
+    (clips / "analysis-eval").mkdir(parents=True)
+    door_clip(clips / "analysis-eval" / "1.mp4", [(0, 3000)], duration_ms=3000)  # "2" is missing
+    monkeypatch.setenv("FRIDGESENSE_CLIPS_DIR", str(clips))
+    bedrock = FakeBedrock(load_fixture("nova/converse_tool_use.json"))
+    code = report.main(["--live", "v2"], fixtures=fixtures, analyzer=NovaAnalyzer(bedrock))
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "2: skipped, no clip at" in out and "2.mp4" in out
+    assert len(bedrock.requests) == 1
+    [video] = [c for c in bedrock.requests[0]["messages"][0]["content"] if "video" in c]
+    assert video["video"]["format"] == "mp4"
+    saved = json.loads((fixtures / "v2" / "1.json").read_text())
+    assert saved["items"][0]["item"] == "milk"
+    assert not (fixtures / "v2" / "2.json").exists()
+    assert "total cost $" in out

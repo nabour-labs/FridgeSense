@@ -81,3 +81,22 @@ def test_missing_answer():
     report = score_run({"1": label(added=["milk"]), "2": label()}, {"2": old()})
     assert report.per_opening["1"] == Score(0, 0, 1, 0)
     assert report.missing == ["1"]
+
+
+# New answers in the evidence shape
+def test_new_answers_in_the_evidence_shape():
+    def it(name, going_in, coming_out):
+        return {
+            "item": name,
+            "category": "other",
+            "quantity": 1,
+            "confidence": 0.9,
+            "going_in": going_in,
+            "coming_out": coming_out,
+        }
+
+    answer = {
+        "observations": "x",
+        "items": [it("eggs", False, True), it("milk", False, False), it("can", True, True)],
+    }
+    assert score_opening(label(removed=["eggs"]), answer) == Score(1, 0, 0, 0)

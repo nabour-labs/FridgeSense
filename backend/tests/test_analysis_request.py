@@ -246,3 +246,38 @@ def test_schema_and_prompt_ask_for_images():
     assert item["properties"]["moments"]["items"] == {"type": "number"}
     assert "moments" not in item["required"]
     assert "moments" in content_of(req)[-1]["text"]
+
+
+VIDEO = b"\x00\x00\x00\x18ftypmp42 analysis video bytes"
+VIDEO_TEXT = "Video of the door opening, slowed down, in time order."
+
+
+# Video instead of stills
+def test_video_instead_of_stills():
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS, ["milk"], video=VIDEO))
+    assert [c for c in content if "image" in c] == []
+    assert content[0] == {"text": VIDEO_TEXT}
+    assert content[1] == {"video": {"format": "mp4", "source": {"bytes": VIDEO}}}
+    assert len(content) == 3
+    assert "seconds from the start of the video" in content[-1]["text"]
+
+
+# References before the video
+def test_references_before_the_video():
+    refs = [("milk bag", jpeg(0.3)), ("soda can", jpeg(0.6))]
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS, [], refs, video=VIDEO))
+    assert [content[i].get("text") for i in (0, 1, 3)] == [
+        REF_HEADER,
+        "Reference 1: milk bag",
+        "Reference 2: soda can",
+    ]
+    assert content[5] == {"text": VIDEO_TEXT}
+    assert "video" in content[6]
+
+
+# Cache point after the video
+def test_cache_point_after_the_video():
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS, [], video=VIDEO, cache=True))
+    points = [i for i, c in enumerate(content) if "cachePoint" in c]
+    assert points == [2]
+    assert "video" in content[1] and "text" in content[3]

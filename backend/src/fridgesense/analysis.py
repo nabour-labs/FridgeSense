@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
-from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
+from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
 
 from fridgesense.logs import log_event
 from fridgesense.usage import Prices, Tokens, price
@@ -100,6 +100,7 @@ INSTRUCTIONS = (
 )
 STILL_MOMENTS = "image numbers"
 VIDEO_MOMENTS = "seconds from the start of the video"
+VIDEO_TEXT = "Video of the door opening, slowed down, in time order."
 TOOL_LINE = f"Call {TOOL_NAME} with your answer."
 # Bedrock prompt caching (opt-in): the account's references, then the stills, become a cached
 # prefix that a burst of openings and the invalid-answer retry can read back.
@@ -123,6 +124,7 @@ class Change(BaseModel):
     quantity: int = 1
     confidence: float = 0.0
     images: list[int] = []  # proof: image numbers (1-based) where the item is clearest
+    seconds: list[float] = []  # with a video: where the item is clearest, mapped to stills later
 
     @field_validator("item")
     @classmethod
@@ -192,7 +194,7 @@ class FridgeChanges(BaseModel):
 class _Item(Change):
     """One `items` entry of the tool input: a change plus where it was seen in a hand."""
 
-    images: list[int] = Field(default=[], validation_alias="moments")
+    moments: list[Any] = []
     going_in: bool = False
     coming_out: bool = False
 
@@ -200,6 +202,22 @@ class _Item(Change):
     @classmethod
     def _flag(cls, v: Any) -> bool:
         return v is True  # only JSON true counts: "yes", 1 and null are not evidence
+
+    @field_validator("moments", mode="before")
+    @classmethod
+    def _moments(cls, v: Any) -> list:
+        return v if isinstance(v, list) else []
+
+
+def _video_seconds(moments: list, frames: int) -> list[float]:
+    """Numbers inside a video of `frames` 1-second frames, in order, no duplicates, at most 2."""
+    kept: list[float] = []
+    for m in moments:
+        if isinstance(m, bool) or not isinstance(m, int | float):
+            continue
+        if 0 <= m < frames and float(m) not in kept:
+            kept.append(float(m))
+    return kept[:MAX_PROOF]
 
 
 class _Answer(BaseModel):
@@ -212,13 +230,22 @@ class _Answer(BaseModel):
         return v if isinstance(v, str) else ""
 
 
-def changes_from(answer: dict, images: int = MAX_IMAGES) -> FridgeChanges:
-    """Direction from the evidence flags, not from any label of Nova's. Raises ValidationError
-    for a malformed answer."""
-    parsed = _Answer.model_validate(answer, context={"images": images})
+def changes_from(
+    answer: dict, images: int = MAX_IMAGES, video_frames: int | None = None
+) -> FridgeChanges:
+    """Direction from the evidence flags, not from any label of Nova's. Moments are still
+    numbers, or with `video_frames` seconds into the video. Raises ValidationError for a
+    malformed answer."""
+    parsed = _Answer.model_validate(answer)
     added, removed, dropped = [], [], []
     for it in parsed.items:
-        change = Change.model_validate(it.model_dump(include=set(Change.model_fields)))
+        fields = it.model_dump(include={"item", "category", "quantity", "confidence"})
+        if video_frames is None:
+            change = Change.model_validate(
+                {**fields, "images": it.moments}, context={"images": images}
+            )
+        else:
+            change = Change(**fields, seconds=_video_seconds(it.moments, video_frames))
         if it.going_in and not it.coming_out:
             added.append(change)
         elif it.coming_out and not it.going_in:
@@ -275,10 +302,11 @@ def build_request(
     references: Sequence[tuple[str, bytes]] = (),
     instructions: str = "",
     cache: bool = False,
+    video: bytes | None = None,
 ) -> dict:
-    """References (annotation, JPEG) go first, then the stills; the owner's instructions
-    sit in the final text before the tool line. Without config the request is unchanged.
-    With `cache`, a cache point follows the references (if any) and another the stills."""
+    """References (annotation, JPEG) go first, then the analysis video (or, without one, the
+    stills); the owner's instructions sit in the final text before the tool line. With
+    `cache`, a cache point follows the references (if any) and another the media."""
     content: list[dict] = []
     if references:
         content.append({"text": REFERENCE_HEADER})
@@ -287,13 +315,17 @@ def build_request(
             content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
         if cache:
             content.append(CACHE_POINT)
-    images = stills[:MAX_IMAGES]
-    for n, data in enumerate(images, start=1):
-        content.append({"text": f"Image {n} of {len(images)}"})
-        content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
+    if video is not None:
+        content.append({"text": VIDEO_TEXT})
+        content.append({"video": {"format": "mp4", "source": {"bytes": video}}})
+    else:
+        images = stills[:MAX_IMAGES]
+        for n, data in enumerate(images, start=1):
+            content.append({"text": f"Image {n} of {len(images)}"})
+            content.append({"image": {"format": "jpeg", "source": {"bytes": data}}})
     if cache:
         content.append(CACHE_POINT)
-    text = INSTRUCTIONS.format(moment_unit=STILL_MOMENTS)
+    text = INSTRUCTIONS.format(moment_unit=VIDEO_MOMENTS if video is not None else STILL_MOMENTS)
     text += INVENTORY_LINE.format(inventory="[" + ", ".join(inventory) + "]")
     if instructions:
         text += f"Owner's instructions: {instructions}\n"
@@ -306,9 +338,12 @@ def build_request(
     }
 
 
-def parse_response(resp: dict, images: int = MAX_IMAGES) -> FridgeChanges | None:
+def parse_response(
+    resp: dict, images: int = MAX_IMAGES, video_frames: int | None = None
+) -> FridgeChanges | None:
     """The validated tool input, or None if Nova did not answer with the tool. `images` is how
-    many stills were sent, which bounds each change's proof image numbers."""
+    many stills were sent, which bounds each change's proof image numbers; with a video,
+    `video_frames` bounds its moments instead."""
     for block in resp.get("output", {}).get("message", {}).get("content", []):
         tool = block.get("toolUse")
         if tool and tool.get("name") == TOOL_NAME:
@@ -316,7 +351,7 @@ def parse_response(resp: dict, images: int = MAX_IMAGES) -> FridgeChanges | None
             if not isinstance(answer, dict):
                 return None
             try:
-                return changes_from(answer, images)
+                return changes_from(answer, images, video_frames)
             except ValidationError:
                 return None
     return None
@@ -376,14 +411,24 @@ class NovaAnalyzer:
         instructions: str = "",
         on_usage: Callable[[Tokens, float], None] | None = None,
         on_call: Callable[[CallRecord], None] | None = None,
+        video: bytes | None = None,
+        video_frames: int | None = None,
     ) -> AnalysisResult:
         """Ask Nova; one more request if the answer is invalid. Raises BedrockRetryable
         or BedrockRejected for API errors. `on_usage` gets each response's tokens and cost;
-        `on_call` gets a record of every attempt, failed ones included."""
+        `on_call` gets a record of every attempt, failed ones included. With `video` (of
+        `video_frames` frames) the video replaces the stills."""
         result = AnalysisResult(changes=None)
         request = build_request(
-            self.model_id, stills, inventory, references, instructions, cache=self.cache_analysis
+            self.model_id,
+            stills,
+            inventory,
+            references,
+            instructions,
+            cache=self.cache_analysis,
+            video=video,
         )
+        frames = video_frames if video is not None else None
 
         def record(attempt: int, wall_ms: int, **fields) -> None:
             if on_call is not None:
@@ -423,7 +468,7 @@ class NovaAnalyzer:
             )
             if on_usage is not None:
                 on_usage(tokens, spent.usd)
-            changes = parse_response(resp, len(stills[:MAX_IMAGES]))
+            changes = parse_response(resp, len(stills[:MAX_IMAGES]), frames)
             latency = (resp.get("metrics") or {}).get("latencyMs")
             record(
                 attempt,

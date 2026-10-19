@@ -150,6 +150,17 @@ def pick(span: list[int], count: int = STILL_COUNT) -> list[int]:
     return [span[round(i * (n - 1) / (count - 1))] for i in range(count)]
 
 
+MAX_VIDEO_FRAMES = 40  # ~288 tokens each at Nova 2 Lite's 672x672 video frames
+
+
+def video_frame_indexes(span: list[int]) -> tuple[list[int], int]:
+    """Frames for the analysis video: the one before the open span (if any) through the span,
+    every `step`-th one so that at most MAX_VIDEO_FRAMES remain. Returns (indexes, step)."""
+    frames = list(range(max(span[0] - 1, 0), span[-1] + 1))
+    step = -(-len(frames) // MAX_VIDEO_FRAMES)  # ceil
+    return frames[::step], step
+
+
 def parse_box(text: str, setting: str) -> Box:
     """`x,y,width,height` fractions that must lie inside the image; errors name the setting."""
     parts = tuple(float(v) for v in text.split(","))
@@ -726,6 +737,54 @@ def drop_raw_clip(s3, bucket: str, state: dict) -> dict:
     return {**state, "outcome": "clip_dropped"}
 
 
+def store_analysis_video(
+    s3,
+    bucket: str,
+    state: dict,
+    frames: list[tuple[int, bytes]],
+    indexes: list[int],
+    step: int,
+    crop: Box | None,
+    interval_ms: int,
+) -> dict:
+    """Encode the chosen clip frames (cropped, unblurred) as `analysis.mp4`, tagged transient,
+    and return the step output's `analysis_video`; {} if encoding or the upload failed
+    (logged as analysis_video_not_stored): analysis then falls back to the stills."""
+    from fridgesense import clip_frames
+
+    def cropped(data: bytes) -> Image.Image:
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        return _crop_box(img, crop) if crop is not None else img
+
+    key = stills_prefix(state["account_id"], state["device_id"], state["window"]["start_ms"])
+    key += "analysis.mp4"
+    try:
+        body = clip_frames.encode_video([cropped(frames[i][1]) for i in indexes])
+    except Exception as e:  # a missing video only costs the analysis its best input
+        log_event(
+            "analysis_video_not_stored",
+            logging.WARNING,
+            device_id=state["device_id"],
+            reason="encode_failed",
+            error=type(e).__name__,
+        )
+        return {}
+    try:
+        s3.put_object(
+            Bucket=bucket, Key=key, Body=body, ContentType="video/mp4", Tagging="transient=true"
+        )
+    except Exception as e:
+        log_event(
+            "analysis_video_not_stored",
+            logging.WARNING,
+            device_id=state["device_id"],
+            reason="upload_failed",
+            error=type(e).__name__,
+        )
+        return {}
+    return {"key": key, "frame_ms": interval_ms * step, "frames": len(indexes)}
+
+
 def store_open_clip(
     s3,
     bucket: str,
@@ -862,7 +921,9 @@ def _fetch_stills(
     times = [d.at_ms for d in downloaded]
     opened_ms, closed_ms = window["start_ms"], window["end_ms"]
     still_keys: list[str] = []
+    still_ms: list[int] = []
     clip_fields: dict = {}
+    video_span: list[int] | None = None
     status = "no_media"
     rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
     trace = DoorTrace(
@@ -924,6 +985,7 @@ def _fetch_stills(
         if not results[span[-1]].is_open:  # the first closed still after the opening
             closed_ms = times[raw[span[-1]][0] - 1]
         picks = pick(span)
+        video_span = span
         trace.open_span = [raw[i][0] for i in span]
         trace.picked = [raw[i][0] for i in picks]
         # On the clip path these are the scored frames themselves: a Ring still at the same
@@ -931,6 +993,8 @@ def _fetch_stills(
         picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(picks, start=1)]
         stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
         still_keys = [k for k, _ in stills]
+        pick_ms = {f"still-{k}.jpg": times[raw[i][0] - 1] for k, i in enumerate(picks, start=1)}
+        still_ms = [pick_ms[key.rsplit("/", 1)[1]] for key in still_keys]
         trace.stored_keys = still_keys
         if clip and kept:
             closed = closed_ms if not results[span[-1]].is_open else None
@@ -979,6 +1043,14 @@ def _fetch_stills(
             return done({**state, "outcome": "duplicate"})
         raise
     outcome = "door_open" if status == "analyzing" else "no_media"
+    video: dict = {}
+    if outcome == "door_open" and clip is not None and video_span is not None:
+        indexes, step = video_frame_indexes(video_span)
+        video = store_analysis_video(
+            s3, bucket, state, raw, indexes, step, crop, frame_interval_ms or 0
+        )
+        if video:
+            video = {**video, "start_ms": times[raw[indexes[0]][0] - 1]}
     learn()
     log_event(
         "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
@@ -986,6 +1058,15 @@ def _fetch_stills(
     trace.door_sk = door_sk
     trace.opened_at, trace.closed_at = event["opened_at"], event["closed_at"]
     raw_clip = {"clip": clip_fields["clip"]} if "clip" in clip_fields else {}
+    analysis_video = {"analysis_video": video} if video else {}
     return done(
-        {**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys, **raw_clip}
+        {
+            **state,
+            "outcome": outcome,
+            "door_sk": door_sk,
+            "still_keys": still_keys,
+            "still_ms": still_ms,
+            **raw_clip,
+            **analysis_video,
+        }
     )

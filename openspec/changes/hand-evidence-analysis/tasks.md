@@ -34,37 +34,37 @@
 
 ## 5. Analysis video in fetch-stills
 
-- [ ] 5.1 Write failing tests for frame selection and thinning: "Long opening thinned", "Span starts at the first frame"
-- [ ] 5.2 Implement frame selection and verify 5.1 passes
-- [ ] 5.3 Write a failing integration test for "Short opening" using a synthetic PyAV clip and moto S3 (frame count, size ±2 px, 1 fps, `transient=true` tag, `analysis_video` output)
-- [ ] 5.4 Implement the encoder (`libx264`, `yuv420p`, even dimensions, 1 fps) in `clip_frames.py` and the upload in `door_events.py`, and verify 5.3 passes
-- [ ] 5.5 Write failing tests for "Encoding or upload fails", "No video on the fallback path", "Not a door opening" (not_door and duplicate), and "Built while face blurring is on"; implement and verify they pass
-- [ ] 5.6 Write failing tests for "Times match the stored stills" and "Still dropped by face detection"; add `still_ms` to the step output and verify they pass
+- [x] 5.1 Write failing tests for frame selection and thinning: "Long opening thinned", "Span starts at the first frame"
+- [x] 5.2 Implement frame selection and verify 5.1 passes
+- [x] 5.3 Write a failing integration test for "Short opening" using a synthetic PyAV clip and moto S3 (frame count, size ±2 px, 1 fps, `transient=true` tag, `analysis_video` output)
+- [x] 5.4 Implement the encoder (`libx264`, `yuv420p`, even dimensions, 1 fps) in `clip_frames.py` and the upload in `door_events.py`, and verify 5.3 passes
+- [x] 5.5 Write failing tests for "Encoding or upload fails", "No video on the fallback path", "Not a door opening" (not_door and duplicate), "Built while face blurring is on", and the updated "Clips never stored" scenarios ("Door opening processed", "Door opening processed with blurring on"); implement and verify they pass
+- [x] 5.6 Write failing tests for "Times match the stored stills" and "Still dropped by face detection"; add `still_ms` to the step output and verify they pass
 
 ## 6. Video in the analysis request
 
-- [ ] 6.1 Write failing tests for "Video instead of stills", "References before the video", "Cache point after the video"
-- [ ] 6.2 Extend `build_request` with an optional video and verify 6.1 passes
-- [ ] 6.3 Write failing tests for "Video object missing", "Analysis video deleted after analysis" (valid, invalid twice, rejected), and "Analysis video deleted when the step is retried" (kept on `BedrockRetryable`)
-- [ ] 6.4 Make `analyze_task` read `analysis_video`, fall back to stills, and delete the video in its finishing paths; verify 6.3 passes
-- [ ] 6.5 Write failing tests for "Proof mapped from video seconds", "Video moments past the end" and "Proof shown blurred" (moto S3, fake blurrer, `GET /api/events` proof link); implement the mapping through `analysis_video` and `still_ms`, and verify they pass
-- [ ] 6.6 Write failing tests for "Analysis receives blurred bytes", "Analysis video never shown" (door event fields, `GET /api/events`, `GET /api/debug/motions/{id}`), "Door check runs on downloaded stills" and "No debug stills when tracing is off"; verify they pass (implement any gaps)
+- [x] 6.1 Write failing tests for "Video instead of stills", "References before the video", "Cache point after the video"
+- [x] 6.2 Extend `build_request` with an optional video and verify 6.1 passes
+- [x] 6.3 Write failing tests for "Video object missing", "Analysis video deleted after analysis" (valid, invalid twice, rejected), and "Analysis video deleted when the step is retried" (kept on `BedrockRetryable`)
+- [x] 6.4 Make `analyze_task` read `analysis_video`, fall back to stills, and delete the video in its finishing paths; verify 6.3 passes
+- [x] 6.5 Write failing tests for "Proof mapped from video seconds", "Video moments past the end" and "Proof shown blurred" (moto S3, fake blurrer, `GET /api/events` proof link); implement the mapping through `analysis_video` and `still_ms`, and verify they pass
+- [x] 6.6 Write failing tests for "Analysis receives blurred bytes", "Analysis video never shown" (door event fields, `GET /api/events`, `GET /api/debug/motions/{id}`), "Door check runs on downloaded stills" and "No debug stills when tracing is off"; verify they pass (implement any gaps)
 
-- [ ] 6.7 Write a failing test for "Live run needs clips" (stubbed analyzer, one clip missing) and "New answers in the evidence shape"; implement `scripts/analysis_eval.py --live <run>` with the production video builder and analyzer, and verify the tests pass with no Bedrock call
+- [x] 6.7 Write a failing test for "Live run needs clips" (stubbed analyzer, one clip missing) and "New answers in the evidence shape"; implement `scripts/analysis_eval.py --live <run>` with the production video builder and analyzer, and verify the tests pass with no Bedrock call
 
 ## 7. Traces
 
-- [ ] 7.1 Write failing tests for "Video traced without a key" and "Response kept" (with observations), and update "Request with references" / "Image keys are retrievable" / "Owner's instructions shown" to the new prompt
-- [ ] 7.2 Record the video block in `traces.py` with `frames`, `frame_ms` and `bytes` and no key, and verify 7.1 passes
+- [x] 7.1 Write failing tests for "Video traced without a key" and "Response kept" (with observations), and update "Request with references" / "Image keys are retrievable" / "Owner's instructions shown" to the new prompt
+- [x] 7.2 Record the video block in `traces.py` with `frames`, `frame_ms` and `bytes` and no key, and verify 7.1 passes
 
 ## 8. Infra
 
-- [ ] 8.1 Write a failing CDK assertion test that the analyze Lambda's role has `s3:GetObject` and `s3:DeleteObject` on `*/analysis.mp4` and the fetch Lambda can put objects with tags; add the grants and verify `npm test` in `infra/` passes
-- [ ] 8.2 Check that the Lambda image's PyAV has `libx264`: run `cdk synth`, build the bundled asset locally, run `python -c "import av; av.codec.Codec('libx264','w')"` in it, and record the result (add a friction-log entry if it is missing and switch to `mpeg4`)
+- [x] 8.1 Write a failing CDK assertion test that the analyze Lambda's role has `s3:GetObject` and `s3:DeleteObject` on `*/analysis.mp4` and the fetch Lambda can put objects with tags; add the grants and verify `npm test` in `infra/` passes
+- [x] 8.2 Check that the Lambda image's PyAV has `libx264`: run `cdk synth`, build the bundled asset locally, run `python -c "import av; av.codec.Codec('libx264','w')"` in it, and record the result (add a friction-log entry if it is missing and switch to `mpeg4`)
 
 ## 9. Measure and wrap up
 
 - [ ] 9.1 With Jayson's OK (it calls Bedrock, ≈ $0.06), run `scripts/analysis_eval.py --live video-v1` over the 12 local clips, commit `fixtures/analysis_eval/video-v1/`, and paste the baseline vs video-v1 tables into the change's design.md D7
 - [ ] 9.2 If the D7 target is missed, write up the dropped and false-positive items from the run as open questions for Jayson before changing the prompt (no silent prompt tweaks after measuring)
-- [ ] 9.3 Update README's analysis section (video input, hand evidence, crop, face-blur scope) and add friction-log entries for any Bedrock video or PyAV friction actually hit; verify the README commands run as written
+- [x] 9.3 Update README's analysis section (video input, hand evidence, crop, face-blur scope) and add friction-log entries for any Bedrock video or PyAV friction actually hit; verify the README commands run as written
 - [ ] 9.4 Run the full suite and linters green: `uv run pytest` and `uv run ruff check . && uv run ruff format --check .` in `backend/`, `npm test` in `infra/` and `pwa/`; report the commands and results
