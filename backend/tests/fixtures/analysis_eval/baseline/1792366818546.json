@@ -1,0 +1,36 @@
+{
+  "added": [
+    {
+      "item": "broccoli",
+      "images": [
+        1,
+        2
+      ],
+      "quantity": 1,
+      "category": "produce",
+      "confidence": 0.9
+    },
+    {
+      "item": "carrots",
+      "images": [
+        1,
+        2
+      ],
+      "quantity": 1,
+      "category": "produce",
+      "confidence": 0.9
+    }
+  ],
+  "removed": [
+    {
+      "item": "milk",
+      "images": [
+        1,
+        2
+      ],
+      "quantity": 1,
+      "category": "dairy",
+      "confidence": 0.9
+    }
+  ]
+}

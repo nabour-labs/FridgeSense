@@ -2,16 +2,16 @@
 
 ## 1. Eval data (do first: the clips expire around Oct 25)
 
-- [ ] 1.1 Download `clip.mp4` for the 12 openings from 2026-10-18T21:32Z to 2026-10-19T00:01Z to `tmp/analysis-eval/<start_ms>.mp4`, and check that `git check-ignore tmp/analysis-eval/*.mp4` lists all 12 (S3 read only; covers "Eval clips ignored by git")
-- [ ] 1.2 Copy each opening's last `ok` Nova tool input from its `debug/nova-*.json` trace to `backend/tests/fixtures/analysis_eval/baseline/<start_ms>.json`, holding only the tool input, and check that 12 files exist
+- [x] 1.1 Download `clip.mp4` for the 12 openings from 2026-10-18T21:32Z to 2026-10-19T00:01Z to `tmp/analysis-eval/<start_ms>.mp4`, and check that `git check-ignore tmp/analysis-eval/*.mp4` lists all 12 (S3 read only; covers "Eval clips ignored by git")
+- [x] 1.2 Copy each opening's last `ok` Nova tool input from its `debug/nova-*.json` trace to `backend/tests/fixtures/analysis_eval/baseline/<start_ms>.json`, holding only the tool input, and check that 12 files exist
 - [ ] 1.3 Draft `labels.json` from frames dumped to `tmp/analysis-eval/frames/`, then have Jayson confirm or correct every opening; verify the file has 12 openings and Jayson's OK is recorded in the commit message
 
 ## 2. Eval scorer and report
 
-- [ ] 2.1 Write failing tests for label loading: "Valid labels load", "Nothing moved", "Bad quantity"
-- [ ] 2.2 Implement the label loader in `backend/tests/analysis_eval/` and verify 2.1 passes
-- [ ] 2.3 Write failing tests for scoring: "Perfect opening", "Inventory echo", "Direction flipped", "Alias matches", "Totals", "Nothing predicted and nothing labelled", "Baseline answers in the old shape", "Missing answer"
-- [ ] 2.4 Implement the scorer, reusing `inventory.normalize_name` and reading old-shape answers, and verify 2.3 passes
+- [x] 2.1 Write failing tests for label loading: "Valid labels load", "Nothing moved", "Bad quantity"
+- [x] 2.2 Implement the label loader in `backend/tests/analysis_eval/` and verify 2.1 passes
+- [x] 2.3 Write failing tests for scoring: "Perfect opening", "Inventory echo", "Direction flipped", "Alias matches", "Totals", "Nothing predicted and nothing labelled", "Baseline answers in the old shape", "Missing answer"
+- [x] 2.4 Implement the scorer, reusing `inventory.normalize_name` and reading old-shape answers, and verify 2.3 passes
 - [ ] 2.5 Write failing tests for the report command: "Compare baseline with a new run" (using a second fixture run), "Offline by default" (network blocked), and a test that the totals of `baseline/` against `labels.json` equal the per-opening sums
 - [ ] 2.6 Implement `backend/scripts/analysis_eval.py --run` and verify 2.5 passes; record the baseline totals in the change's design.md under D7
 
@@ -49,6 +49,8 @@
 - [ ] 6.4 Make `analyze_task` read `analysis_video`, fall back to stills, and delete the video in its finishing paths; verify 6.3 passes
 - [ ] 6.5 Write failing tests for "Proof mapped from video seconds", "Video moments past the end" and "Proof shown blurred" (moto S3, fake blurrer, `GET /api/events` proof link); implement the mapping through `analysis_video` and `still_ms`, and verify they pass
 - [ ] 6.6 Write failing tests for "Analysis receives blurred bytes", "Analysis video never shown" (door event fields, `GET /api/events`, `GET /api/debug/motions/{id}`), "Door check runs on downloaded stills" and "No debug stills when tracing is off"; verify they pass (implement any gaps)
+
+- [ ] 6.7 Write a failing test for "Live run needs clips" (stubbed analyzer, one clip missing) and "New answers in the evidence shape"; implement `scripts/analysis_eval.py --live <run>` with the production video builder and analyzer, and verify the tests pass with no Bedrock call
 
 ## 7. Traces
 
