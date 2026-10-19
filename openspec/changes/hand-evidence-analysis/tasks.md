@@ -67,4 +67,4 @@
 - [x] 9.1 With Jayson's OK (it calls Bedrock, ≈ $0.06), run `scripts/analysis_eval.py --live video-v1` over the 12 local clips, commit `fixtures/analysis_eval/video-v1/`, and paste the baseline vs video-v1 tables into the change's design.md D7
 - [x] 9.2 If the D7 target is missed, write up the dropped and false-positive items from the run as open questions for Jayson before changing the prompt (no silent prompt tweaks after measuring)
 - [x] 9.3 Update README's analysis section (video input, hand evidence, crop, face-blur scope) and add friction-log entries for any Bedrock video or PyAV friction actually hit; verify the README commands run as written
-- [ ] 9.4 Run the full suite and linters green: `uv run pytest` and `uv run ruff check . && uv run ruff format --check .` in `backend/`, `npm test` in `infra/` and `pwa/`; report the commands and results
+- [x] 9.4 Run the full suite and linters green: `uv run pytest` and `uv run ruff check . && uv run ruff format --check .` in `backend/`, `npm test` in `infra/` and `pwa/`; report the commands and results
