@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { ApiError } from "../api/client";
-import type { DoorEvent, Item } from "../api/types";
+import type { CameraInfo, DoorEvent, Item } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { fakeApi } from "../test-utils";
+import { deviceTimeZone } from "../stats";
 import { TvDashboard } from "./TvDashboard";
+import { clockTime } from "./tv";
 
 function item(name: string, quantity: number, category: string): Item {
   return { key: name, name, category, quantity, last_changed_at: null };
@@ -36,10 +38,28 @@ const MILK_EVENT = event(2, {
   clip: "https://s3/clip.mp4#t=1,3",
 });
 
+const CAMERA: CameraInfo = {
+  device_id: "d1",
+  name: "Fridge Cam",
+  image_url: "https://ring/cam.png",
+  manufacturer: "Ring",
+  online: true,
+  video: null,
+  image_enhancements: null,
+  motion_detection: true,
+  e2e_encryption: false,
+  location: null,
+  history: [],
+  uptime: { window_days: 30, percent: 99.2, since: null },
+  checked_at: new Date().toISOString(),
+  monitoring: { paused: false, since: null },
+};
+
 function renderTv(overrides: Partial<Record<keyof Api, unknown>> = {}) {
   const api = fakeApi({
     inventory: vi.fn().mockResolvedValue({ items: ITEMS, pending_count: 0 }),
     events: vi.fn().mockResolvedValue({ events: [MILK_EVENT] }),
+    camera: vi.fn().mockResolvedValue(CAMERA),
     ...overrides,
   });
   const report = vi.fn();
@@ -63,7 +83,7 @@ test("In the fridge lists in-stock items by category", async () => {
     expect.stringMatching(/milk.*×1/),
   ]);
   expect(within(fridge).getByRole("list", { name: "Produce" })).toHaveTextContent(/apple.*×3/);
-  expect(within(fridge).queryByText(/soda can/)).not.toBeInTheDocument();
+  for (const list of within(fridge).getAllByRole("list")) expect(list).not.toHaveTextContent(/soda can/);
 });
 
 // More than fits
@@ -110,8 +130,14 @@ test("Opens shows today's count from the same openings, last 7 days", async () =
   const { api } = renderTv({ events: vi.fn().mockResolvedValue({ events: [event(1), event(2), event(3)] }) });
   const opens = await panel("Opens");
   expect(await within(opens).findByText("3 opens today")).toBeInTheDocument();
-  expect(api.events).toHaveBeenCalledWith(7);
   expect(api.events).toHaveBeenCalledTimes(1);
+});
+
+// Four weeks requested
+test("the dashboard loads 28 days of openings", async () => {
+  const { api } = renderTv();
+  await panel("Opens");
+  expect(api.events).toHaveBeenCalledWith(28);
 });
 
 // Inventory refresh
@@ -122,6 +148,20 @@ test("inventory refreshes every 10 s and openings every 30 s", async () => {
     await act(async () => void vi.advanceTimersByTime(30_000));
     expect(api.inventory).toHaveBeenCalledTimes(4);
     expect(api.events).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Camera refresh
+test("the camera refreshes every 5 minutes, not sooner", async () => {
+  vi.useFakeTimers();
+  try {
+    const { api } = renderTv();
+    await act(async () => void vi.advanceTimersByTime(30_000));
+    expect(api.camera).toHaveBeenCalledTimes(1);
+    await act(async () => void vi.advanceTimersByTime(270_000));
+    expect(api.camera).toHaveBeenCalledTimes(2);
   } finally {
     vi.useRealTimers();
   }
@@ -139,31 +179,41 @@ test("a failed events load shows No Data in its panels only", async () => {
 // Stills not shown
 test("no stills, proof stills or clips are shown", async () => {
   renderTv();
-  await within(await panel("Recent changes")).findByText("2 min ago");
+  await within(await panel("Recent changes")).findByText(/2 min ago/);
   const dashboard = screen.getByRole("region", { name: "TV dashboard" });
   expect(dashboard.querySelectorAll("img, video")).toHaveLength(0);
   expect(dashboard.innerHTML).not.toContain("s3/");
 });
 
+// Camera image not shown
+test("the camera's image is not shown", async () => {
+  renderTv();
+  expect(await screen.findByText(/Fridge Cam/)).toBeInTheDocument();
+  const dashboard = screen.getByRole("region", { name: "TV dashboard" });
+  expect(dashboard.querySelectorAll("img")).toHaveLength(0);
+  expect(dashboard.innerHTML).not.toContain("ring/cam.png");
+});
+
 // No controls
 test("the dashboard has no buttons, links or inputs", async () => {
   renderTv();
-  await within(await panel("Recent changes")).findByText("2 min ago");
+  await within(await panel("Recent changes")).findByText(/2 min ago/);
+  await screen.findByText(/Fridge Cam/);
   const dashboard = screen.getByRole("region", { name: "TV dashboard" });
   expect(within(dashboard).queryAllByRole("button")).toHaveLength(0);
   expect(within(dashboard).queryAllByRole("link")).toHaveLength(0);
   expect(within(dashboard).queryAllByRole("textbox")).toHaveLength(0);
 });
 
-// Only two endpoints
-test("only the inventory and events endpoints are called", async () => {
+// Only three endpoints
+test("only the inventory, events and camera endpoints are called", async () => {
   const { api } = renderTv();
-  await within(await panel("Recent changes")).findByText("2 min ago");
+  await within(await panel("Recent changes")).findByText(/2 min ago/);
   const called = Object.entries(api)
     .filter(([, fn]) => vi.isMockFunction(fn) && fn.mock.calls.length > 0)
     .map(([name]) => name)
     .sort();
-  expect(called).toEqual(["events", "inventory"]);
+  expect(called).toEqual(["camera", "events", "inventory"]);
 });
 
 // Back is left to the TV app
@@ -175,4 +225,80 @@ test("Escape is not handled by the dashboard", async () => {
   expect(notHandled).toBe(true);
   expect(location.hash).toBe("#tv");
   location.hash = "";
+});
+
+// Camera online
+test("the camera line is shown under the title", async () => {
+  renderTv();
+  expect(await screen.findByText("Fridge Cam · Online · 99.2% uptime · Motion detection on")).toBeInTheDocument();
+});
+
+// Camera fails, panels load
+test("a failed camera load shows No Data for the camera only", async () => {
+  renderTv({ camera: vi.fn().mockRejectedValue(new ApiError(500)) });
+  expect(await screen.findByText("Camera: No Data")).toBeInTheDocument();
+  expect(await within(await panel("In the fridge")).findByText(/eggs/)).toBeInTheDocument();
+  expect(await within(await panel("Recent changes")).findByText(/2 min ago/)).toBeInTheDocument();
+  expect(within(await panel("Opens")).getByText("1 open today")).toBeInTheDocument();
+});
+
+// Updated after load
+test("the header shows when data last loaded", async () => {
+  renderTv();
+  await within(await panel("In the fridge")).findByText(/eggs/);
+  const now = new Date().toISOString();
+  expect(await screen.findByText(`Updated ${clockTime(now, deviceTimeZone())}`)).toBeInTheDocument();
+});
+
+// Nothing loaded yet
+test("no Updated text before anything loads", async () => {
+  renderTv({ inventory: vi.fn().mockReturnValue(new Promise(() => {})), events: vi.fn().mockReturnValue(new Promise(() => {})) });
+  await screen.findByText(/Fridge Cam/);
+  expect(screen.queryByText(/Updated/)).not.toBeInTheDocument();
+});
+
+// Pointer hidden
+test("the mouse pointer is hidden over the dashboard", async () => {
+  renderTv();
+  const dashboard = screen.getByRole("region", { name: "TV dashboard" });
+  expect(getComputedStyle(dashboard).cursor).toBe("none");
+});
+
+// Out of stock
+test("out-of-stock items are listed at the end of In the fridge", async () => {
+  renderTv();
+  expect(await within(await panel("In the fridge")).findByText("Out: soda can")).toBeInTheDocument();
+});
+
+// Condiment on the TV
+test("condiments show a salt shaker on the TV", async () => {
+  renderTv({ inventory: vi.fn().mockResolvedValue({ items: [item("ketchup", 1, "condiment")], pending_count: 0 }) });
+  const row = await within(await panel("In the fridge")).findByRole("listitem");
+  expect(row).toHaveTextContent("🧂");
+  expect(row).not.toHaveTextContent("🫙");
+});
+
+// No-change openings collapse
+test("back-to-back openings with no changes show as one row", async () => {
+  renderTv({ events: vi.fn().mockResolvedValue({ events: [event(10), event(20), MILK_EVENT] }) });
+  const recent = await panel("Recent changes");
+  expect(await within(recent).findByText("2 openings · No changes")).toBeInTheDocument();
+  expect(within(recent).getAllByRole("listitem")).toHaveLength(2);
+});
+
+// Time and duration
+test("each row shows the clock time and seconds open", async () => {
+  renderTv();
+  const row = await within(await panel("Recent changes")).findByRole("listitem");
+  expect(row).toHaveTextContent(`2 min ago · ${clockTime(MILK_EVENT.opened_at, deviceTimeZone())} · 20 s`);
+});
+
+// Open time today
+test("Opens shows today's open time and the heatmap", async () => {
+  renderTv();
+  const opens = await panel("Opens");
+  expect(await within(opens).findByText("Avg 20 s · Longest 20 s")).toBeInTheDocument();
+  const heatmap = within(opens).getByRole("figure", { name: "Opens by day and hour" });
+  expect(within(heatmap).getAllByRole("img")).toHaveLength(168);
+  expect(within(heatmap).getAllByRole("img", { name: /: 1 open$/ })).toHaveLength(1);
 });
