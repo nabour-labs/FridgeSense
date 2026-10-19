@@ -1,5 +1,5 @@
-import type { Change, DoorEvent, Item } from "../api/types";
-import { fridgeRows, opensSummary, recentRows } from "./tv";
+import type { CameraInfo, Change, DoorEvent, Item } from "../api/types";
+import { cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, tvIcon } from "./tv";
 
 const TZ = "America/Toronto";
 const NOW = new Date("2026-10-20T18:00:00Z"); // 14:00 in Toronto
@@ -60,8 +60,10 @@ test("a fridge with nothing in stock is empty", () => {
 
 // Newest five
 test("the 5 newest openings are listed, newest first", () => {
-  const events = [1, 7, 3, 5, 2, 6, 4].map((h) => event(`2026-10-20T${String(10 + h).padStart(2, "0")}:00:00Z`));
-  const rows = recentRows(events, NOW.getTime());
+  const events = [1, 7, 3, 5, 2, 6, 4].map((h) =>
+    event(`2026-10-20T${String(10 + h).padStart(2, "0")}:00:00Z`, { changes: [change("milk", "added", 1)] }),
+  );
+  const rows = recentRows(events, NOW.getTime(), TZ);
   expect(rows.map((r) => r.id)).toEqual([
     "2026-10-20T17:00:00Z",
     "2026-10-20T16:00:00Z",
@@ -71,8 +73,19 @@ test("the 5 newest openings are listed, newest first", () => {
   ]);
 });
 
+// Time and duration
+test("a row shows how long ago, the local clock time and whole seconds open", () => {
+  const rows = recentRows([event("2026-10-20T17:58:00Z", { duration_s: 12.4, changes: [change("milk", "added", 1)] })], NOW.getTime(), TZ);
+  expect(rows[0].when).toBe("2 min ago · 1:58 pm · 12 s");
+});
+
+test("clock time is lower-case 12-hour time in the given time zone", () => {
+  expect(clockTime("2026-10-21T00:42:00Z", TZ)).toBe("8:42 pm");
+  expect(clockTime("2026-10-20T04:05:00Z", TZ)).toBe("12:05 am");
+});
+
 // Change labels
-test("an opening shows when it happened and its changes, without rejected ones", () => {
+test("an opening's changes are labelled, without rejected ones", () => {
   const rows = recentRows(
     [
       event("2026-10-20T17:58:00Z", {
@@ -84,22 +97,74 @@ test("an opening shows when it happened and its changes, without rejected ones",
       }),
     ],
     NOW.getTime(),
+    TZ,
   );
-  expect(rows).toEqual([{ id: "2026-10-20T17:58:00Z", ago: "2 min ago", state: "changes", labels: ["+ 2 milk", "− eggs"] }]);
+  expect(rows).toEqual([
+    { id: "2026-10-20T17:58:00Z", when: "2 min ago · 1:58 pm · 20 s", state: "changes", labels: ["+ 2 milk", "− eggs"], count: 1 },
+  ]);
 });
 
 // Analysis running
-test("an opening still being analyzed is checking, one without changes has none", () => {
+test("an opening still being analyzed is checking and is not collapsed", () => {
   const rows = recentRows(
-    [event("2026-10-20T17:59:00Z", { status: "analyzing" }), event("2026-10-20T17:00:00Z")],
+    [event("2026-10-20T17:59:00Z", { status: "analyzing" }), event("2026-10-20T17:00:00Z"), event("2026-10-20T16:00:00Z")],
     NOW.getTime(),
+    TZ,
   );
-  expect(rows.map((r) => r.state)).toEqual(["checking", "none"]);
+  expect(rows.map((r) => [r.state, r.count])).toEqual([
+    ["checking", 1],
+    ["none", 2],
+  ]);
+});
+
+// No-change openings collapse
+test("back-to-back openings with no changes collapse into one row with the newest time", () => {
+  const rows = recentRows(
+    [
+      event("2026-10-20T17:50:00Z"),
+      event("2026-10-20T17:40:00Z"),
+      event("2026-10-20T17:30:00Z"),
+      event("2026-10-20T17:20:00Z", { changes: [change("beer", "added", 1)] }),
+    ],
+    NOW.getTime(),
+    TZ,
+  );
+  expect(rows.map((r) => [r.when, r.state, r.count, r.labels])).toEqual([
+    ["10 min ago · 1:50 pm · 20 s", "none", 3, []],
+    ["40 min ago · 1:20 pm · 20 s", "changes", 1, ["+ beer"]],
+  ]);
+});
+
+test("collapsing happens before taking 5 rows", () => {
+  const events = Array.from({ length: 6 }, (_, i) => event(`2026-10-20T1${7 - i}:00:00Z`)).concat(
+    Array.from({ length: 5 }, (_, i) => event(`2026-10-20T0${9 - i}:00:00Z`, { changes: [change("milk", "added", 1)] })),
+  );
+  const rows = recentRows(events, NOW.getTime(), TZ);
+  expect(rows.map((r) => r.count)).toEqual([6, 1, 1, 1, 1]);
+});
+
+// Single no-change opening
+test("a lone no-change opening is not counted", () => {
+  const rows = recentRows(
+    [
+      event("2026-10-20T17:50:00Z", { changes: [change("milk", "added", 1)] }),
+      event("2026-10-20T17:40:00Z"),
+      event("2026-10-20T17:30:00Z", { changes: [change("eggs", "removed", 1)] }),
+    ],
+    NOW.getTime(),
+    TZ,
+  );
+  expect(rows.map((r) => [r.state, r.count])).toEqual([
+    ["changes", 1],
+    ["none", 1],
+    ["changes", 1],
+  ]);
 });
 
 // Quiet week
-test("no openings give no rows", () => {
-  expect(recentRows([], NOW.getTime())).toEqual([]);
+test("no openings, or only older than 7 days, give no rows", () => {
+  expect(recentRows([], NOW.getTime(), TZ)).toEqual([]);
+  expect(recentRows([event("2026-10-10T17:00:00Z", { changes: [change("milk", "added", 1)] })], NOW.getTime(), TZ)).toEqual([]);
 });
 
 // Today's count
@@ -121,4 +186,121 @@ test("opens today and per day in the device's time zone", () => {
 // One opening today
 test("one opening today is singular", () => {
   expect(opensSummary([event("2026-10-20T17:00:00Z")], NOW, TZ).label).toBe("1 open today");
+});
+
+// Open time today
+test("today's average and longest open time", () => {
+  const events = [
+    event("2026-10-20T15:00:00Z", { duration_s: 10 }),
+    event("2026-10-20T16:00:00Z", { duration_s: 14 }),
+    event("2026-10-20T17:00:00Z", { duration_s: 40 }),
+    event("2026-10-19T17:00:00Z", { duration_s: 90 }),
+  ];
+  expect(opensSummary(events, NOW, TZ).openTime).toBe("Avg 21 s · Longest 40 s");
+});
+
+// No openings today
+test("no openings today: zero opens and no open time", () => {
+  const summary = opensSummary([event("2026-10-19T17:00:00Z")], NOW, TZ);
+  expect(summary.label).toBe("0 opens today");
+  expect(summary.openTime).toBeNull();
+});
+
+test("the 7-day bars ignore openings older than a week", () => {
+  const summary = opensSummary([event("2026-10-01T17:00:00Z"), event("2026-10-20T17:00:00Z")], NOW, TZ);
+  expect(summary.days.reduce((n, d) => n + d.opens, 0)).toBe(1);
+});
+
+// Heatmap
+test("heatmap cells by weekday and hour, labelled and shaded", () => {
+  const mondays = ["2026-10-19", "2026-10-12", "2026-10-05", "2026-09-28"].map((d) => event(`${d}T12:00:00Z`)); // 8 am Mon
+  const tuesday = event("2026-10-13T22:00:00Z"); // 6 pm Tue
+  const grid = heatCells([...mondays, tuesday], TZ);
+  expect(grid).toHaveLength(7);
+  expect(grid.every((row) => row.length === 24)).toBe(true);
+  expect(grid[1][8]).toEqual({ label: "Mon 8 am: 4 opens", level: 4 });
+  expect(grid[2][18]).toEqual({ label: "Tue 6 pm: 1 open", level: 1 });
+  expect(grid[0][0]).toEqual({ label: "Sun 12 am: 0 opens", level: 0 });
+  expect(grid.flat().filter((c) => c.level > 0)).toHaveLength(2);
+});
+
+// Out of stock
+test("out-of-stock items are named in inventory order", () => {
+  expect(outOfStock([item("milk", 0, "dairy"), item("eggs", 0, "dairy"), item("cheese", 2, "dairy")])).toBe("Out: milk, eggs");
+});
+
+// Many out of stock
+test("at most 6 out-of-stock names, then a count", () => {
+  const items = Array.from({ length: 8 }, (_, i) => item(`item ${i + 1}`, 0, "dairy"));
+  expect(outOfStock(items)).toBe("Out: item 1, item 2, item 3, item 4, item 5, item 6, +2 more");
+});
+
+// Nothing out of stock
+test("nothing out of stock gives no line", () => {
+  expect(outOfStock([item("cheese", 2, "dairy")])).toBeNull();
+});
+
+function camera(extra: Partial<CameraInfo> = {}): CameraInfo {
+  return {
+    device_id: "d1",
+    name: "Fridge Cam",
+    image_url: "https://ring/cam.png",
+    manufacturer: "Ring",
+    online: true,
+    video: null,
+    image_enhancements: null,
+    motion_detection: true,
+    e2e_encryption: false,
+    location: null,
+    history: [],
+    uptime: { window_days: 30, percent: 99.2, since: null },
+    checked_at: "2026-10-20T18:00:00Z",
+    monitoring: { paused: false, since: null },
+    ...extra,
+  };
+}
+
+// Camera online
+test("camera line for an online camera", () => {
+  expect(cameraLine(camera())).toBe("Fridge Cam · Online · 99.2% uptime · Motion detection on");
+});
+
+// Camera offline
+test("camera line for an offline camera", () => {
+  const line = cameraLine(camera({ online: false, motion_detection: false, uptime: { window_days: 30, percent: 75, since: null } }));
+  expect(line).toBe("Fridge Cam · Offline · 75.0% uptime · Motion detection off");
+});
+
+// Ring unavailable
+test("camera line when Ring can't be reached", () => {
+  const line = cameraLine(
+    camera({ ring: "unavailable", online: null, motion_detection: null, uptime: { window_days: 30, percent: null, since: null } }),
+  );
+  expect(line).toBe("Fridge Cam · Status unknown");
+});
+
+test("unavailable Ring is unknown even if online is set", () => {
+  expect(cameraLine(camera({ ring: "unavailable" }))).toContain("Status unknown");
+});
+
+// Monitoring paused
+test("camera line says when monitoring is paused", () => {
+  expect(cameraLine(camera({ monitoring: { paused: true, since: null } }))).toBe(
+    "Fridge Cam · Online · Paused · 99.2% uptime · Motion detection on",
+  );
+});
+
+// Condiment on the TV
+test("condiments get a salt shaker on the TV", () => {
+  expect(tvIcon("condiment", "condiment")).toBe("🧂");
+  expect(tvIcon("ketchup", "condiment")).toBe("🧂");
+});
+
+// Pepper on the TV
+test("peppers get a chili on the TV", () => {
+  expect(tvIcon("bell pepper", "produce")).toBe("🌶️");
+});
+
+test("other icons are unchanged on the TV", () => {
+  expect(tvIcon("milk", "dairy")).toBe("🥛");
 });

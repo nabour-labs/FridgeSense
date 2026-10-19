@@ -26,7 +26,7 @@
 
 ## 4. Device check and docs
 
-- [ ] 4.1 Build, sideload and run on the Vega Virtual Device (or a Fire TV): check "First launch", sign in with the viewer passcode, and watch the panels update after a real door opening; record this for the demo video
+- [x] 4.1 Build, sideload and run on the Vega Virtual Device (or a Fire TV): check "First launch", sign in with the viewer passcode, and watch the panels update after a real door opening; record this for the demo video
 - [x] 4.2 Add a "Fire TV" section to README.md: set `site.config.json` from `SiteUrl`, build, run on the Vega Virtual Device or sideload to a Fire TV, sign in with the viewer passcode
 - [x] 4.3 Add friction-log entries for any Vega SDK, Vega Virtual Device or Fire TV friction hit in 3.1–4.1
 
