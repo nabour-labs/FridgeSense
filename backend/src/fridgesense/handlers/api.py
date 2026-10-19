@@ -306,7 +306,8 @@ def get_motion(ctx: Context) -> dict:
     sk = decode_id(ctx.params["id"], "TRACE#") or decode_id(ctx.params["id"], "DOOR#")
     if sk is None:
         return json_response(400, {"error": "invalid id"})
-    sk = "TRACE#" + sk.split("#", 1)[1]  # a door event's trace shares its time and device
+    # a door event's trace shares its time and device; a later opening's adds `#<k>`
+    sk = "TRACE#" + "#".join(sk.split("#")[1:3])
     item = ctx.table.get(account_pk(ctx.account_id), sk)
     if item is None:
         return json_response(404, {"error": "no trace"})

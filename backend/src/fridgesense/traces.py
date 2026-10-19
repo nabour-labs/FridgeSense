@@ -77,6 +77,8 @@ class DoorTrace:
     closed_at: str | None = None
     alignment: dict | None = None  # {"dx", "dy", "error", "ok"} when the bookends were aligned
     face_blur: bool = True  # the owner's setting for this motion: raw stills are thumbnails
+    # one entry per door event of the motion; the top-level fields above are the first one's
+    openings: list[dict] = field(default_factory=list)
 
     def results(self) -> dict[int, StillResult]:
         return {n: self.check.result_of(v) for n, v in self.values.items()}
@@ -235,6 +237,7 @@ class TraceWriter:
             "open_span": trace.open_span,
             "picked": trace.picked,
             "stored_keys": trace.stored_keys,
+            "openings": trace.openings,
         }
         self._put(f"{prefix}door.json", json.dumps(doc).encode(), "application/json")
 
@@ -430,6 +433,13 @@ def with_links(doc: dict, sign) -> dict:
         }
         out.pop("stored_keys", None)
         out["stored_urls"] = [sign(k) for k in doc.get("stored_keys", [])]
+        out["openings"] = [
+            {
+                **{k: v for k, v in o.items() if k != "stored_keys"},
+                "stored_urls": [sign(k) for k in o.get("stored_keys", [])],
+            }
+            for o in doc.get("openings", [])
+        ]
     if "request" in doc:  # Nova call trace
         content = [
             _linked(b, sign) if b["type"] == "image" else b for b in doc["request"]["content"]
