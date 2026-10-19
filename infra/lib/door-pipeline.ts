@@ -22,6 +22,9 @@ import {
   Fail,
   JsonPath,
   LogLevel,
+  Map as SfnMap,
+  Pass,
+  Result,
   StateMachine,
   StateMachineType,
   Succeed,
@@ -170,8 +173,13 @@ export class DoorPipeline extends Construct {
     const analyze = step("Analyze", "analyze");
     const save = step("Save", "save");
     const markFailed = step("MarkFailed", "mark_failed");
+    // Inside the per-opening loop: marks that opening's event and lets the next one run.
+    const markOpeningFailed = step("MarkOpeningFailed", "mark_failed");
     const dropRawClip = step("DropRawClip", "drop_raw_clip");
     const done = new Succeed(this, "Done");
+    const openingDone = new Pass(this, "OpeningDone", { result: Result.fromString("ok") });
+    const openingFailed = new Pass(this, "OpeningFailed", { result: Result.fromString("failed") });
+    markOpeningFailed.next(openingFailed);
 
     // Faces in the open-span clip are blurred (deface) before the door event links it.
     const blurFn = new DockerImageFunction(this, "ClipBlurFunction", {
@@ -206,10 +214,10 @@ export class DoorPipeline extends Construct {
       payloadResponseOnly: true,
     });
     blurClip.addCatch(dropRawClip, { errors: ["States.ALL"], resultPath: "$.error" });
-    dropRawClip.next(done);
+    dropRawClip.next(openingDone);
     const hasRawClip = new Choice(this, "HasRawClip")
-      .when(Condition.isPresent("$.clip.raw_key"), blurClip.next(done))
-      .otherwise(done);
+      .when(Condition.isPresent("$.clip.raw_key"), blurClip.next(openingDone))
+      .otherwise(openingDone);
 
     analyze.addRetry({
       errors: ["BedrockRetryable"],
@@ -217,9 +225,9 @@ export class DoorPipeline extends Construct {
       maxAttempts: 2,
       backoffRate: 2,
     });
-    analyze.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
+    analyze.addCatch(markOpeningFailed, { errors: ["States.ALL"], resultPath: "$.error" });
     // The event is already "analyzing" here; a failed save must not leave it there.
-    save.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
+    save.addCatch(markOpeningFailed, { errors: ["States.ALL"], resultPath: "$.error" });
     // Window and stills only read Ring and overwrite the same keys, so a retry is safe.
     for (const s of [findWindow, fetchStills]) {
       s.addRetry({
@@ -231,7 +239,28 @@ export class DoorPipeline extends Construct {
       s.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
     }
     // A Fail state, so ExecutionsFailed (and its alarm) counts these runs.
-    markFailed.next(new Fail(this, "AnalysisFailed", { error: "AnalysisFailed" }));
+    const analysisFailed = new Fail(this, "AnalysisFailed", { error: "AnalysisFailed" });
+    markFailed.next(analysisFailed);
+
+    // One door event per opening in the motion: analyzed one at a time, in order, so each
+    // analysis sees the inventory the previous one saved. A failed opening never stops the rest.
+    const analyzeOpenings = new SfnMap(this, "AnalyzeOpenings", {
+      itemsPath: "$.openings",
+      maxConcurrency: 1,
+      resultPath: "$.opening_results",
+    }).itemProcessor(analyze.next(save).next(hasRawClip));
+    analyzeOpenings.next(
+      new Pass(this, "CheckOpenings", {
+        parameters: {
+          failed: JsonPath.arrayContains(JsonPath.listAt("$.opening_results"), "failed"),
+        },
+        resultPath: "$.check",
+      }).next(
+        new Choice(this, "AnyOpeningFailed")
+          .when(Condition.booleanEquals("$.check.failed", true), analysisFailed)
+          .otherwise(done),
+      ),
+    );
 
     const waitAgain = new Wait(this, "WaitForRecordingEnd", {
       time: WaitTime.duration(Duration.seconds(20)),
@@ -248,7 +277,7 @@ export class DoorPipeline extends Construct {
       );
     fetchStills.next(
       new Choice(this, "IsDoorOpening")
-        .when(Condition.stringEquals("$.outcome", "door_open"), analyze.next(save).next(hasRawClip))
+        .when(Condition.stringEquals("$.outcome", "door_open"), analyzeOpenings)
         .otherwise(new Succeed(this, "NoAnalysis")),
     );
 

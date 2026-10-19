@@ -17,8 +17,8 @@
 
 ## 4. Workflow runs each opening
 
-- [ ] 4.1 Update `infra/test/pipeline.test.ts`: the state helper flattens Map iterator states. Add failing tests for "Openings run one at a time", for the iterator's Analyze/Save catches going to `MarkOpeningFailed` → `OpeningFailed`, and for "One opening fails" / "All openings succeed" (`CheckOpenings` → `AnalysisFailed` | `Done`). Run `npm test` in `infra/` and see them fail.
-- [ ] 4.2 Add the sequential Map in `infra/lib/door-pipeline.ts`. Verify that `npm test` in `infra/` is green and that `npx cdk synth` succeeds (no deploy).
+- [x] 4.1 Update `infra/test/pipeline.test.ts`: the state helper flattens Map iterator states. Add failing tests for "Openings run one at a time", for the iterator's Analyze/Save catches going to `MarkOpeningFailed` → `OpeningFailed`, and for "One opening fails" / "All openings succeed" (`CheckOpenings` → `AnalysisFailed` | `Done`). Run `npm test` in `infra/` and see them fail.
+- [x] 4.2 Add the sequential Map in `infra/lib/door-pipeline.ts`. Verify that `npm test` (which synthesizes the stack) and `npm run typecheck` in `infra/` are green. No deploy; a full `npx cdk synth` is skipped because it needs the clip-blur Docker build.
 
 ## 5. Clip evaluation
 
