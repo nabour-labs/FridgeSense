@@ -1,0 +1,26 @@
+{
+  "added": [
+    {
+      "item": "soda can",
+      "images": [
+        1,
+        2,
+        3
+      ],
+      "quantity": 1,
+      "category": "beverage",
+      "confidence": 0.9
+    }
+  ],
+  "removed": [
+    {
+      "item": "bottle",
+      "images": [
+        4
+      ],
+      "quantity": 1,
+      "category": "other",
+      "confidence": 0.9
+    }
+  ]
+}

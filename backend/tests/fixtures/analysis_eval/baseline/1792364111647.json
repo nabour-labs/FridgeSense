@@ -1,0 +1,66 @@
+{
+  "added": [
+    {
+      "item": "milk",
+      "images": [
+        2,
+        3
+      ],
+      "quantity": 1,
+      "category": "dairy",
+      "confidence": 0.9
+    },
+    {
+      "item": "eggs",
+      "images": [
+        2,
+        3
+      ],
+      "quantity": 1,
+      "category": "dairy",
+      "confidence": 0.9
+    },
+    {
+      "item": "bowl",
+      "images": [
+        2,
+        3
+      ],
+      "quantity": 1,
+      "category": "other",
+      "confidence": 0.9
+    },
+    {
+      "item": "bottle",
+      "images": [
+        2,
+        3
+      ],
+      "quantity": 1,
+      "category": "beverage",
+      "confidence": 0.9
+    },
+    {
+      "item": "condiment",
+      "images": [
+        2,
+        3
+      ],
+      "quantity": 1,
+      "category": "condiment",
+      "confidence": 0.9
+    }
+  ],
+  "removed": [
+    {
+      "item": "soda can",
+      "images": [
+        2,
+        3
+      ],
+      "quantity": 1,
+      "category": "beverage",
+      "confidence": 0.9
+    }
+  ]
+}

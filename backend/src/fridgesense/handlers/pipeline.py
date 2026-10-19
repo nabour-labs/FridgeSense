@@ -13,6 +13,7 @@ from fridgesense import (
     door_calibration,
     door_events,
     face_blur,
+    fridge_area,
     inventory,
     monitoring,
     traces,
@@ -57,6 +58,11 @@ def _trace_writer():
     return traces.writer_from_env(boto3.client("s3"), FridgeTable(), _bucket())
 
 
+def _area_box(account_id: str, device_id: str):
+    area = fridge_area.load(FridgeTable(), account_id, device_id)
+    return area.box if area else None
+
+
 def handler(event, context):
     logging.getLogger().setLevel(logging.INFO)
     # The state machine sends {"task", "input"}; direct calls may send the state flat.
@@ -93,6 +99,7 @@ def handler(event, context):
             paused_for=lambda account_id, device_id: (
                 monitoring.load(FridgeTable(), account_id, device_id).paused
             ),
+            area_for=_area_box,
         )
     if task == "analyze":
         analyzer = NovaAnalyzer.from_env(bedrock_client())

@@ -1,0 +1,13 @@
+{
+  "ResponseMetadata": {"HTTPStatusCode": 200},
+  "output": {"message": {"role": "assistant", "content": [
+    {"toolUse": {"toolUseId": "tooluse_old111", "name": "record_fridge_changes",
+      "input": {
+        "added": [{"item": "milk", "category": "dairy", "quantity": 1, "confidence": 0.92}],
+        "removed": [{"item": "eggs", "category": "dairy", "quantity": 2, "confidence": 0.71}]
+      }}}
+  ]}},
+  "stopReason": "tool_use",
+  "usage": {"inputTokens": 1180, "outputTokens": 96, "totalTokens": 1276},
+  "metrics": {"latencyMs": 2140}
+}

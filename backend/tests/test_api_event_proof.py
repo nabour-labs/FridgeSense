@@ -71,3 +71,49 @@ def test_index_past_the_stored_stills(tokens):
 def test_old_event_has_no_proof(tokens):
     with_proof(put_event(int(NOW * 1000) - 8 * DAY_MS, stills=4), [0])
     assert proof_of(tokens["owner"], days="30") == []
+
+
+# Scenario: Proof shown blurred (fridge-change-analysis: proof from a video-based analysis)
+def test_proof_shown_blurred(tokens):
+    import boto3
+
+    from fridgesense.analysis import NovaAnalyzer
+    from fridgesense.inventory import analyze_task, save_task
+    from tests.conftest import BUCKET
+    from tests.test_analyze_video import FakeBedrock, with_moments
+
+    opened_ms = int(NOW * 1000) - HOUR_MS
+    sk = put_event(opened_ms, stills=4, status="analyzing")
+    keys = FridgeTable().get(PK, sk)["still_keys"]
+    s3 = boto3.client("s3")
+    blurred = [f"blurred still {n}".encode() for n in range(1, 5)]
+    for key, body in zip(keys, blurred, strict=True):
+        s3.put_object(Bucket=BUCKET, Key=key, Body=body)
+    prefix = keys[0].rsplit("/", 1)[0] + "/"
+    s3.put_object(Bucket=BUCKET, Key=f"{prefix}analysis.mp4", Body=b"unblurred video")
+    state = {
+        "account_id": "ava1.ring.account.A1",
+        "door_sk": sk,
+        "still_keys": keys,
+        "still_ms": [opened_ms, opened_ms + 3000, opened_ms + 6000, opened_ms + 9000],
+        "analysis_video": {
+            "key": f"{prefix}analysis.mp4",
+            "start_ms": opened_ms,
+            "frame_ms": 500,
+            "frames": 20,
+        },
+    }
+    # the canned answer adds milk (moment 6 s -> opened + 3000 ms -> still 2) and removes eggs
+    bedrock = FakeBedrock(with_moments([6], []))
+    out = analyze_task(NovaAnalyzer(bedrock), s3, FridgeTable(), BUCKET, state)
+    save_task(FridgeTable(), out)
+
+    status, body = call("GET", "/api/events", token=tokens["owner"])
+    assert status == 200
+    [event] = body["events"]
+    milk = next(c for c in event["changes"] if c["item"] == "milk")
+    [link] = milk["proof"]
+    assert urlparse(link).path.endswith(f"/{keys[1]}")
+    assert s3.get_object(Bucket=BUCKET, Key=keys[1])["Body"].read() == blurred[1]
+    every_link = [lk for c in event["changes"] for lk in c["proof"]]
+    assert not any("analysis.mp4" in lk or "/debug/" in lk for lk in every_link)

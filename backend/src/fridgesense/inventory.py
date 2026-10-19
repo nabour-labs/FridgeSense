@@ -8,7 +8,14 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from fridgesense import analysis_config
-from fridgesense.analysis import CATEGORIES, BedrockRejected, NovaAnalyzer
+from fridgesense.analysis import (
+    CATEGORIES,
+    MAX_PROOF,
+    BedrockRejected,
+    BedrockRetryable,
+    FridgeChanges,
+    NovaAnalyzer,
+)
 from fridgesense.door_events import iso_utc
 from fridgesense.logs import log_event
 from fridgesense.table import FridgeTable, TransactionConflict, account_pk
@@ -50,7 +57,10 @@ def analyze_task(
         def on_call(record):
             writer.nova(state, run_ms, record, references, state["still_keys"])
 
+    video_info = state.get("analysis_video")
+    video = _read_video(s3, bucket, video_info, context) if video_info else None
     result = None
+    retrying = False
     try:
         result = analyzer.analyze(
             stills,
@@ -60,19 +70,70 @@ def analyze_task(
             instructions=config.instructions,
             on_usage=record_usage,
             on_call=on_call,
+            video=video,
+            video_frames=video_info["frames"] if video is not None else None,
         )
+    except BedrockRetryable:
+        retrying = True  # the workflow runs this step again: it needs the video
+        raise
     except BedrockRejected as e:
         log_event("analysis_failed", logging.ERROR, reason=str(e), **context)
     finally:
         # Record what was spent, including on attempts the workflow will retry.
         if result is not None and result.usage:
             table.add(account_pk(account_id), door_sk, "nova_usd", result.usd)
+        if video_info and not retrying:
+            _delete_video(s3, bucket, video_info["key"], context)
     if result is None or result.changes is None:
         if result is not None:
             log_event("analysis_failed", logging.ERROR, reason="invalid answer", **context)
         _set_status(table, account_id, door_sk, "analysis_failed")
         return {**state, "outcome": "analysis_failed"}
-    return {**state, "analysis": result.changes.model_dump()}
+    changes = result.changes
+    if video is not None:
+        changes = _proof_from_video(changes, video_info, state.get("still_ms", []))
+    return {**state, "analysis": changes.model_dump()}
+
+
+def _read_video(s3, bucket: str, info: dict, context: dict) -> bytes | None:
+    """The stored analysis video, or None (logged) so the analysis falls back to the stills."""
+    try:
+        return s3.get_object(Bucket=bucket, Key=info["key"])["Body"].read()
+    except Exception as e:  # missing or unreadable: the stills still work
+        log_event("analysis_video_missing", logging.WARNING, error=type(e).__name__, **context)
+        return None
+
+
+def _delete_video(s3, bucket: str, key: str, context: dict) -> None:
+    """The unblurred analysis video lives only for the analysis; the lifecycle rule is the
+    backstop if this fails."""
+    try:
+        s3.delete_object(Bucket=bucket, Key=key)
+    except Exception as e:
+        log_event("analysis_video_not_deleted", logging.WARNING, error=type(e).__name__, **context)
+
+
+def _proof_from_video(changes: FridgeChanges, info: dict, still_ms: list[int]) -> FridgeChanges:
+    """Each change's video seconds as proof image numbers: the stored still nearest in time."""
+
+    def nearest(seconds: list[float]) -> list[int]:
+        if not still_ms:
+            return []
+        picked = set()
+        for s in seconds:
+            at = info["start_ms"] + s * info["frame_ms"]
+            picked.add(min(range(len(still_ms)), key=lambda i: abs(still_ms[i] - at)) + 1)
+        return sorted(picked)[:MAX_PROOF]
+
+    def mapped(change):
+        return change.model_copy(update={"images": nearest(change.seconds)})
+
+    return changes.model_copy(
+        update={
+            "added": [mapped(c) for c in changes.added],
+            "removed": [mapped(c) for c in changes.removed],
+        }
+    )
 
 
 def mark_failed_task(table: FridgeTable, state: dict) -> dict:

@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "item": "cup",
+      "category": "other",
+      "quantity": 1,
+      "going_in": false,
+      "coming_out": true,
+      "moments": [
+        7.0
+      ],
+      "confidence": 1.0
+    }
+  ],
+  "observations": "The person opens the fridge door, looks inside, and then takes a cup out of the fridge and holds it in their hand as they close the door."
+}

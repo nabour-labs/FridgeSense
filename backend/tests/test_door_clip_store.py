@@ -28,6 +28,7 @@ from tests.test_fetch_stills_task import (
 
 CLIP_KEY = f"{PREFIX}clip.mp4"
 RAW_KEY = f"{PREFIX}clip-raw.mp4"
+ANALYSIS_KEY = f"{PREFIX}analysis.mp4"
 ring_http = clip_tests.ring_http  # the fixture
 
 
@@ -66,9 +67,11 @@ def test_door_opening_processed(aws, ring_http, tmp_path):
     serve_stills()
     run(ring_http, clip_dir=tmp_path, face_blur=False)
     keys = stored_keys()
-    assert [k for k in keys if k.endswith(".mp4")] == [CLIP_KEY]
+    # the fetch step's videos: clip.mp4 and the transient analysis.mp4 (deleted by analyze)
+    assert [k for k in keys if k.endswith(".mp4")] == [ANALYSIS_KEY, CLIP_KEY]
     assert all(
-        k == CLIP_KEY or (k.startswith(f"{PREFIX}still-") and k.endswith(".jpg")) for k in keys
+        k in (CLIP_KEY, ANALYSIS_KEY) or (k.startswith(f"{PREFIX}still-") and k.endswith(".jpg"))
+        for k in keys
     )
     assert stored_size(CLIP_KEY) < served
 
@@ -182,7 +185,8 @@ def test_door_opening_processed_with_blurring_on(aws, ring_http, tmp_path):
     serve_stills()
     run(ring_http, clip_dir=tmp_path, face_blur=True)
     keys = stored_keys()
-    assert [k for k in keys if k.endswith(".mp4")] == [RAW_KEY]
+    # after the fetch step; the analyze and blur steps remove both (see the pipeline e2e test)
+    assert [k for k in keys if k.endswith(".mp4")] == [ANALYSIS_KEY, RAW_KEY]
     assert list(tmp_path.iterdir()) == []
 
 

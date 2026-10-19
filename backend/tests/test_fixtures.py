@@ -25,6 +25,8 @@ NOVA_FIXTURES = [
     "converse_tool_use.json",
     "converse_text_then_tool.json",
     "converse_end_turn.json",
+    "converse_old_shape.json",
+    "converse_items_dropped.json",
 ]
 REKOGNITION_FIXTURES = ["detect_faces_one.json", "detect_faces_two.json"]
 CONVERSE_FIXTURES = [

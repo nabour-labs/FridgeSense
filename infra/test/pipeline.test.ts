@@ -361,3 +361,27 @@ describe("clip blur", () => {
     expect(ddb.flatMap(actions)).toEqual(["dynamodb:UpdateItem"]);
   });
 });
+
+describe("analysis video (hand-evidence-analysis)", () => {
+  // The pipeline Lambda writes analysis.mp4 tagged transient (fetch_stills), then reads and
+  // deletes it (analyze): its bucket grant must cover all three on every event prefix.
+  it("lets the pipeline Lambda put (with tags), get and delete analysis.mp4", () => {
+    const [id] = lambdaByHandler("fridgesense.handlers.pipeline.handler");
+    const statements = statementsFor(id.slice(0, 12));
+    const onObjects = statements.filter((s) => JSON.stringify(s.Resource).includes('/*"'));
+    const granted = new Set(onObjects.flatMap(actions));
+    for (const action of ["s3:PutObject", "s3:PutObjectTagging", "s3:GetObject*", "s3:DeleteObject*"]) {
+      expect(granted).toContain(action);
+    }
+  });
+
+  it("expires transient objects within a day", () => {
+    const [bucket] = Object.values(resourcesOf("AWS::S3::Bucket")).filter((b) =>
+      JSON.stringify(b.Properties.BucketName ?? "").includes("fridgesense-stills"),
+    );
+    const rules = (bucket.Properties.LifecycleConfiguration as { Rules: Record<string, unknown>[] }).Rules;
+    expect(rules).toContainEqual(
+      expect.objectContaining({ ExpirationInDays: 1, TagFilters: [{ Key: "transient", Value: "true" }] }),
+    );
+  });
+});
