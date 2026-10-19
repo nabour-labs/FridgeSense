@@ -38,4 +38,4 @@
 
 - [x] 6.1 Run `uv run pytest` and `uv run ruff check .` in `backend/`, and `npm test` in `pwa/`; all green
 - [x] 6.2 Add a friction-log entry: Ring's device API lists `privacy_zones` but returns no zone shapes, so a mask change had to be inferred from pixels
-- [ ] 6.3 After deploy, with Jayson's OK: clear the false move on the prod `ALIGN#` item (`moved = false`, `moved_at = null`, `failures = 0`, `last_moved_at = null`), then confirm `GET /api/warnings` no longer lists `camera_moved`
+- [x] 6.3 After deploy, with Jayson's OK: clear the false move on the prod `ALIGN#` item (`moved = false`, `moved_at = null`, `failures = 0`, `last_moved_at = null`), then confirm `GET /api/warnings` no longer lists `camera_moved`
