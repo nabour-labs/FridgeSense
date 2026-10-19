@@ -239,3 +239,41 @@ def test_writer_from_env(aws, monkeypatch, setting, kind):
     else:
         monkeypatch.setenv("DEBUG_TRACES", setting)
     assert type(writer_from_env(boto3.client("s3"), FridgeTable(), BUCKET)) is kind
+
+
+STATE30 = {**STATE, "window": {**STATE["window"], "end_ms": STATE["window"]["start_ms"] + 30_000}}
+
+
+# Two openings traced (30 stills, stills 3-6 and 20-24 open)
+@respx.mock
+def test_two_openings_traced(aws, ring_http):
+    ring_serves(stills_open_at(set(range(3, 7)) | set(range(20, 25)), 30), state=STATE30)
+    out = run(ring_http, state=STATE30)
+    doc = door_json()
+    events = {e["sk"]: e for e in door_events()}
+    first, second = doc["openings"]
+    assert [first["door_sk"], second["door_sk"]] == [DOOR_SK, f"{DOOR_SK}#2"]
+    assert first["open_span"] == [3, 4, 5, 6, 7]
+    assert second["open_span"] == [20, 21, 22, 23, 24, 25]
+    for opening in doc["openings"]:
+        event = events[opening["door_sk"]]
+        assert opening["opened_at"] == event["opened_at"]
+        assert opening["closed_at"] == event["closed_at"]
+        assert opening["stored_keys"] == event["still_keys"]
+    assert second["stored_keys"] == out["openings"][1]["still_keys"]
+    assert doc["door_sk"] == DOOR_SK
+    for key in ("door_sk", "opened_at", "closed_at", "open_span", "picked", "stored_keys"):
+        assert doc[key] == first[key]
+
+
+# One opening traced
+@respx.mock
+def test_one_opening_traced(aws, ring_http):
+    ring_serves(stills_open_at(set(range(6, 16))))
+    run(ring_http)
+    doc = door_json()
+    [opening] = doc["openings"]
+    assert opening == {
+        key: doc[key]
+        for key in ("door_sk", "opened_at", "closed_at", "open_span", "picked", "stored_keys")
+    }

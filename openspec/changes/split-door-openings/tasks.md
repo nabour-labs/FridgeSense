@@ -12,8 +12,8 @@
 
 ## 3. Traces and trace lookup
 
-- [ ] 3.1 Write failing tests for "Two openings traced" and "One opening traced" (`tests/test_door_traces.py`), and for "Trace by a later opening's id" (`tests/test_api_debug.py`).
-- [ ] 3.2 Add `openings` to `DoorTrace` and `door.json`, and make the trace lookup drop a `#<k>` suffix. Verify 3.1 green.
+- [x] 3.1 Write failing tests for "Two openings traced" and "One opening traced" (`tests/test_door_traces.py`), and for "Trace by a later opening's id" (`tests/test_api_debug.py`).
+- [x] 3.2 Add `openings` to `DoorTrace` and `door.json`, and make the trace lookup drop a `#<k>` suffix. Verify 3.1 green.
 
 ## 4. Workflow runs each opening
 

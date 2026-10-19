@@ -240,6 +240,16 @@ def test_trace_by_door_event_id(owner):
     assert body["nova_totals"]["calls"] == 2
 
 
+# Trace by a later opening's id
+def test_trace_by_a_later_openings_id(owner):
+    start = recent(1)
+    motion(start, "door_open", TWO_CALLS)
+    status, body = detail(owner, api.encode_id(f"{door_sk(start)}#2"))
+    assert status == 200, body
+    assert body["id"] == api.encode_id(f"TRACE#{iso_utc(start)}#{DEVICE}")
+    assert body["door"]["outcome"] == "door_open"
+
+
 def test_trace_by_motion_id(owner):
     start = recent(1)
     motion(start)

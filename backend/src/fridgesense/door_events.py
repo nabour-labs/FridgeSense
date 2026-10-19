@@ -1143,6 +1143,18 @@ def _fetch_stills(
     learn()
     trace.door_sk = items[0]["sk"]
     trace.opened_at, trace.closed_at = items[0]["opened_at"], items[0]["closed_at"]
+    if first.span is not None:
+        trace.openings = [
+            {
+                "door_sk": item["sk"],
+                "opened_at": item["opened_at"],
+                "closed_at": item["closed_at"],
+                "open_span": [raw[i][0] for i in o.span or []],
+                "picked": o.picked,
+                "stored_keys": o.still_keys,
+            }
+            for o, item in zip(openings, items, strict=True)
+        ]
     if analyzed:
         return done({**analyzed[0], "openings": analyzed})
     return done({**first.output(state, items[0]["sk"], {}), "outcome": "no_media"})
