@@ -23,6 +23,7 @@ import respx
 from PIL import Image
 
 from fridgesense.door_events import (
+    MIN_CLOSED_GAP_MS,
     DoorCheck,
     fetch_stills,
     parse_interval,
@@ -97,11 +98,17 @@ def load_labels(path: Path | str = LABELS) -> dict[str, list[Opening]]:
 
 
 def expected_span(openings: list[Opening], duration_s: float) -> tuple[float, float] | None:
-    """(open, close) the check should find: first open to last close; None close: clip end."""
+    """(open, close) of the first door event the check should record: the first open to the
+    close of the last opening before a gap of MIN_CLOSED_GAP_MS or more; None close: clip end."""
     if not openings:
         return None
-    close = openings[-1].closed_s
-    return openings[0].opened_s, duration_s if close is None else close
+    gap_s = MIN_CLOSED_GAP_MS / 1000
+    last = openings[0]
+    for after in openings[1:]:
+        if last.closed_s is None or after.opened_s - last.closed_s >= gap_s:
+            break
+        last = after
+    return openings[0].opened_s, duration_s if last.closed_s is None else last.closed_s
 
 
 EPOCH_MS = 1786715596000  # every clip's window starts here

@@ -56,6 +56,12 @@ def test_two_openings_in_one_clip():
     assert expected_span([Opening(2.0, 6.0), Opening(15.0, 20.0)], 30.0) == (2.0, 20.0)
 
 
+# Openings separated by a long gap: only the first door event is checked
+def test_openings_separated_by_a_long_gap():
+    assert expected_span([Opening(0.0, 38.0), Opening(111.0, None)], 115.0) == (0.0, 38.0)
+    assert expected_span([Opening(2.0, 6.0), Opening(16.0, 20.0)], 30.0) == (2.0, 6.0)
+
+
 # Door still open at clip end (span part)
 def test_door_still_open_at_clip_end_span():
     assert expected_span([Opening(3.0, None)], 25.1) == (3.0, 25.1)

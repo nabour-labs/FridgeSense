@@ -22,9 +22,9 @@
 
 ## 5. Clip evaluation
 
-- [ ] 5.1 Write a failing test for "Openings separated by a long gap" (`tests/clips/`). Keep "Two openings in one clip" (9 s gap) as it is.
-- [ ] 5.2 Make `expected_span` stop at the first labelled gap of 10 s or more. Verify `uv run pytest tests/clips` green.
+- [x] 5.1 Write a failing test for "Openings separated by a long gap" (`tests/clips/`). Keep "Two openings in one clip" (9 s gap) as it is.
+- [x] 5.2 Make `expected_span` stop at the first labelled gap of 10 s or more. Verify `uv run pytest tests/clips` green.
 
 ## 6. Wrap-up
 
-- [ ] 6.1 Run the full backend suite (`uv run pytest`), `uv run ruff check . && uv run ruff format --check .`, and `npm test` in `infra/`, all green. Add a friction-log entry only if a covered service caused friction.
+- [x] 6.1 Run the full backend suite (`uv run pytest`), `uv run ruff check . && uv run ruff format --check .`, and `npm test` in `infra/`, all green. Add a friction-log entry only if a covered service caused friction.
