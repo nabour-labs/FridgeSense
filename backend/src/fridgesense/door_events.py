@@ -142,6 +142,50 @@ def is_suspect(opened: list[bool], zones_source: str) -> bool:
     return (opened[0] and opened[-1]) or sum(opened) / len(opened) >= SUSPECT_OPEN_SHARE
 
 
+# A zone's edges (at 128x72, /255) this close to the closed anchor's: the zone looks closed.
+# Measured on 2026-10-18: closed references 0.00-0.03, the owner in front 0.08-0.16.
+ZONE_CLOSED_MAX_DIFF = 0.05
+
+
+def is_blocked(
+    anchor: bytes | None,
+    check: "DoorCheck",
+    dx: float,
+    dy: float,
+    bookends: list[tuple[bytes | Image.Image, list["ZoneValue"]]],
+) -> bool:
+    """A suspect clip whose open bookends show nothing wrong with the rules: no zone that reads
+    open there still looks like the closed anchor (someone or something is in the way). False
+    without an anchor or an open bookend. `check` holds the zones where setup put them; the
+    bookends' content moved by (dx, dy)."""
+    from fridgesense import alignment  # alignment imports this module
+
+    opened = [(frame, values) for frame, values in bookends if any(v.open for v in values)]
+    if anchor is None or not opened:
+        return False
+    closed = alignment.edges_from_bytes(anchor)
+    w, h = alignment.SIZE
+
+    def pixels(box: Box) -> tuple[int, int, int, int]:
+        x, y, bw, bh = box
+        return (round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h))
+
+    for frame, values in opened:
+        edges = alignment.edge_map(frame)
+        for v in values:
+            if not v.open:
+                continue
+            box = check.rules[v.zone - 1].box
+            a = closed.crop(pixels(box))
+            b = edges.crop(pixels(alignment.shift_box(box, dx, dy)))
+            if a.size != b.size:  # rounding can leave the shifted box a pixel wider
+                b = b.resize(a.size)
+            diff = ImageStat.Stat(ImageChops.difference(a, b)).mean[0] / 255
+            if diff <= ZONE_CLOSED_MAX_DIFF:
+                return False
+    return True
+
+
 def pick(span: list[int], count: int = STILL_COUNT) -> list[int]:
     """Up to `count` evenly spaced items of `span`, always including its first and last."""
     if len(span) <= count:
@@ -684,6 +728,20 @@ def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, windo
         )
 
 
+def _blocked(plan, aligned, base: "DoorCheck", raw, values) -> bool:
+    """Whether a suspect clip's open bookends only show something in the way of the zones;
+    a failure here counts the clip as before."""
+    if plan is None:
+        return False
+    dx, dy = (aligned.dx, aligned.dy) if aligned is not None and aligned.ok else (plan.dx, plan.dy)
+    try:
+        bookends = [(raw[0][1], values[0]), (raw[-1][1], values[-1])]
+        return is_blocked(plan.anchor, base, dx, dy, bookends)
+    except Exception as e:
+        log_event("door_blocked_check_failed", logging.WARNING, error=type(e).__name__)
+        return False
+
+
 def _count_suspect(table, account_id: str, device_id: str, suspect: bool) -> None:
     """Keep the device's suspect streak; a failure here never changes the event's outcome."""
     from fridgesense import alignment  # alignment imports this module
@@ -883,12 +941,14 @@ def _fetch_stills(
         trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
         results = [check.result_of(v) for v in values]
         opened = [r.is_open for r in results]
-        if clip is not None and check.source in ("setup", "tuned"):
-            _count_suspect(table, account_id, device_id, is_suspect(opened, check.source))
-        if clip is not None and is_suspect(opened, check.source):
-            suspect = True
+        suspect = clip is not None and is_suspect(opened, check.source)
+        blocked = suspect and _blocked(plan, aligned, base, raw, values)
+        counted = clip is not None and check.source in ("setup", "tuned") and not blocked
+        if counted:
+            _count_suspect(table, account_id, device_id, suspect)
+        if suspect:
             log_event(
-                "door_check_suspect",
+                "door_check_blocked" if blocked else "door_check_suspect",
                 account_id=account_id,
                 device_id=device_id,
                 frames=len(opened),
