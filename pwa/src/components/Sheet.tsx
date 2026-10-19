@@ -1,6 +1,9 @@
 import { Maximize2, Minimize2, X } from "lucide-react";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+/** How many sheets enclose this one in the React tree. */
+const Depth = createContext(0);
 
 /** A bottom sheet on phones, a centered card on wider screens. */
 export function Sheet({
@@ -17,15 +20,18 @@ export function Sheet({
 }) {
   const id = useId();
   const [maximized, setMaximized] = useState(false);
+  const depth = useContext(Depth);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Portalled to <body> so an animated ancestor can't become its containing block.
+  // Portalled to <body> so an animated ancestor can't become its containing block. A sheet
+  // opened from inside another lands earlier in <body> when both mount at once, so its layer
+  // comes from its depth, not from document order.
   return createPortal(
-    <div className="fixed inset-0 z-30 flex items-end justify-center sm:items-center">
+    <div style={{ zIndex: 30 + depth }} className="fixed inset-0 flex items-end justify-center sm:items-center">
       <button
         aria-label="Close"
         className="absolute inset-0 animate-fade-in bg-slate-950/50 backdrop-blur-sm"
@@ -68,7 +74,7 @@ export function Sheet({
             </button>
           </div>
         </div>
-        {children}
+        <Depth value={depth + 1}>{children}</Depth>
       </div>
     </div>,
     document.body,
