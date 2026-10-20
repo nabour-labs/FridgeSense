@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Snapshot from a live frame
-When a setup screen asks for a camera snapshot ("Camera snapshot" in Reference images, the set-area sheet and "New snapshot" in Fridge area) and "Mock video" is off, the app SHALL open a live view (`POST /api/camera/live`), wait until at least 10 video frames have been decoded, draw the current frame as a JPEG at most 960 px wide, end the live session (`DELETE /api/camera/live/{session_id}`), and send the frame to `POST /api/camera/frame`. The screen SHALL show only the image that route returns. The Open/close detection sheets never take a live frame: they take their picture from a recent clip (see the `inventory-app` requirement "Door setup pictures from recent clips").
+When the owner is signed in, a setup screen asks for a camera snapshot ("Camera snapshot" in Reference images, the set-area sheet and "New snapshot" in Fridge area) and "Mock video" is off, the app SHALL open a live view (`POST /api/camera/live`), wait until at least 10 video frames have been decoded, draw the current frame as a JPEG at most 960 px wide, end the live session (`DELETE /api/camera/live/{session_id}`), and send the frame to `POST /api/camera/frame`. The screen SHALL show only the image that route returns. The Open/close detection sheets never take a live frame: they take their picture from a recent clip (see the `inventory-app` requirement "Door setup pictures from recent clips").
 
 #### Scenario: Snapshot taken from the live view
 - **WHEN** the owner taps "Camera snapshot", the live view connects and plays 10 frames of 1920×1080 video, and the frame route answers 200
