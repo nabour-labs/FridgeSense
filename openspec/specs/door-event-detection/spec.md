@@ -85,7 +85,7 @@ The system SHALL request `count = clamp((end_ms − start_ms) // STILL_INTERVAL_
 ### Requirement: Door-open check before any analysis
 The system SHALL decide for each downloaded still whether it is *open*, using rules for zones, each a box of fractions `x, y, width, height` of the downloaded still.
 - **With a setup result** stored for the event's account and device (see the `door-calibration` capability), each zone has its own feature (`blue`, `color`, `brightness` or `change`, measured as setup measures it, against the stored baseline for `change`), direction and threshold. A still is open when, in any zone, the feature's value is at or above the threshold (direction `above`) or at or below it (direction `below`).
-- **Without a setup result**, every zone uses `blue` with direction `above`: the fraction of pixels that are both colorful (`max(R,G,B) − min(R,G,B) > 60` and `max(R,G,B) > 100`) and blue-lit (`B − max(R,G) > 20`), as the fridge's LED-lit interior is. Warm colors such as food held in front of the closed doors do not count. The zones are `DOOR_ZONES`, else the defaults `0.38,0.32,0.21,0.30` (doors) and `0.455,0.60,0.12,0.18` (drawers), and the threshold is `DOOR_THRESHOLD`, else 0.01.
+- **Without a setup result**, every zone uses `blue` with direction `above`: the fraction of pixels that are both strongly colorful (`max(R,G,B) − min(R,G,B) > 100` and `max(R,G,B) > 120`) and strongly blue-lit (`B − max(R,G) > 60`), as the fridge's LED-lit interior is. Warm colors such as food held in front of the closed doors do not count, and neither does the cool tint daylight gives the steel doors. The zones are `DOOR_ZONES`, else the defaults `0.38,0.32,0.21,0.30` (doors) and `0.455,0.60,0.12,0.18` (drawers), and the threshold is `DOOR_THRESHOLD`, else 0.01.
 
 A still's *score* is the value of its best zone, the one furthest past (or closest to) its threshold. The event SHALL count as a door opening only if at least one still is open. A run of closed stills SHALL end an opening when the time from its first closed still to the next open still is 10 s or more; a shorter closed run stays inside the opening. Each opening's *open span* runs from its first open still through the first still after its last open one (or through its last open still if no still follows it). Up to 4 stills SHALL be sent on from each open span, evenly spaced and including its first and last still: positions `round(i · (n − 1) / 3)` for `i = 0 … 3` in a span of `n > 4` stills, or every still when `n ≤ 4`. The check SHALL run on the downloaded stills before any cropping, face detection or storage. Only door openings go on to face detection, storage and analysis.
 
@@ -172,6 +172,14 @@ A still's *score* is the value of its best zone, the one furthest past (or close
 #### Scenario: Stored color setup still works
 - **WHEN** setup for the device stored a zone with `color` above 0.05 and a still has a `(220,170,40)` block covering 10% of that zone
 - **THEN** that still is open, because the stored rule's feature is `color`
+
+#### Scenario: Cool daylight on closed doors
+- **WHEN** no setup result is stored, zones are `0.0,0.0,1.0,1.0`, and every still is grey `(128,128,128)` except a daylight-tinted steel area `(110,150,200)` covering 30% of the zone
+- **THEN** the score is 0, no still is open, and the event is not a door opening
+
+#### Scenario: Weakly blue pixels do not count
+- **WHEN** no setup result is stored, zones are `0.0,0.0,1.0,1.0`, and a still is grey except a teal `(40,150,200)` block covering 10% of the zone (strongly colorful, but blue leads by only 50)
+- **THEN** that block does not count and the still is not open
 
 ### Requirement: Door event record
 For each door opening, the system SHALL save one door event under the account with the device ID, Ring event ID, `opened_at`, `closed_at` (ISO 8601 UTC), `duration_s`, the still keys, and a `status`. `opened_at` SHALL be the request time of the opening's first open still. `closed_at` SHALL be the request time of the first still after the opening's last open one, or the window end when no still follows it. `duration_s` SHALL be `closed_at − opened_at` in whole seconds, rounded. An event saved with `status = "no_media"` because too few stills were downloaded SHALL take `opened_at` and `closed_at` from the window. A second run for the same Ring event SHALL NOT create a second record or a second analysis.
@@ -640,3 +648,79 @@ When a workflow run reaches the stills step and its account and device are pause
 #### Scenario: Resumed before the stills step
 - **WHEN** D1 was paused and resumed before the stills step
 - **THEN** the stills step runs the door check as usual
+
+### Requirement: Suspect clip detected
+When the door check runs on an event clip with the device's setup rules (`zones_source` is `"setup"`, or `"tuned"` after self-tuning) and at least 10 frames were checked, the clip SHALL count as *suspect* when its first and last checked frames are both open, or when at least 90% of its checked frames are open. A clip with fewer than 10 checked frames, or checked with the default rules, is never suspect.
+
+#### Scenario: Every frame open
+- **WHEN** setup rules are used and all 41 checked frames of a 20.5 s clip are open
+- **THEN** the clip is suspect and a `door_check_suspect` log line records `frames = 41`, `open_share = 1.0` and `zones_source = "setup"`
+
+#### Scenario: Open at both ends
+- **WHEN** setup rules are used, a clip has 40 frames, and frames 1–3 and 38–40 are open while the rest are closed
+- **THEN** the clip is suspect
+
+#### Scenario: Normal opening
+- **WHEN** setup rules are used and a 54-frame clip is open only at frames 18–26
+- **THEN** the clip is not suspect and no `door_check_suspect` line is logged
+
+#### Scenario: Long opening that starts closed
+- **WHEN** setup rules are used and a 100-frame clip is closed at frames 1–8 and open from frame 9 to frame 100
+- **THEN** the clip is suspect (92% open), and is re-scored as set out in "Suspect clip re-scored with the fridge light"
+
+#### Scenario: Short clip
+- **WHEN** setup rules are used and all 8 checked frames are open
+- **THEN** the clip is not suspect
+
+#### Scenario: Default rules
+- **WHEN** no setup result is stored and every checked frame is open
+- **THEN** the clip is not suspect
+
+#### Scenario: Tuned rules
+- **WHEN** the device's rules were re-tuned (`zones_source = "tuned"`) and all 41 checked frames are open
+- **THEN** the clip is suspect
+
+### Requirement: Suspect clip re-scored with the fridge light
+For a suspect clip, the door check SHALL score the same frames again with one rule per setup zone: that zone's box (after the event's alignment shift) with feature `blue`, direction `above`, and threshold `DOOR_THRESHOLD` (else 0.01). This second result SHALL decide the outcome, the open span, the open and close times and the picked stills. The `motion_not_door` or `door_event_recorded` log line SHALL have `zones_source = "fallback"`, and the run output SHALL have `suspect = true`.
+
+#### Scenario: Fridge light finds the real opening
+- **WHEN** a 54-frame clip is suspect under the setup rules, and with the fridge-light rule only frames 18–26 are open (blue-lit fraction 0.045 to 0.059, the rest 0.0)
+- **THEN** the outcome is `door_open`, `opened_at` is the time of frame 18, `closed_at` is the time of frame 27, the stills are picked from frames 18–27, and the log line has `zones_source = "fallback"`
+
+#### Scenario: Fridge light finds no opening
+- **WHEN** a 41-frame clip is suspect and no frame is open with the fridge-light rule (a person walks past with the doors closed)
+- **THEN** the outcome is `not_door`, no door event is recorded, there is no face detection, S3 write or analysis, and the `motion_not_door` line has `zones_source = "fallback"`
+
+#### Scenario: Not suspect keeps the setup result
+- **WHEN** the clip is not suspect
+- **THEN** the setup rules' result is used unchanged and the run output has no `suspect` field
+
+### Requirement: Suspect events teach nothing
+A suspect event SHALL NOT be recorded as a self-tuning sample and SHALL NOT trigger a re-tune of the door rules, whatever its outcome.
+
+#### Scenario: No sample from a suspect event
+- **WHEN** a suspect event's alignment succeeds
+- **THEN** no `DOORSAMPLE#{device}#…` item is written for it and the setup's tuned rules are unchanged
+
+#### Scenario: Normal event still samples
+- **WHEN** an event that is not suspect aligns successfully
+- **THEN** a sample is recorded as before
+
+### Requirement: Suspect streak per device
+The system SHALL keep, per account and device, the number of suspect events in a row (`suspect_streak`). A suspect event SHALL add 1. An event checked on its clip with setup rules that is not suspect SHALL reset it to 0. A successful setup run SHALL reset it to 0. Events that fall back to stills, or use the default rules, SHALL leave it unchanged.
+
+#### Scenario: Three suspect events in a row
+- **WHEN** three suspect events follow each other for the device
+- **THEN** its `suspect_streak` is 3
+
+#### Scenario: Normal event resets the streak
+- **WHEN** `suspect_streak` is 2 and the next clip checked with setup rules is not suspect
+- **THEN** `suspect_streak` is 0
+
+#### Scenario: Setup run resets the streak
+- **WHEN** `suspect_streak` is 5 and the owner runs setup successfully
+- **THEN** `suspect_streak` is 0
+
+#### Scenario: Streak write fails
+- **WHEN** writing the streak raises a table error
+- **THEN** a `suspect_streak_failed` warning is logged and the event's outcome is unchanged
