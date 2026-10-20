@@ -474,7 +474,7 @@ export function mockApi(): Plugin {
           req.on("data", (c) => (body += c));
           req.on("end", () => {
             const { annotation, image } = JSON.parse(body);
-            if (config.references.length >= 6) return send(409, { error: "at most 6 reference images" });
+            if (config.references.length >= 30) return send(409, { error: "at most 30 reference images" });
             const id = `ref${Date.now()}`;
             config = {
               ...config,

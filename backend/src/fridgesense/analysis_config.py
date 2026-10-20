@@ -12,7 +12,7 @@ from fridgesense.table import FridgeTable, account_pk
 MAX_ANNOTATION = 300
 MAX_IMAGE_BYTES = 200_000
 MAX_INSTRUCTIONS = 1000
-MAX_REFERENCES = 6
+MAX_REFERENCES = 30
 JPEG_MAGIC = b"\xff\xd8\xff"
 REF_PREFIX = "REF#"
 INSTRUCTIONS_SK = "CONFIG#instructions"
