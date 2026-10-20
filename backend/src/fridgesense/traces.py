@@ -77,6 +77,8 @@ class DoorTrace:
     closed_at: str | None = None
     alignment: dict | None = None  # {"dx", "dy", "error", "ok"} when the bookends were aligned
     face_blur: bool = True  # the owner's setting for this motion: raw stills are thumbnails
+    # one entry per door event of the motion; the top-level fields above are the first one's
+    openings: list[dict] = field(default_factory=list)
 
     def results(self) -> dict[int, StillResult]:
         return {n: self.check.result_of(v) for n, v in self.values.items()}
@@ -121,15 +123,30 @@ class NullTraceWriter:
 
 
 def _request_content(
-    request: dict, n_references: int, ref_keys: list[str], still_keys: list[str]
+    request: dict,
+    n_references: int,
+    ref_keys: list[str],
+    still_keys: list[str],
+    video: dict | None = None,
 ) -> list[dict]:
-    """The request's content blocks, images replaced by what they were and where they are."""
+    """The request's content blocks, images replaced by what they were and where they are.
+    The analysis video is unblurred, so it is described but never given a `key` (the trace
+    API turns every key into a download link)."""
     content, images = [], 0
     for block in request["messages"][0]["content"]:
         if "text" in block:
             content.append({"type": "text", "text": block["text"]})
         elif "cachePoint" in block:
             content.append({"type": "cache_point"})
+        elif "video" in block:
+            content.append(
+                {
+                    "type": "video",
+                    "frames": (video or {}).get("frames"),
+                    "frame_ms": (video or {}).get("frame_ms"),
+                    "bytes": len(block["video"]["source"]["bytes"]),
+                }
+            )
         elif "image" in block:
             images += 1
             if images <= n_references:
@@ -220,6 +237,7 @@ class TraceWriter:
             "open_span": trace.open_span,
             "picked": trace.picked,
             "stored_keys": trace.stored_keys,
+            "openings": trace.openings,
         }
         self._put(f"{prefix}door.json", json.dumps(doc).encode(), "application/json")
 
@@ -331,7 +349,13 @@ class TraceWriter:
                 "model_id": request["modelId"],
                 "outcome": record.outcome,
                 "request": {
-                    "content": _request_content(request, len(references), ref_keys, still_keys),
+                    "content": _request_content(
+                        request,
+                        len(references),
+                        ref_keys,
+                        still_keys,
+                        state.get("analysis_video"),
+                    ),
                     "inferenceConfig": request.get("inferenceConfig"),
                     "toolConfig": request.get("toolConfig"),
                 },
@@ -409,6 +433,13 @@ def with_links(doc: dict, sign) -> dict:
         }
         out.pop("stored_keys", None)
         out["stored_urls"] = [sign(k) for k in doc.get("stored_keys", [])]
+        out["openings"] = [
+            {
+                **{k: v for k, v in o.items() if k != "stored_keys"},
+                "stored_urls": [sign(k) for k in o.get("stored_keys", [])],
+            }
+            for o in doc.get("openings", [])
+        ]
     if "request" in doc:  # Nova call trace
         content = [
             _linked(b, sign) if b["type"] == "image" else b for b in doc["request"]["content"]

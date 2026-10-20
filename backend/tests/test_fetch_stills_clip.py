@@ -8,9 +8,10 @@ import boto3
 import httpx
 import pytest
 import respx
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from fridgesense.door_events import DoorCheck, fetch_stills, iso_utc
+from fridgesense import door_events as door_events_module
+from fridgesense.door_events import DoorCheck, ZoneRule, fetch_stills, iso_utc
 from fridgesense.oauth import OAuthClient
 from fridgesense.ring import RingClient
 from fridgesense.store import Tokens
@@ -50,7 +51,15 @@ def ring_http():
         yield ring, http
 
 
-def run(ring_http, state=STATE20, blurrer=None, clip_dir=None, sleeps=None):
+def run(
+    ring_http,
+    state=STATE20,
+    blurrer=None,
+    clip_dir=None,
+    sleeps=None,
+    face_blur=True,
+    area_for=None,
+):
     ring, http = ring_http
     return fetch_stills(
         ring,
@@ -64,6 +73,8 @@ def run(ring_http, state=STATE20, blurrer=None, clip_dir=None, sleeps=None):
         sleep=(sleeps.append if sleeps is not None else lambda s: None),
         frame_interval_ms=500,
         clip_dir=clip_dir,
+        face_blur=face_blur,
+        area_for=area_for,
     )
 
 
@@ -91,8 +102,8 @@ def serve_stills(missing=()):
 
 
 def stored_stills() -> list[str]:
-    """The stored keys other than the open-span clip."""
-    return [k for k in stored_keys() if not k.endswith("/clip.mp4")]
+    """The stored keys other than the open-span clip (raw or not)."""
+    return [k for k in stored_keys() if not k.endswith(".mp4")]
 
 
 def logged(caplog, event: str) -> dict:
@@ -206,9 +217,10 @@ def test_still_missing_frame_used(aws, ring_http, tmp_path):
 def test_door_opening_processed_stores_only_the_open_span_clip(aws, ring_http, tmp_path):
     serve_clip(tmp_path, [(4000, 12_500)])
     serve_stills()
-    run(ring_http, clip_dir=tmp_path)
+    run(ring_http, clip_dir=tmp_path, face_blur=False)
     keys = stored_keys()
-    assert [k for k in keys if k.endswith(".mp4")] == [f"{PREFIX}clip.mp4"]
+    # the fetch step's videos: the open-span clip and the transient analysis video
+    assert [k for k in keys if k.endswith(".mp4")] == [f"{PREFIX}analysis.mp4", f"{PREFIX}clip.mp4"]
     assert all(k.endswith(".mp4") or (k.endswith(".jpg") and "/still-" in k) for k in keys)
 
 
@@ -306,3 +318,242 @@ def test_no_frame_interval_means_stills_only(aws, ring_http):
     )
     assert out["outcome"] == "door_open"
     assert clip.call_count == 0
+
+
+# --- Clip-wide sanity guard ---
+
+WHOLE_BOX = (0.0, 0.0, 1.0, 1.0)
+# Setup rules that read every grey frame as open: a picture framed unlike the clips
+MISCALIBRATED = DoorCheck(rules=(ZoneRule(WHOLE_BOX, "brightness", "above", 0.1),), source="setup")
+SETUP_BLUE = DoorCheck(rules=(ZoneRule(WHOLE_BOX, "blue", "above", 0.02),), source="setup")
+
+
+def run_setup(ring_http, rules, end_ms, clip_dir):
+    ring, http = ring_http
+    state = {**STATE, "window": {**STATE["window"], "end_ms": START + end_ms}}
+    return fetch_stills(
+        ring,
+        http,
+        boto3.client("s3"),
+        FridgeTable(),
+        BUCKET,
+        CHECK,
+        FakeBlurrer(),
+        state,
+        sleep=lambda s: None,
+        frame_interval_ms=500,
+        clip_dir=clip_dir,
+        setup_for=lambda account_id, device_id: rules,
+    )
+
+
+# Fridge light finds the real opening
+@respx.mock
+def test_fridge_light_finds_the_real_opening(aws, ring_http, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)  # frames 18-26 of 54 lit
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert out["suspect"] is True
+    [event] = door_events()
+    assert event["opened_at"] == iso_utc(START + 8500)
+    assert event["closed_at"] == iso_utc(START + 13_000)
+    assert len(stored_stills()) == 4
+    suspect = logged(caplog, "door_check_suspect")
+    assert (suspect["frames"], suspect["open_share"], suspect["zones_source"]) == (
+        54,
+        1.0,
+        "setup",
+    )
+    assert logged(caplog, "door_event_recorded")["zones_source"] == "fallback"
+
+
+# Fridge light finds no opening
+@respx.mock
+def test_fridge_light_finds_no_opening(aws, ring_http, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [], duration_ms=20_500)  # someone walks past: 41 grey frames
+    stills = serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 20_500, tmp_path)
+    assert out["outcome"] == "not_door"
+    assert out["suspect"] is True
+    assert door_events() == []
+    assert stored_keys() == []
+    assert stills.call_count == 0
+    assert logged(caplog, "motion_not_door")["zones_source"] == "fallback"
+
+
+# Not suspect keeps the setup result
+@respx.mock
+def test_not_suspect_keeps_the_setup_result(aws, ring_http, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert "suspect" not in out
+    assert not [r for r in caplog.records if '"door_check_suspect"' in r.getMessage()]
+    assert logged(caplog, "door_event_recorded")["zones_source"] == "setup"
+
+
+@pytest.fixture
+def follows_camera(monkeypatch):
+    """A stored closed anchor that every event lines up with at (0, 0), so it is sampled. The
+    test clips are flat colour, which has no edges to align by, so the match is stubbed."""
+    from fridgesense import alignment
+
+    grey = Image.new("RGB", (320, 180), (128, 128, 128))
+    anchor = alignment.edges_to_bytes(alignment.edge_map(grey))
+    monkeypatch.setattr(
+        door_events_module,
+        "_follow_plan",
+        lambda table, account_id, device_id, check: door_events_module.FollowPlan(anchor, 0, 0),
+    )
+    monkeypatch.setattr(
+        alignment,
+        "align_bookends",
+        lambda anchor, first, last, anchor_visible=None: alignment.Alignment(
+            True, 0.0, 0.0, 0.0, "first"
+        ),
+    )
+
+
+def door_samples() -> list[dict]:
+    return FridgeTable().query(STATE["account_id"], "DOORSAMPLE#")
+
+
+# No sample from a suspect event
+@respx.mock
+def test_no_sample_from_a_suspect_event(aws, ring_http, tmp_path, follows_camera):
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert out["suspect"] is True
+    assert door_samples() == []
+
+
+# Normal event still samples
+@respx.mock
+def test_normal_event_still_samples(aws, ring_http, tmp_path, follows_camera):
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)
+    assert "suspect" not in out
+    assert len(door_samples()) == 1
+
+
+def suspect_streak() -> int:
+    from fridgesense import alignment
+
+    s = alignment.load_alignment(FridgeTable(), STATE["account_id"], STATE["device_id"])
+    return 0 if s is None else s.suspect_streak
+
+
+@respx.mock
+def test_suspect_event_counts_and_a_normal_one_resets(aws, ring_http, tmp_path):
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert suspect_streak() == 1
+    run_setup(ring_http, SETUP_BLUE, 27_000, tmp_path)  # same event again: a duplicate
+    assert suspect_streak() == 0
+
+
+@respx.mock
+def test_default_rules_leave_the_streak(aws, ring_http, tmp_path):
+    from fridgesense import alignment
+
+    alignment.record_suspect(FridgeTable(), STATE["account_id"], STATE["device_id"], True)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, None, 27_000, tmp_path)
+    assert suspect_streak() == 1
+
+
+# Streak write fails
+@respx.mock
+def test_streak_write_fails(aws, ring_http, tmp_path, caplog, monkeypatch):
+    from fridgesense import alignment
+
+    def broken(*args):
+        raise RuntimeError("table down")
+
+    monkeypatch.setattr(alignment, "record_suspect", broken)
+    caplog.set_level(logging.INFO)
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert out["outcome"] == "door_open"
+    assert logged(caplog, "suspect_streak_failed")["error"] == "RuntimeError"
+
+
+# --- Blocked suspect clips leave the streak unchanged ---
+
+
+def anchor_plan(monkeypatch, image: Image.Image) -> None:
+    """A stored closed anchor made from `image`, at no stored shift."""
+    from fridgesense import alignment
+
+    anchor = alignment.edges_to_bytes(alignment.edge_map(image))
+    monkeypatch.setattr(
+        door_events_module,
+        "_follow_plan",
+        lambda table, account_id, device_id, check: door_events_module.FollowPlan(anchor, 0, 0),
+    )
+
+
+def striped() -> Image.Image:
+    """A closed view full of edges, unlike the flat test clips: they look blocked against it."""
+    img = Image.new("RGB", (320, 180), (128, 128, 128))
+    draw = ImageDraw.Draw(img)
+    for x in range(0, 320, 16):
+        draw.rectangle([x, 0, x + 7, 180], fill=(30, 30, 30))
+    return img
+
+
+def streak_of_two() -> None:
+    from fridgesense import alignment
+
+    for _ in range(2):
+        alignment.record_suspect(FridgeTable(), STATE["account_id"], STATE["device_id"], True)
+
+
+# Person in front of the zones at both bookends
+@respx.mock
+def test_blocked_suspect_clip_leaves_the_streak(aws, ring_http, tmp_path, caplog, monkeypatch):
+    caplog.set_level(logging.INFO)
+    anchor_plan(monkeypatch, striped())
+    streak_of_two()
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    out = run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert suspect_streak() == 2
+    blocked = logged(caplog, "door_check_blocked")
+    assert blocked["zones_source"] == "setup" and blocked["open_share"] == 1.0
+    assert out["suspect"] is True
+    assert out["outcome"] == "door_open"  # the fridge light still finds the opening
+    assert logged(caplog, "door_event_recorded")["zones_source"] == "fallback"
+
+
+# Wrong rules on a clear view
+@respx.mock
+def test_clear_view_suspect_clip_counts(aws, ring_http, tmp_path, caplog, monkeypatch):
+    caplog.set_level(logging.INFO)
+    anchor_plan(monkeypatch, Image.new("RGB", (320, 180), (128, 128, 128)))  # like the clip
+    streak_of_two()
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert suspect_streak() == 3
+    assert not [r for r in caplog.records if '"door_check_blocked"' in r.getMessage()]
+
+
+# No anchor stored
+@respx.mock
+def test_suspect_clip_without_an_anchor_counts(aws, ring_http, tmp_path):
+    streak_of_two()
+    serve_clip(tmp_path, [(8500, 13_000)], duration_ms=27_000)
+    serve_stills()
+    run_setup(ring_http, MISCALIBRATED, 27_000, tmp_path)
+    assert suspect_streak() == 3

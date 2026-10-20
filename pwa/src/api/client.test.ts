@@ -131,6 +131,13 @@ test.each([
     "/api/config/references",
     { annotation: "soda can", image: "/9j/AAA=" },
   ],
+  [
+    "updateReference",
+    (api: ApiClient) => api.updateReference("UkVGIzE=", { annotation: "chocomilk" }),
+    "PATCH",
+    "/api/config/references/UkVGIzE%3D",
+    { annotation: "chocomilk" },
+  ],
   ["deleteReference", (api: ApiClient) => api.deleteReference("UkVGIzE="), "DELETE", "/api/config/references/UkVGIzE%3D", undefined],
 ])("%s sends the right request", async (_, callApi, method, path, body) => {
   const fetch = respond(200, CONFIG);
@@ -204,14 +211,21 @@ test.each([
     (api: ApiClient) => api.addDoorZone("Freezer drawer", BOX),
     "POST",
     "/api/door-calibration/zones",
-    { name: "Freezer drawer", box: BOX },
+    { name: "Freezer drawer", box: BOX, source: "clip" },
   ],
   [
     "updateDoorZone",
     (api: ApiClient) => api.updateDoorZone("Wk/1", { name: "Doors", box: BOX }),
     "PATCH",
     "/api/door-calibration/zones/Wk%2F1",
-    { name: "Doors", box: BOX },
+    { name: "Doors", box: BOX, source: "clip" },
+  ],
+  [
+    "updateDoorZone (rename only)",
+    (api: ApiClient) => api.updateDoorZone("Wk/1", { name: "Doors" }),
+    "PATCH",
+    "/api/door-calibration/zones/Wk%2F1",
+    { name: "Doors" },
   ],
   [
     "deleteDoorZone",
@@ -225,7 +239,7 @@ test.each([
     (api: ApiClient) => api.addDoorReference("/9j/SNAP", "Wk/1", "open"),
     "POST",
     "/api/door-calibration/references",
-    { image: "/9j/SNAP", zone_id: "Wk/1", status: "open" },
+    { image: "/9j/SNAP", zone_id: "Wk/1", status: "open", source: "clip" },
   ],
   [
     "deleteDoorReference",
@@ -286,6 +300,13 @@ test("one debug motion is read by id", async () => {
   const fetch = respond(200, { id: "a/b" });
   await new ApiClient(() => "t", fetch).debugMotion("a/b");
   expect(fetch.mock.calls[0][0]).toBe("/api/debug/motions/a%2Fb");
+  expect(fetch.mock.calls[0][1].method).toBe("GET");
+});
+
+test("debugUsage asks for one day's LLM usage", async () => {
+  const fetch = respond(200, { day: "2026-10-20" });
+  await new ApiClient(() => "t", fetch).debugUsage("2026-10-20");
+  expect(fetch.mock.calls[0][0]).toBe("/api/debug/usage?day=2026-10-20");
   expect(fetch.mock.calls[0][1].method).toBe("GET");
 });
 

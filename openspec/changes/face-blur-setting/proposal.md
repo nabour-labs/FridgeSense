@@ -7,7 +7,7 @@ Face blurring is always on and costs a Rekognition call (about $0.001) per store
 ## What Changes
 
 - **New owner setting "Blur faces", on by default.** It is stored per Ring account. `GET /api/settings/face-blur` returns it for every role. `PUT /api/settings/face-blur` `{"enabled": true|false}` is owner-only: the user gets 403 `admin only` and the viewer gets 403 `read-only`. A missing or unreadable setting counts as on.
-- **Config → Camera tab:** the owner gets a "Blur faces" switch. Other roles see the current state read-only.
+- **Config → Camera tab:** the owner gets a "Blur faces" switch. Other roles do not see it.
 - **While on (default):**
   - Door-event stills, `POST /api/camera/snapshot` and `POST /api/camera/frame` are blurred as today, and still fail closed.
   - **Debug trace stills change:** `debug/raw-<n>.jpg` becomes a small blurred thumbnail (longest side 160 px) instead of the downloaded bytes. No Rekognition call is added.

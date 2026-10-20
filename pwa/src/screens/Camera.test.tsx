@@ -175,19 +175,13 @@ test("a failed save turns Blur faces back on", async () => {
   expect(report).toHaveBeenCalledWith(error);
 });
 
-// Scenario: Others see it read-only
-test.each(["user", "viewer"] as const)("the %s sees Blur faces read-only", async (role) => {
-  const { api } = renderCamera(
-    vi.fn().mockResolvedValue(INFO),
-    { faceBlur: vi.fn().mockResolvedValue({ enabled: false }) },
-    undefined,
-    role,
-  );
-  const toggle = await screen.findByRole("switch", { name: "Blur faces" });
-  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
-  expect(toggle).toBeDisabled();
-  await userEvent.click(toggle);
-  expect(api.setFaceBlur).not.toHaveBeenCalled();
+// Scenario: Hidden from others
+test.each(["user", "viewer"] as const)("the %s does not see Blur faces", async (role) => {
+  const { api } = renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, role);
+  await screen.findByRole("heading", { name: "Fridge Cam" });
+  expect(screen.queryByRole("heading", { name: "Privacy" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "Blur faces" })).not.toBeInTheDocument();
+  expect(api.faceBlur).not.toHaveBeenCalled();
 });
 
 // Scenario: Camera offline
@@ -254,14 +248,15 @@ test("with no history the tab says none is recorded", async () => {
 
 // Scenario: Before any check
 test("before a check the decoder card explains itself", async () => {
-  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "user");
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "owner");
   expect(await screen.findByText(CHECK_HINT)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Check decoder" })).toBeInTheDocument();
 });
 
 // Scenario: No Decoder card for a viewer
-test("the viewer sees no decoder card", async () => {
-  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, "viewer");
+// Scenario: No Decoder card for a user
+test.each(["viewer", "user"] as const)("the %s sees no decoder card", async (role) => {
+  renderCamera(vi.fn().mockResolvedValue(INFO), {}, undefined, role);
   expect(await screen.findByRole("region", { name: "FridgeSense" })).toBeInTheDocument();
   expect(screen.queryByText(CHECK_HINT)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Check decoder" })).not.toBeInTheDocument();

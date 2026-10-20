@@ -23,11 +23,13 @@ def tokens(aws, monkeypatch):
     return {"owner": sign_in(), "user": sign_in("come-in"), "viewer": sign_in("look-only")}
 
 
-def with_clip(sk: str, opened_ms: int) -> str:
+def with_clip(sk: str, opened_ms: int, **extra) -> str:
     key = f"accounts/ava1.ring.account.A1/devices/D1/events/{opened_ms}/clip.mp4"
     boto3.client("s3").put_object(Bucket=BUCKET, Key=key, Body=b"mp4")
     item = FridgeTable().get(PK, sk)
-    FridgeTable().put({**item, "clip_key": key, "clip_span": [Decimal("0.5"), Decimal("8.5")]})
+    FridgeTable().put(
+        {**item, "clip_key": key, "clip_span": [Decimal("0.5"), Decimal("8.5")], **extra}
+    )
     return key
 
 
@@ -73,3 +75,23 @@ def test_old_event_has_no_clip(tokens):
     with_clip(put_event(opened, stills=4), opened)
     event = listed(tokens["owner"], days="30")
     assert event["stills"] == [] and event["clip"] is None
+
+
+# Viewer gets a blurred clip
+def test_viewer_gets_a_blurred_clip(tokens):
+    opened = int(NOW * 1000) - HOUR_MS
+    key = with_clip(put_event(opened, stills=4), opened, clip_blurred=True)
+    link, fragment = listed(tokens["viewer"])["clip"].split("#")
+    assert urlparse(link).path.endswith(f"/{key}") and fragment == "t=0.5,8.5"
+
+
+# Clip still being blurred
+@pytest.mark.parametrize("role", ["owner", "user", "viewer"])
+def test_clip_still_being_blurred(tokens, role):
+    opened = int(NOW * 1000) - HOUR_MS
+    sk = put_event(opened, stills=4)
+    raw = f"accounts/ava1.ring.account.A1/devices/D1/events/{opened}/clip-raw.mp4"
+    boto3.client("s3").put_object(Bucket=BUCKET, Key=raw, Body=b"mp4")
+    assert sk
+    event = listed(tokens[role])
+    assert event["clip"] is None and len(event["stills"]) == 4

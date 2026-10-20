@@ -32,15 +32,29 @@ function statementsFor(roleIdPrefix: string): Statement[] {
 
 const actions = (s: Statement) => [s.Action].flat();
 
+type Machine = { StartAt: string; States: Record<string, State> };
+
+/** Every state by name, with the states inside a Map's iterator lifted to the top level. */
+function flatten(states: Record<string, State>): Record<string, State> {
+  const out: Record<string, State> = {};
+  for (const [name, state] of Object.entries(states)) {
+    out[name] = state;
+    const inner = (state.ItemProcessor ?? state.Iterator) as Machine | undefined;
+    if (inner) Object.assign(out, flatten(inner.States));
+  }
+  return out;
+}
+
 /** The state machine definition with CloudFormation tokens replaced by placeholders. */
-function definition(): { StartAt: string; States: Record<string, State> } {
+function definition(): Machine {
   const [sm] = Object.values(resourcesOf("AWS::StepFunctions::StateMachine"));
   const def = sm.Properties.DefinitionString as { "Fn::Join": [string, unknown[]] } | string;
   const text =
     typeof def === "string"
       ? def
       : def["Fn::Join"][1].map((p) => (typeof p === "string" ? p : "TOKEN")).join("");
-  return JSON.parse(text);
+  const machine = JSON.parse(text) as Machine;
+  return { ...machine, States: flatten(machine.States) };
 }
 
 describe("door-event state machine", () => {
@@ -71,7 +85,7 @@ describe("door-event state machine", () => {
       Default: string;
     };
     expect(choice.Choices).toEqual([
-      { Variable: "$.outcome", StringEquals: "door_open", Next: "Analyze" },
+      { Variable: "$.outcome", StringEquals: "door_open", Next: "AnalyzeOpenings" },
     ]);
     expect(States[choice.Default].Type).toBe("Succeed");
   });
@@ -92,9 +106,9 @@ describe("door-event state machine", () => {
       }),
     );
     expect(analyze.Catch).toEqual([
-      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "MarkFailed" },
+      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "MarkOpeningFailed" },
     ]);
-    expect(States.MarkFailed.Type).toBe("Task");
+    expect(States.MarkOpeningFailed.Type).toBe("Task");
     expect(States.Save.Type).toBe("Task");
   });
 
@@ -102,7 +116,7 @@ describe("door-event state machine", () => {
     const { States } = definition();
     const save = States.Save as State & { Catch?: Record<string, unknown>[] };
     expect(save.Catch).toEqual([
-      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "MarkFailed" },
+      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "MarkOpeningFailed" },
     ]);
   });
 
@@ -111,6 +125,57 @@ describe("door-event state machine", () => {
     const { States } = definition();
     expect(States.MarkFailed.Next).toBe("AnalysisFailed");
     expect(States.AnalysisFailed).toEqual({ Type: "Fail", Error: "AnalysisFailed" });
+  });
+
+  // Openings run one at a time
+  it("runs Analyze, Save and the clip blur once per opening, one at a time", () => {
+    const [sm] = Object.values(resourcesOf("AWS::StepFunctions::StateMachine"));
+    expect(sm).toBeDefined();
+    const { States } = definition();
+    const map = States.AnalyzeOpenings as State & {
+      ItemsPath: string;
+      MaxConcurrency: number;
+      ResultPath: string;
+      ItemProcessor: Machine;
+    };
+    expect(map).toMatchObject({
+      Type: "Map",
+      ItemsPath: "$.openings",
+      MaxConcurrency: 1,
+      ResultPath: "$.opening_results",
+      Next: "CheckOpenings",
+    });
+    expect(map.ItemProcessor.StartAt).toBe("Analyze");
+    expect(Object.keys(map.ItemProcessor.States)).toEqual(
+      expect.arrayContaining(["Analyze", "Save", "HasRawClip", "BlurClip", "DropRawClip",
+        "OpeningDone", "MarkOpeningFailed", "OpeningFailed"]),
+    );
+  });
+
+  // One opening fails: only that event is marked, later openings still run
+  it("marks a failed opening and goes on with the next one", () => {
+    const { States } = definition();
+    expect(States.MarkOpeningFailed.Next).toBe("OpeningFailed");
+    expect(States.OpeningFailed).toMatchObject({ Type: "Pass", Result: "failed", End: true });
+  });
+
+  // One opening fails / All openings succeed
+  it("ends in AnalysisFailed when any opening failed, else in Done", () => {
+    const { States } = definition();
+    expect(States.CheckOpenings).toMatchObject({
+      Type: "Pass",
+      Parameters: { "failed.$": "States.ArrayContains($.opening_results, 'failed')" },
+      ResultPath: "$.check",
+      Next: "AnyOpeningFailed",
+    });
+    const choice = States.AnyOpeningFailed as State & {
+      Choices: { Variable: string; BooleanEquals: boolean; Next: string }[];
+      Default: string;
+    };
+    expect(choice.Choices).toEqual([
+      { Variable: "$.check.failed", BooleanEquals: true, Next: "AnalysisFailed" },
+    ]);
+    expect(choice.Default).toBe("Done");
   });
 
   // Window step retries and is caught / Stills step retries and is caught
@@ -133,7 +198,8 @@ describe("door-event state machine", () => {
   it("passes the task name and the run state to the pipeline Lambda", () => {
     const { States } = definition();
     const tasks = { FindWindow: "find_window", FetchStills: "fetch_stills", Analyze: "analyze",
-      Save: "save", MarkFailed: "mark_failed" };
+      Save: "save", MarkFailed: "mark_failed", MarkOpeningFailed: "mark_failed",
+      DropRawClip: "drop_raw_clip" };
     for (const [state, task] of Object.entries(tasks)) {
       expect(States[state].Parameters).toEqual({ task, "input.$": "$" });
     }
@@ -212,7 +278,10 @@ describe("stills bucket", () => {
   it("Stills deleted after 7 days; bucket private and encrypted", () => {
     template.hasResourceProperties("AWS::S3::Bucket", {
       LifecycleConfiguration: {
-        Rules: [{ ExpirationInDays: 7, Status: "Enabled" }],
+        Rules: [
+          { ExpirationInDays: 7, Status: "Enabled" },
+          { ExpirationInDays: 1, Status: "Enabled", TagFilters: [{ Key: "transient", Value: "true" }] },
+        ],
       },
       PublicAccessBlockConfiguration: {
         BlockPublicAcls: true,
@@ -290,10 +359,96 @@ describe("logs", () => {
       .sort();
     expect(names).toEqual([
       "/fridgesense/api",
+      "/fridgesense/clip-blur",
       "/fridgesense/http",
       "/fridgesense/mcp",
       "/fridgesense/pipeline",
       "/fridgesense/token-refresh",
     ]);
+  });
+});
+
+
+describe("clip blur", () => {
+  function blurFunction(): [string, Resource] {
+    const found = Object.entries(resourcesOf("AWS::Lambda::Function")).filter(
+      ([, r]) => r.Properties.PackageType === "Image",
+    );
+    expect(found).toHaveLength(1);
+    return found[0];
+  }
+
+  it("is an arm64 container Lambda with 10240 MB (about 6 vCPU), 300 s and 2 GB of /tmp", () => {
+    const [, fn] = blurFunction();
+    expect(fn.Properties).toMatchObject({
+      Architectures: ["arm64"],
+      MemorySize: 10240,
+      Timeout: 300,
+      EphemeralStorage: { Size: 2048 },
+    });
+    const env = (fn.Properties.Environment as { Variables: Record<string, unknown> }).Variables;
+    expect(Object.keys(env)).toEqual(expect.arrayContaining(["STILLS_BUCKET", "TABLE_NAME"]));
+  });
+
+  // Blur runs after save / No raw clip
+  it("runs BlurClip after Save only when the run has a raw clip", () => {
+    const { States } = definition();
+    expect(States.Save.Next).toBe("HasRawClip");
+    const choice = States.HasRawClip as State & {
+      Choices: { Variable: string; IsPresent: boolean; Next: string }[];
+      Default: string;
+    };
+    expect(choice.Choices).toEqual([{ Variable: "$.clip.raw_key", IsPresent: true, Next: "BlurClip" }]);
+    expect(choice.Default).toBe("OpeningDone");
+    expect(States.BlurClip).toMatchObject({ Type: "Task", Next: "OpeningDone" });
+    expect(States.OpeningDone).toMatchObject({ Type: "Pass", Result: "ok", End: true });
+    expect(States.Done.Type).toBe("Succeed");
+  });
+
+  // Blur error caught
+  it("catches any BlurClip error with DropRawClip, then ends in Done", () => {
+    const { States } = definition();
+    const blur = States.BlurClip as State & { Catch: Record<string, unknown>[] };
+    expect(blur.Catch).toEqual([
+      { ErrorEquals: ["States.ALL"], ResultPath: "$.error", Next: "DropRawClip" },
+    ]);
+    expect(States.DropRawClip).toMatchObject({ Type: "Task", Next: "OpeningDone" });
+  });
+
+  it("can only touch clip objects and update door events", () => {
+    const [id] = blurFunction();
+    const statements = statementsFor(id.slice(0, 12));
+    const s3 = statements.filter((s) => actions(s).some((a) => a.startsWith("s3:")));
+    expect([...new Set(s3.flatMap(actions))].sort()).toEqual(["s3:DeleteObject", "s3:GetObject", "s3:PutObject"]);
+    const resources = JSON.stringify(s3.map((s) => s.Resource));
+    expect(resources).toContain("/*/clip-raw.mp4");
+    expect(resources).toContain("/*/clip.mp4");
+    expect(resources).not.toMatch(/\/\*"/);
+    const ddb = statements.filter((s) => actions(s).some((a) => a.startsWith("dynamodb:")));
+    expect(ddb.flatMap(actions)).toEqual(["dynamodb:UpdateItem"]);
+  });
+});
+
+describe("analysis video (hand-evidence-analysis)", () => {
+  // The pipeline Lambda writes analysis.mp4 tagged transient (fetch_stills), then reads and
+  // deletes it (analyze): its bucket grant must cover all three on every event prefix.
+  it("lets the pipeline Lambda put (with tags), get and delete analysis.mp4", () => {
+    const [id] = lambdaByHandler("fridgesense.handlers.pipeline.handler");
+    const statements = statementsFor(id.slice(0, 12));
+    const onObjects = statements.filter((s) => JSON.stringify(s.Resource).includes('/*"'));
+    const granted = new Set(onObjects.flatMap(actions));
+    for (const action of ["s3:PutObject", "s3:PutObjectTagging", "s3:GetObject*", "s3:DeleteObject*"]) {
+      expect(granted).toContain(action);
+    }
+  });
+
+  it("expires transient objects within a day", () => {
+    const [bucket] = Object.values(resourcesOf("AWS::S3::Bucket")).filter((b) =>
+      JSON.stringify(b.Properties.BucketName ?? "").includes("fridgesense-stills"),
+    );
+    const rules = (bucket.Properties.LifecycleConfiguration as { Rules: Record<string, unknown>[] }).Rules;
+    expect(rules).toContainEqual(
+      expect.objectContaining({ ExpirationInDays: 1, TagFilters: [{ Key: "transient", Value: "true" }] }),
+    );
   });
 });

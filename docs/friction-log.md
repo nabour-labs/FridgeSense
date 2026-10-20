@@ -23,6 +23,56 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-19 · Fire TV (Vega SDK) · `vega build` makes an app with no JavaScript, and nothing says so
+
+- **Task:** build the `vegaWebview` template app and run it on the Vega Virtual Device.
+- **Steps:** `vega project generate -t vegaWebview ...`, `npm install`, then `vega build` (the first command in the generator's "next steps"), then `vega run-app build/aarch64-release/fridgesensetv_aarch64.vpkg ca.nabour.fridgesense.main -d VirtualDevice`.
+- **Expected:** a package with the app's React Native bundle that opens the WebView.
+- **Actual:** `vega build` exited 0 and wrote a 1,963-byte `.vpkg` per architecture. `run-app` printed "Installed ... Successfully launched the app", but the simulator stayed on "Your apps" with the app not running. No error in either command.
+- **Severity:** Medium
+- **Workaround:** `npm run build:release` (`react-native build-vega --build-type Release`) builds the JS bundle and the native package: a 153 KB `.vpkg` that runs.
+- **Suggestion:** have `vega build` build the JS bundle for React Native projects, or fail (or warn) when a React Native app package has no bundle. Have `run-app` report when the launched app exits right away.
+
+### 2026-10-19 · Fire TV (Vega SDK) · Vega Virtual Device window crashes at boot on macOS 26
+
+- **Task:** start the Vega Virtual Device on an Apple Silicon Mac (macOS 26, Darwin 25.5) to run the Fire TV app.
+- **Steps:** installed Vega SDK 0.24.12112 with the documented `get_vvm.sh` script, then `vega virtual-device start --timeout 300 --display-res=1920,1080`.
+- **Expected:** a simulator window, then "Virtual device ready."
+- **Actual:** "Deadline reached (240s) but virtual device unresponsive." `virtual_device.err` shows `ERROR | detected a hanging thread 'QEMU2 main loop'. No response for 15010 ms`, `Fatal: QThread: Destroyed while thread is still running` and `UniversalExceptionRaise: (os/kern) failure (5)` from the bundled Android emulator 34.1.15. `vega virtual-device status` then reports `{"running":false,"process_ids":{"qemu":-1}}`.
+- **Severity:** Medium
+- **Workaround:** `vega virtual-device start --no-gui` boots in about 40 s. Screenshots come from the emulator console: `auth <~/.emulator_console_auth_token>` then `screenrecord screenshot <dir>` on `localhost:5554` (`vda` has no `emu` command).
+- **Suggestion:** update the bundled emulator for macOS 26, add a `vega device screenshot` command for headless use, and say in the install docs which macOS versions the Vega Virtual Device supports.
+
+### 2026-10-18 · Ring Partner API · Privacy zones are a capability with no shapes, and no change event
+
+- **Task:** work out why the app reported "The camera has moved" after the owner changed the Indoor Cam 2K's privacy mask in the Ring app, and handle mask changes.
+- **Steps:** read the recorded `GET /v1/devices/{id}?include=status,capabilities,configurations,location` response (`tests/fixtures/ring/device_detail_recorded.json`) for the mask's geometry. Then compared the stored setup anchor with the first and last frames of the next clip.
+- **Expected:** the mask's polygons under `device-configurations` (as `motion_zones` has `vertices`), or a webhook or configuration change when the owner edits them.
+- **Actual:** `device-capabilities.image_enhancements.configurations` lists `privacy_zones`, but no resource returns the zones' shapes, and nothing signals a change. Recordings simply show the masked area painted black, with Ring's overlay text ("Device-ID / Partner / Generated-At") drawn on top. Our frame alignment counted the new black area and its border as the camera moving (best error 0.068–0.072 against a 0.05 limit, true shift `(0, 0)`), and flagged a move after 3 events.
+- **Severity:** Medium
+- **Workaround:** read the mask from the pixels: a 128×72 visible map (mostly-black neighborhoods, closed over thin overlay text), stored with the setup anchor and compared per event. Alignment counts only blocks visible in both frames.
+- **Suggestion:** return privacy-zone polygons in `device-configurations` like `motion_zones`, and send a webhook (or bump a configuration version) when they change.
+
+### 2026-10-18 · AWS Lambda · `context.memory_limit_in_mb` is a string in the Python runtime
+
+- **Task:** log the cost of each clip-blur run from the Lambda's billed time and memory.
+- **Steps:** in a Python 3.13 container-image Lambda (`public.ecr.aws/lambda/python:3.13-arm64`, 3008 MB), computed `billed_ms / 1000 * context.memory_limit_in_mb / 1024 * 0.0000133334`. Unit tests used a fake context with `memory_limit_in_mb = 3008`.
+- **Expected:** an int, as the name and the configured `MemorySize` suggest.
+- **Actual:** the first real run failed after the work was done: `[ERROR] TypeError: can't multiply sequence by non-int of type 'float'` at `handler.py` line 108. The value is the string `"3008"`. The Step Functions catch then treated a successful blur as failed.
+- **Severity:** Low
+- **Workaround:** `int(context.memory_limit_in_mb)`, and a fake context with a string value in the tests.
+- **Suggestion:** document the type on the Python context object page, or expose it as an int.
+
+### 2026-10-18 · AWS Lambda · Container image init hits the 10 s limit, and onnxruntime can't read the CPU list
+
+- **Task:** blur faces in a 19 s door-opening clip (466 frames, 2560×1440) with deface/CenterFace on onnxruntime in an arm64 container Lambda (3008 MB, 300 s).
+- **Steps:** deployed with CDK `DockerImageFunction`, then opened the fridge once.
+- **Expected:** init in a few seconds, and onnxruntime using the function's vCPUs, about as fast as the same image in Docker Desktop (360 frames in 51.5 s).
+- **Actual:** `INIT_REPORT Init Duration: 10000.15 ms` (init cut off at 10 s and run again inside the invoke), then six lines of `Error in cpuinfo: failed to parse the list of possible processors in /sys/devices/system/cpu/possible`. The run took 210,772 ms for 466 frames (0.45 s a frame, about 3× slower than Docker Desktop), within reach of the 300 s timeout.
+- **Severity:** Medium
+- **Workaround:** none yet. Options are more memory (more vCPUs), setting onnxruntime's thread count explicitly, and detecting on fewer pixels.
+- **Suggestion:** document the 10 s init limit for container images next to the image size limits, and expose `/sys/devices/system/cpu/possible` so common runtimes (onnxruntime's cpuinfo) can size their thread pools.
+
 ### 2026-10-17 · Ring Partner API · Still at a clip frame's time shows a different moment
 
 - **Task:** store sharp stills of a door opening for Nova, at the times the door check found the door open in the event clip.

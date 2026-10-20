@@ -17,6 +17,7 @@ import type {
   Pending,
   Session,
   Snapshot,
+  UsageTotals,
   WarningsBody,
 } from "./types";
 
@@ -114,6 +115,11 @@ export class ApiClient {
     return this.request("POST", "/api/config/references", { annotation, image });
   }
 
+  /** Change a reference's annotation and/or image (base64 JPEG); it keeps its id and place. */
+  updateReference(id: string, changes: { annotation?: string; image?: string }): Promise<Config> {
+    return this.request("PATCH", `/api/config/references/${encodeURIComponent(id)}`, changes);
+  }
+
   deleteReference(id: string): Promise<Config> {
     return this.request("DELETE", `/api/config/references/${encodeURIComponent(id)}`);
   }
@@ -161,13 +167,15 @@ export class ApiClient {
   }
 
   /** `image` is a base64 JPEG; `box` is in fractions of it. */
+  /** Door setup pictures always come from a recorded clip's frame (`source: "clip"`). */
   addDoorZone(name: string, box: Box): Promise<DoorSetup> {
-    return this.request("POST", "/api/door-calibration/zones", { name, box });
+    return this.request("POST", "/api/door-calibration/zones", { name, box, source: "clip" });
   }
 
   /** Rename and/or redraw a door zone; its references follow the new box. */
   updateDoorZone(id: string, change: { name?: string; box?: Box }): Promise<DoorSetup> {
-    return this.request("PATCH", `/api/door-calibration/zones/${encodeURIComponent(id)}`, change);
+    const body = change.box ? { ...change, source: "clip" } : change;
+    return this.request("PATCH", `/api/door-calibration/zones/${encodeURIComponent(id)}`, body);
   }
 
   /** Delete a door zone and its references. */
@@ -176,7 +184,12 @@ export class ApiClient {
   }
 
   addDoorReference(image: string, zoneId: string, status: DoorStatus): Promise<DoorSetup> {
-    return this.request("POST", "/api/door-calibration/references", { image, zone_id: zoneId, status });
+    return this.request("POST", "/api/door-calibration/references", {
+      image,
+      zone_id: zoneId,
+      status,
+      source: "clip",
+    });
   }
 
   deleteDoorReference(id: string): Promise<DoorSetup> {
@@ -200,6 +213,11 @@ export class ApiClient {
   /** Replaces the fridge area. `image` is a base64 JPEG; `box` is in fractions of it. */
   saveFridgeArea(image: string, box: Box): Promise<FridgeAreaBody> {
     return this.request("PUT", "/api/fridge-area", { image, box });
+  }
+
+  /** LLM tokens and cost for one `YYYY-MM-DD` day (owner only). */
+  debugUsage(day: string): Promise<UsageTotals> {
+    return this.request("GET", `/api/debug/usage?${new URLSearchParams({ day })}`);
   }
 
   /** Traced motions in [from, to), newest first, `limit` at a time (owner only). */

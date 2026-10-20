@@ -215,9 +215,11 @@ def test_setup_rule(aws):
     closed_ref = color_jpeg(GREY, size=(200, 100))
     t0 = 1792092000000
     table = FridgeTable()
-    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", left, now_ms=t0).sk
-    r1 = dc.add_reference(table, ACCOUNT, DEVICE, open_ref, z, "open", now_ms=t0)
-    r2 = dc.add_reference(table, ACCOUNT, DEVICE, closed_ref, z, "closed", now_ms=t0 + 1)
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", left, now_ms=t0, source="clip").sk
+    r1 = dc.add_reference(table, ACCOUNT, DEVICE, open_ref, z, "open", now_ms=t0, source="clip")
+    r2 = dc.add_reference(
+        table, ACCOUNT, DEVICE, closed_ref, z, "closed", now_ms=t0 + 1, source="clip"
+    )
     dc.run(table, ACCOUNT, DEVICE, now_ms=t0 + 60_000)
     check = dc.setup_check(table, ACCOUNT, DEVICE)
 
@@ -351,15 +353,17 @@ TOOL_RESPONSE = {
                         "toolUseId": "t1",
                         "name": "record_fridge_changes",
                         "input": {
-                            "added": [
+                            "observations": "Hand puts milk in.",
+                            "items": [
                                 {
                                     "item": "milk",
                                     "category": "dairy",
                                     "quantity": 1,
                                     "confidence": 0.9,
+                                    "going_in": True,
+                                    "coming_out": False,
                                 }
                             ],
-                            "removed": [],
                         },
                     }
                 }
@@ -424,7 +428,22 @@ def test_nova_request_in_order(aws):
     assert texts[1] == "Reference 1: oat milk"
     assert texts[2] == "Reference 2: eggs"
     assert texts[3] == "Image 1 of 4"
-    assert "Current inventory: [milk]" in texts[-1]
+    assert "do not report them unless you see them carried): [milk]" in texts[-1]
+
+
+# Video traced without a key
+def test_video_traced_without_a_key(aws):
+    video = b"v" * 412_000
+    request = build_request("us.amazon.nova-2-lite-v1:0", STILLS, ["milk"], video=video)
+    record = CallRecord(attempt=1, request=request, outcome="ok", response=TOOL_RESPONSE)
+    state = {**STATE, "analysis_video": {"key": "k/analysis.mp4", "frame_ms": 500, "frames": 11}}
+    writer().nova(state, RUN_MS, record, [], STILL_KEYS)
+    doc = nova_json()
+    [entry] = [b for b in doc["request"]["content"] if b["type"] == "video"]
+    assert entry == {"type": "video", "frames": 11, "frame_ms": 500, "bytes": 412_000}
+    assert "analysis.mp4" not in json.dumps(doc)
+    listing = boto3.client("s3").list_objects_v2(Bucket=BUCKET, Prefix=f"{PREFIX}")
+    assert not any(o["Key"].endswith(".mp4") for o in listing.get("Contents", []))
 
 
 # Image keys are retrievable
@@ -460,7 +479,8 @@ def test_nova_response_kept(aws):
     doc = nova_json()
     assert doc["response"]["stopReason"] == "tool_use"
     tool = doc["response"]["output"]["message"]["content"][0]["toolUse"]
-    assert tool["input"]["added"][0]["item"] == "milk"
+    assert tool["input"]["items"][0]["item"] == "milk"
+    assert tool["input"]["observations"] == "Hand puts milk in."
     assert "ResponseMetadata" not in doc["response"]
     assert doc["request"]["inferenceConfig"] == {"maxTokens": 1024, "temperature": 0}
     assert doc["request"]["toolConfig"]["toolChoice"] == {"tool": {"name": "record_fridge_changes"}}

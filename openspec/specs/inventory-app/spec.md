@@ -413,7 +413,7 @@ The app SHALL offer a Config screen, opened by a "Config" gear button in the hea
 - **THEN** the reference thumbnail, its annotation and the instructions are shown, with no "Add", "Delete" or "Save" controls
 
 ### Requirement: Manage reference images
-The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer three sources: "Choose photo" (pick or take a photo on the device), "Camera snapshot" (`POST /api/camera/snapshot`) and "Recent clip". "Recent clip" SHALL open the "Snapshot from a recent clip" sheet: a dropdown of the door openings from the last 7 days that have a `clip`, newest first, each labelled with its day, local time and duration (e.g. "Today 18:02 · 25 s"); the selected clip plays with a scrubber; "Use this frame" sends the shown frame, as a JPEG at most 960 px wide, to `POST /api/camera/frame`, and only the image that route returns is shown for drawing; "Cancel" closes the sheet without a request. Once an image is chosen, the owner SHALL be able to draw on it with a "Box" tool and a "Line" tool, undo the last shape with "Undo", and type the annotation. The shapes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
+The "Reference images" sub-section SHALL list each reference as a thumbnail with its annotation (its description). It SHALL let the owner add one and delete one after confirming. Adding SHALL offer three sources: "Choose photo" (pick or take a photo on the device), "Camera snapshot" (`POST /api/camera/snapshot`) and "Recent clip". "Recent clip" SHALL open the "Snapshot from a recent clip" sheet: a dropdown of the door openings from the last 7 days that have a `clip`, newest first, each labelled with its day, local time and duration (e.g. "Today 18:02 · 25 s"); the selected clip plays with a scrubber; "Use this frame" sends the shown frame, as a JPEG at most 960 px wide, to `POST /api/camera/frame`, and only the image that route returns is shown for drawing; "Cancel" closes the sheet without a request. Once an image is chosen, the owner SHALL be able to drag boxes on it, undo the last box with "Undo", and type the annotation, up to 300 characters, in a multi-line field. There SHALL be no "Box" or "Line" tool buttons and no way to draw a line. Once at least one box is drawn, a "Crop" button SHALL crop the image to the last box, taken from the full-resolution image; the cropped image SHALL replace the one shown and its boxes SHALL be cleared. "Undo" with no boxes left after a crop SHALL restore the image from before that crop, with its boxes. The boxes SHALL be drawn in red into the uploaded image. Before upload, the image SHALL be re-encoded as JPEG with its longer side at most 768 px. The owner SHALL see how many of the 6 are used.
 
 #### Scenario: Add a reference
 - **WHEN** the owner taps "Add", taps "Choose photo", picks a 4032×3024 photo, types `soda can` and taps "Save"
@@ -428,8 +428,20 @@ The "Reference images" sub-section SHALL list each reference as a thumbnail with
 - **THEN** "No recent footage. Walk past the camera, then try again." is shown and the owner can still choose a photo
 
 #### Scenario: Draw on the image
-- **WHEN** the owner selects "Box", drags from 10%, 10% to 40%, 50% of the image, selects "Line", drags from 50%, 50% to 90%, 90%, and taps "Save"
-- **THEN** the shapes passed to the upload are a box from `(0.1, 0.1)` to `(0.4, 0.5)` and a line from `(0.5, 0.5)` to `(0.9, 0.9)`, in that order, drawn in red into the JPEG
+- **WHEN** the owner drags from 10%, 10% to 40%, 50% of the image, then from 50%, 50% to 90%, 90%, and taps "Save"
+- **THEN** there are no "Box" or "Line" buttons, and the shapes passed to the upload are a box from `(0.1, 0.1)` to `(0.4, 0.5)` and a box from `(0.5, 0.5)` to `(0.9, 0.9)`, in that order, drawn in red into the JPEG
+
+#### Scenario: Crop to the box
+- **WHEN** the owner draws a box from 10%, 10% to 40%, 50% on a 1000×800 image and taps "Crop"
+- **THEN** the image is cropped to the 300×320 px region at (100, 80), the cropped image is shown for drawing with no boxes, and after typing `milk bag` and tapping "Save" the cropped image (not the original) is uploaded, with no shapes
+
+#### Scenario: Crop needs a box
+- **WHEN** an image is chosen and no box is drawn
+- **THEN** "Crop" is disabled
+
+#### Scenario: Undo a crop
+- **WHEN** the owner draws a box, taps "Crop", then taps "Undo"
+- **THEN** the original image is shown again with that box, and "Crop" is enabled
 
 #### Scenario: Undo a shape
 - **WHEN** the owner has drawn two shapes and taps "Undo"
@@ -438,6 +450,10 @@ The "Reference images" sub-section SHALL list each reference as a thumbnail with
 #### Scenario: Annotation required
 - **WHEN** the owner picks a photo but leaves the annotation empty
 - **THEN** "Save" is disabled and no request is sent
+
+#### Scenario: Long annotation
+- **WHEN** the owner types a 300-character annotation and then one more character
+- **THEN** the field holds the 300 characters and "Save" sends all of them
 
 #### Scenario: Limit reached
 - **WHEN** 6 references exist
@@ -849,3 +865,87 @@ On the Activity screen, each door opening card SHALL show a "Debug" link for the
 #### Scenario: Viewer has no link
 - **WHEN** a viewer opens Activity
 - **THEN** no "Debug" link is shown
+
+### Requirement: Proof stills on Activity
+When any change of an event has `proof` links, the event card SHALL show a "Proof" strip with each such change's thumbnails (up to 2), each captioned with the change's label ("+ soda", "− 2 eggs"). The strip SHALL sit beside the clip or stills on screens `sm` and up, and below them on phones. Tapping a thumbnail SHALL open the still viewer on that change's proof stills. Without proof links, no strip SHALL be shown.
+
+#### Scenario: Proof beside the clip
+- **WHEN** an event has a `clip` link and a change "+ soda" with 2 `proof` links
+- **THEN** the card shows the video and a "Proof" strip with 2 images whose accessible names are "Proof for + soda, 1 of 2" and "Proof for + soda, 2 of 2"
+
+#### Scenario: Several changes
+- **WHEN** an event has "+ soda" with 1 proof link and "− 2 eggs" with 2
+- **THEN** the strip shows 3 thumbnails, captioned "+ soda" and "− 2 eggs"
+
+#### Scenario: Tap a proof still
+- **WHEN** the user taps "Proof for − 2 eggs, 2 of 2"
+- **THEN** the still viewer opens on that image, "Next still" is disabled and "Previous still" shows "Proof for − 2 eggs, 1 of 2"
+
+#### Scenario: No proof
+- **WHEN** no change of an event has `proof` links
+- **THEN** no "Proof" strip is shown, and the clip or stills show as before
+
+#### Scenario: Proof with stills
+- **WHEN** an event has `clip: null`, 4 still links and a change with 1 proof link
+- **THEN** the 4 still buttons and a "Proof" strip with 1 image are both shown
+
+#### Scenario: Layout by width
+- **WHEN** the card is rendered
+- **THEN** the media area uses a one-column grid that becomes two columns at `sm` (`sm:grid-cols-[2fr_1fr]`), with the strip in the second column
+
+### Requirement: Clip picker plays face-blurred clips
+The Reference images clip picker SHALL offer only the clips that `GET /api/events` returns as `clip` links, and SHALL play no other video. While face blurring is on, those links are face-blurred clips (see `clip-face-blur`). A frame grabbed from a clip SHALL still be sent to `POST /api/camera/frame`, and only the image that route returns SHALL be used.
+
+#### Scenario: Only listed clips offered
+- **WHEN** `GET /api/events` returns three recent events, two with a `clip` link and one with `clip: null`
+- **THEN** the picker offers exactly the two clips, and its video sources are those two links
+
+#### Scenario: Clip being blurred not offered
+- **WHEN** the only recent event has `clip: null` because its clip is still being blurred
+- **THEN** the picker shows "No door openings with a clip in the last 7 days."
+
+#### Scenario: Frame still blurred by the server
+- **WHEN** the owner picks a frame from a clip
+- **THEN** `POST /api/camera/frame` is requested once with that frame, and the reference form shows the image it returns
+
+### Requirement: Privacy mask changed banner
+When the warnings include `privacy_mask_changed`, the Fridge screen and every Config tab SHALL show its `message` as a banner with the link "Update door zones" to `#config/doors`. Viewers SHALL see the banner without the link.
+
+#### Scenario: Owner sees the banner and link
+- **WHEN** the owner opens the Fridge screen and the warnings include `privacy_mask_changed` with `zones = ["Chiller"]`
+- **THEN** a banner shows "The camera's privacy mask changed and now covers part of Chiller…" with an "Update door zones" link that opens `#config/doors`
+
+#### Scenario: Viewer sees no link
+- **WHEN** a viewer opens the Fridge screen and the warnings include `privacy_mask_changed`
+- **THEN** the banner text is shown with no link
+
+#### Scenario: No camera-moved banner for a mask change
+- **WHEN** the warnings include `privacy_mask_changed` and not `camera_moved`
+- **THEN** no banner says "The camera has moved or changed angle"
+
+### Requirement: Edit reference images
+Each reference card SHALL have an "Edit" button for the owner, next to "Delete". It SHALL open an "Edit reference" sheet showing the reference's current image, ready to draw on and crop, and its annotation in the annotation field. The sheet SHALL offer the same "Choose photo", "Camera snapshot" and "Recent clip" sources as adding, to replace the image. "Save" SHALL be disabled while the annotation is empty or nothing has changed. It SHALL send `PATCH /api/config/references/{id}` with the trimmed annotation if it changed, and the image, resized and with boxes drawn in, only if a new image was chosen, it was cropped or a box was drawn. The list SHALL then show the returned config. A 400 SHALL show the error in the sheet. Viewers get no "Edit" button.
+
+#### Scenario: Edit an annotation
+- **WHEN** the owner taps "Edit" on "chocomilk", changes the annotation to `chocolate milk carton` and taps "Save"
+- **THEN** the sheet shows the current image, `PATCH` is sent with only `{"annotation": "chocolate milk carton"}`, and the card reads "chocolate milk carton"
+
+#### Scenario: Replace the image
+- **WHEN** the owner taps "Edit", chooses a new photo and taps "Save"
+- **THEN** `PATCH` is sent with only the resized new image
+
+#### Scenario: Draw on the current image
+- **WHEN** the owner taps "Edit", draws a box on the current image and taps "Save"
+- **THEN** `PATCH` is sent with only the image, resized with that box
+
+#### Scenario: Nothing changed
+- **WHEN** the owner opens "Edit" and changes nothing
+- **THEN** "Save" is disabled
+
+#### Scenario: Edit refused
+- **WHEN** the API answers 400 to an edit
+- **THEN** the error message is shown in the sheet and the list is unchanged
+
+#### Scenario: Viewer has no edit
+- **WHEN** a viewer opens the "Reference images" tab
+- **THEN** no "Edit" button is shown

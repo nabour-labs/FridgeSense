@@ -171,3 +171,35 @@ def test_same_item_added_and_removed_in_one_opening(table):
     put_stock(table, "milk", 1)
     save(table, added=[change("milk", 2)], removed=[change("milk", 1)])
     assert stock(table, "milk")["quantity"] == 2
+
+
+# Scenario: Proof kept
+def test_proof_kept(table):
+    save(table, added=[{**change("soda can", category="beverage"), "images": [3, 4]}])
+    [saved] = door(table)["changes"]
+    assert saved["proof"] == [2, 3]
+
+
+def test_change_without_images_saves_empty_proof(table):
+    save(table, added=[change("milk")])
+    [saved] = door(table)["changes"]
+    assert saved["proof"] == []
+
+
+# Scenario: Observations not stored on the event
+def test_observations_not_stored_on_the_event(table):
+    state = {
+        "account_id": ACCOUNT,
+        "door_sk": DOOR_SK,
+        "analysis": {
+            "added": [change("soda can", category="beverage")],
+            "removed": [],
+            "dropped": [{"item": "milk", "reason": "no_hand_evidence"}],
+            "observations": "Hand takes a soda can from the door shelf.",
+        },
+    }
+    save_task(table, state)
+    saved = door(table)
+    assert "observations" not in saved
+    assert "dropped" not in saved
+    assert [c["item"] for c in saved["changes"]] == ["soda can"]

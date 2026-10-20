@@ -51,9 +51,12 @@ def test_live_view_opened(tokens):
 # Scenario: User opens a live view
 @respx.mock
 def test_user_opens_a_live_view(tokens):
-    opened()
-    status, body = call("POST", "/api/camera/live", {"offer": OFFER}, tokens["user"])
-    assert status == 200 and body["answer"] == ANSWER
+    route = opened()
+    assert call("POST", "/api/camera/live", {"offer": OFFER}, tokens["user"]) == (
+        403,
+        {"error": "admin only"},
+    )
+    assert not route.called
 
 
 # Scenario: Viewer opens a live view
@@ -134,8 +137,19 @@ def test_not_signed_in(tokens):
 @respx.mock
 def test_live_view_closed(tokens, status):
     route = respx.delete(f"{SESSIONS}/S123").respond(status)
-    assert call("DELETE", "/api/camera/live/S123", token=tokens["user"]) == (200, {"ok": True})
+    assert call("DELETE", "/api/camera/live/S123", token=tokens["owner"]) == (200, {"ok": True})
     assert route.called
+
+
+# Scenario: User refused a close
+@respx.mock
+def test_user_refused_a_close(tokens):
+    route = respx.delete(f"{SESSIONS}/S123").respond(204)
+    assert call("DELETE", "/api/camera/live/S123", token=tokens["user"]) == (
+        403,
+        {"error": "admin only"},
+    )
+    assert not route.called
 
 
 # Scenario: Viewer refused a close

@@ -47,3 +47,18 @@ def load(table: FridgeTable, account_id: str, device_id: str) -> FridgeArea | No
         box=(float(b["x"]), float(b["y"]), float(b["width"]), float(b["height"])),
         updated_at=item["updated_at"],
     )
+
+
+SIDE_MARGIN = 0.10  # of the area's width, each side: hands reach past the doors
+END_MARGIN = 0.05  # of the area's height, above and below
+
+
+def analysis_box(area: Box | None, still_crop: Box | None) -> Box | None:
+    """The crop for stored stills and the analysis video: the fridge area plus room for hands,
+    clamped to the frame; without an area, STILL_CROP (None: the full frame)."""
+    if area is None:
+        return still_crop
+    x, y, w, h = area
+    left, right = max(0.0, x - SIDE_MARGIN * w), min(1.0, x + w + SIDE_MARGIN * w)
+    top, bottom = max(0.0, y - END_MARGIN * h), min(1.0, y + h + END_MARGIN * h)
+    return (left, top, right - left, bottom - top)

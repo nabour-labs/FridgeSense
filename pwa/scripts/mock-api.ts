@@ -60,10 +60,10 @@ export function mockApi(): Plugin {
   const stills = [1, 2, 3, 4].map((n) => `/mock/still-${n}.svg`);
   let events = [
     { id: "e0", opened_at: iso(2 * MIN), duration_s: 18, status: "done", pending_count: 0, stills,
-      changes: [{ item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.94, applied: true }] },
+      changes: [{ item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.94, applied: true, proof: stills.slice(1, 3) }] },
     { id: "e1", opened_at: iso(50 * MIN), duration_s: 31, status: "done", pending_count: 1, stills,
       changes: [
-        { item: "soda can", category: "beverage", direction: "removed", quantity: 1, confidence: 0.88, applied: true },
+        { item: "soda can", category: "beverage", direction: "removed", quantity: 1, confidence: 0.88, applied: true, proof: [stills[0]] },
         { item: "chocolate bar", category: "snack", direction: "removed", quantity: 1, confidence: 0.62, applied: false },
       ] },
     { id: "e2", opened_at: iso(5 * HOUR), duration_s: 44, status: "done", pending_count: 1, stills: [],
@@ -108,6 +108,7 @@ export function mockApi(): Plugin {
   let snapshots = 0;
   let fridgeArea: { image: string; box: unknown; updated_at: string } | null = null;
   let monitoring: { paused: boolean; since: string | null } = { paused: false, since: null };
+  let faceBlur = true;
   const doorBody = (scored = false) => ({
     device_id: "mock.device.D1",
     zones: doorZones.map((z) => ({
@@ -325,6 +326,18 @@ export function mockApi(): Plugin {
           });
           return;
         }
+        if (req.method === "GET" && url === "/settings/face-blur") return send(200, { enabled: faceBlur });
+        if (req.method === "PUT" && url === "/settings/face-blur") {
+          if (process.env.FRIDGESENSE_MOCK === "viewer") return send(403, { error: "read-only" });
+          if (process.env.FRIDGESENSE_MOCK === "user") return send(403, { error: "admin only" });
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            faceBlur = JSON.parse(body).enabled;
+            send(200, { enabled: faceBlur });
+          });
+          return;
+        }
         // Live view needs a real camera: answer as if Ring were down, so the dialog's error path shows.
         if (req.method === "POST" && url === "/camera/live") return send(502, { error: "camera unavailable" });
         if (req.method === "DELETE" && url.startsWith("/camera/live/")) return send(200, { ok: true });
@@ -347,7 +360,8 @@ export function mockApi(): Plugin {
           return send(200, { image: photo(snapshots % 2 ? "snapshot-closed" : "snapshot-open"), captured_at: new Date().toISOString() });
         }
         if (url === "/door-calibration" && req.method === "GET") return send(200, doorBody());
-        // FRIDGESENSE_MOCK_WARNINGS=1 adds motion detection off and a moved camera.
+        // FRIDGESENSE_MOCK_WARNINGS=1 adds motion detection off and a moved camera;
+        // FRIDGESENSE_MOCK_MASK=1 adds a privacy mask that covers a door zone.
         if (url === "/warnings" && req.method === "GET") {
           const all = !!process.env.FRIDGESENSE_MOCK_WARNINGS;
           const warnings = [
@@ -356,6 +370,9 @@ export function mockApi(): Plugin {
             ...(doorSetup ? [] : [{ code: "door_setup_missing", message: "Open/close detection is not set up, so the default zones are used and openings may be missed." }]),
             ...(all
               ? [{ code: "camera_moved", message: "The camera has moved or changed angle. Update the references so detection stays accurate.", since: iso(2 * HOUR), update: ["door_references", ...(fridgeArea ? ["fridge_area"] : [])] }]
+              : []),
+            ...(process.env.FRIDGESENSE_MOCK_MASK
+              ? [{ code: "privacy_mask_changed", message: "The camera's privacy mask changed and now covers part of Chiller. Move those door zones or the mask, then retake their door references.", since: iso(HOUR), zones: ["Chiller"] }]
               : []),
           ];
           return send(200, { warnings, checked_at: iso(0) });
@@ -462,6 +479,24 @@ export function mockApi(): Plugin {
             config = {
               ...config,
               references: [...config.references, { id, annotation: String(annotation).trim(), image, created_at: new Date().toISOString() }],
+            };
+            send(200, config);
+          });
+          return;
+        }
+        const refEdit = url.match(/^\/config\/references\/([^/]+)$/);
+        if (req.method === "PATCH" && refEdit) {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            const { annotation, image } = JSON.parse(body || "{}");
+            const id = decodeURIComponent(refEdit[1]);
+            if (!config.references.some((r) => r.id === id)) return send(404, { error: "not found" });
+            config = {
+              ...config,
+              references: config.references.map((r) =>
+                r.id === id ? { ...r, ...(annotation !== undefined && { annotation: String(annotation).trim() }), ...(image !== undefined && { image }) } : r,
+              ),
             };
             send(200, config);
           });

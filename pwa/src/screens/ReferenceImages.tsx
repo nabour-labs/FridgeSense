@@ -1,23 +1,23 @@
-import { Camera, Clapperboard, ImagePlus, Trash2, Undo2 } from "lucide-react";
+import { Camera, Clapperboard, Crop as CropIcon, ImagePlus, Pencil, Trash2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { CameraOffline, NoVideo } from "../camera/liveSnapshot";
 import { RecentClipPicker } from "../camera/RecentClipPicker";
 import { ApiError } from "../api/client";
-import type { Config as ConfigData } from "../api/types";
+import type { Config as ConfigData, Reference } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
 import { Sheet } from "../components/Sheet";
-import { toJpeg, type Resize } from "../image";
-import type { Shape, ShapeKind } from "../shapes";
+import { cropJpeg, toJpeg, type Crop, type Resize } from "../image";
+import type { Shape } from "../shapes";
 import { useLoad } from "../useLoad";
 import { CARD, HEADING, INPUT, PRIMARY } from "./configStyles";
 
 const MAX_REFERENCES = 6;
-const MAX_ANNOTATION = 80;
+const MAX_ANNOTATION = 300;
 const MAX_INSTRUCTIONS = 1000;
 /** The owner's reference images and custom instructions for the analysis. */
-export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
+export function ReferenceImages({ resize = toJpeg, crop = cropJpeg }: { resize?: Resize; crop?: Crop }) {
   const { api, report, role } = useApp();
   const editable = canEdit(role);
   const {
@@ -29,6 +29,7 @@ export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
     60_000,
   );
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Reference | null>(null);
 
   if (!config) {
     if (failed) return <NoData />;
@@ -68,6 +69,16 @@ export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
                 {editable && (
                   <button
                     type="button"
+                    aria-label={`Edit ${r.annotation}`}
+                    onClick={() => setEditing(r)}
+                    className="grid size-9 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-950 dark:hover:text-brand-300"
+                  >
+                    <Pencil aria-hidden className="size-4" />
+                  </button>
+                )}
+                {editable && (
+                  <button
+                    type="button"
                     aria-label={`Delete ${r.annotation}`}
                     onClick={() => remove(r.id, r.annotation)}
                     className="grid size-9 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/50 dark:hover:text-red-400"
@@ -103,13 +114,20 @@ export function ReferenceImages({ resize = toJpeg }: { resize?: Resize }) {
           <p className={`${CARD} whitespace-pre-wrap p-4 text-sm`}>{config.instructions || "None yet."}</p>
         )}
       </section>
-      {adding && (
-        <AddReference
+      {(adding || editing) && (
+        <ReferenceSheet
+          key={editing?.id ?? "new"}
+          editing={editing}
           resize={resize}
-          onClose={() => setAdding(false)}
-          onAdded={(next) => {
+          crop={crop}
+          onClose={() => {
+            setAdding(false);
+            setEditing(null);
+          }}
+          onSaved={(next) => {
             setConfig(next);
             setAdding(false);
+            setEditing(null);
           }}
         />
       )}
@@ -181,36 +199,82 @@ export function jpegBlob(b64: string): Blob {
 }
 
 const TOOL =
-  "h-9 rounded-full px-3 text-sm font-semibold ring-1 transition disabled:opacity-40 aria-pressed:bg-brand-600 aria-pressed:text-white aria-pressed:ring-brand-600";
+  "h-9 rounded-full px-3 text-sm font-semibold ring-1 transition disabled:opacity-40";
 const TOOL_IDLE = "bg-white text-slate-700 ring-slate-300 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700";
 
-function AddReference({
+/** An image as it was before a crop, so Undo can bring it back. */
+interface Picked {
+  source: Blob;
+  preview: string | null;
+  shapes: Shape[];
+}
+
+/** Adds a reference, or edits `editing`, starting from its image and annotation. */
+function ReferenceSheet({
+  editing,
   resize,
+  crop,
   onClose,
-  onAdded,
+  onSaved,
 }: {
+  editing: Reference | null;
   resize: Resize;
+  crop: Crop;
   onClose: () => void;
-  onAdded: (config: ConfigData) => void;
+  onSaved: (config: ConfigData) => void;
 }) {
   const { api, report } = useApp();
-  const [source, setSource] = useState<Blob | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  // Kept once, so Undo after a crop gets back to this very Blob and it counts as unchanged.
+  const [original] = useState(() => (editing ? jpegBlob(editing.image) : null));
+  const [source, setSource] = useState<Blob | null>(original);
+  const [preview, setPreview] = useState<string | null>(editing && `data:image/jpeg;base64,${editing.image}`);
   const [shapes, setShapes] = useState<Shape[]>([]);
-  const [tool, setTool] = useState<ShapeKind>("box");
-  const [annotation, setAnnotation] = useState("");
+  const [beforeCrop, setBeforeCrop] = useState<Picked[]>([]);
+  const [cropping, setCropping] = useState(false);
+  const [annotation, setAnnotation] = useState(editing?.annotation ?? "");
   const [busy, setBusy] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [pickingClip, setPickingClip] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const valid = source !== null && annotation.trim().length > 0;
+  const imageChanged = source !== original || shapes.length > 0;
+  const annotationChanged = annotation.trim() !== editing?.annotation;
+  const valid = source !== null && annotation.trim().length > 0 && (!editing || imageChanged || annotationChanged);
 
   function use(next: Blob | null, url: string | null) {
-    if (preview?.startsWith("blob:")) URL.revokeObjectURL(preview);
+    for (const old of [preview, ...beforeCrop.map((p) => p.preview)]) if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
     setSource(next);
     setPreview(url);
     setShapes([]);
+    setBeforeCrop([]);
     setError(null);
+  }
+
+  async function cropToBox() {
+    const box = shapes.at(-1);
+    if (!source || !box) return;
+    setCropping(true);
+    try {
+      const cropped = await crop(source, box);
+      setBeforeCrop((stack) => [...stack, { source, preview, shapes }]);
+      setSource(cropped);
+      setPreview(typeof URL.createObjectURL === "function" ? URL.createObjectURL(cropped) : null);
+      setShapes([]);
+    } catch (err) {
+      report(err);
+    } finally {
+      setCropping(false);
+    }
+  }
+
+  function undo() {
+    if (shapes.length) return setShapes(shapes.slice(0, -1));
+    const last = beforeCrop.at(-1);
+    if (!last) return;
+    if (preview?.startsWith("blob:")) URL.revokeObjectURL(preview);
+    setBeforeCrop(beforeCrop.slice(0, -1));
+    setSource(last.source);
+    setPreview(last.preview);
+    setShapes(last.shapes);
   }
 
   function pick(file: File | null) {
@@ -244,8 +308,15 @@ function AddReference({
     setBusy(true);
     setError(null);
     try {
-      const image = shapes.length ? await resize(source, shapes) : await resize(source);
-      onAdded(await api.addReference(annotation.trim(), image));
+      const image = !imageChanged ? null : shapes.length ? await resize(source, shapes) : await resize(source);
+      if (!editing) onSaved(await api.addReference(annotation.trim(), image!));
+      else
+        onSaved(
+          await api.updateReference(editing.id, {
+            ...(annotationChanged && { annotation: annotation.trim() }),
+            ...(image !== null && { image }),
+          }),
+        );
     } catch (err) {
       if (err instanceof ApiError && (err.status === 400 || err.status === 409)) setError(err.message);
       else report(err);
@@ -255,7 +326,7 @@ function AddReference({
   }
 
   return (
-    <Sheet title="Add a reference" onClose={onClose}>
+    <Sheet title={editing ? "Edit reference" : "Add a reference"} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -296,30 +367,28 @@ function AddReference({
           </div>
           {preview && (
             <>
-              <ImageMarkup src={preview} alt="Reference to draw on" shapes={shapes} onChange={setShapes} tool={tool} />
+              <ImageMarkup src={preview} alt="Reference to draw on" shapes={shapes} onChange={setShapes} />
               <div className="flex items-center gap-2">
-                {(["box", "line"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    aria-pressed={tool === t}
-                    onClick={() => setTool(t)}
-                    className={`${TOOL} ${tool === t ? "" : TOOL_IDLE}`}
-                  >
-                    {t === "box" ? "Box" : "Line"}
-                  </button>
-                ))}
                 <button
                   type="button"
-                  onClick={() => setShapes((s) => s.slice(0, -1))}
-                  disabled={shapes.length === 0}
+                  onClick={cropToBox}
+                  disabled={shapes.length === 0 || cropping}
+                  className={`${TOOL} ${TOOL_IDLE} inline-flex items-center gap-1`}
+                >
+                  <CropIcon aria-hidden className="size-4" />
+                  Crop
+                </button>
+                <button
+                  type="button"
+                  onClick={undo}
+                  disabled={shapes.length === 0 && beforeCrop.length === 0}
                   className={`${TOOL} ${TOOL_IDLE} ml-auto inline-flex items-center gap-1`}
                 >
                   <Undo2 aria-hidden className="size-4" />
                   Undo
                 </button>
               </div>
-              <p className="px-1 text-xs text-slate-500 dark:text-slate-400">Drag on the image to point out what matters.</p>
+              <p className="px-1 text-xs text-slate-500 dark:text-slate-400">Drag a box around what matters. Crop to it to send a smaller image.</p>
             </>
           )}
         </div>
@@ -327,14 +396,18 @@ function AddReference({
           <label htmlFor="ref-annotation" className="mb-2 block text-sm font-medium">
             Annotation
           </label>
-          <input
+          <textarea
             id="ref-annotation"
             value={annotation}
+            rows={3}
             maxLength={MAX_ANNOTATION}
             placeholder="e.g. milk bag (2 L, white with blue print)"
             onChange={(e) => setAnnotation(e.target.value)}
-            className={`${INPUT} h-12`}
+            className={`${INPUT} block py-3 text-sm`}
           />
+          <p className="mt-1 px-1 text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">
+            {annotation.length} / {MAX_ANNOTATION}
+          </p>
         </div>
         {error && (
           <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">

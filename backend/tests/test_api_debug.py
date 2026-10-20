@@ -240,6 +240,16 @@ def test_trace_by_door_event_id(owner):
     assert body["nova_totals"]["calls"] == 2
 
 
+# Trace by a later opening's id
+def test_trace_by_a_later_openings_id(owner):
+    start = recent(1)
+    motion(start, "door_open", TWO_CALLS)
+    status, body = detail(owner, api.encode_id(f"{door_sk(start)}#2"))
+    assert status == 200, body
+    assert body["id"] == api.encode_id(f"TRACE#{iso_utc(start)}#{DEVICE}")
+    assert body["door"]["outcome"] == "door_open"
+
+
 def test_trace_by_motion_id(owner):
     start = recent(1)
     motion(start)
@@ -259,8 +269,8 @@ def test_setup_rule_links(owner):
 
     whole = (0.0, 0.0, 1.0, 1.0)
     whole_box = {"x": 0, "y": 0, "width": 1, "height": 1}
-    z = dc.add_zone(FridgeTable(), ACCOUNT, DEVICE, "Doors", whole_box, now_ms=1).sk
-    dc.add_reference(FridgeTable(), ACCOUNT, DEVICE, CLOSED, z, "closed", now_ms=1)
+    z = dc.add_zone(FridgeTable(), ACCOUNT, DEVICE, "Doors", whole_box, now_ms=1, source="clip").sk
+    dc.add_reference(FridgeTable(), ACCOUNT, DEVICE, CLOSED, z, "closed", now_ms=1, source="clip")
     rule = ZoneRule(whole, "change", "above", 0.1, baseline_of([CLOSED], whole), margin=0.05)
     check = DoorCheck(rules=(rule,), source="setup", ran_at="2026-08-01T00:00:00.000Z")
     start = recent(1)

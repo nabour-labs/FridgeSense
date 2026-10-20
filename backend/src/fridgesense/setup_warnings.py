@@ -1,8 +1,11 @@
 """Setup problems that silently stop door openings from being recorded or detected well, each
 with what fixes it."""
 
+import logging
+
 from fridgesense import alignment, camera_info, door_calibration, fridge_area, monitoring
 from fridgesense.door_events import iso_utc
+from fridgesense.logs import log_event
 from fridgesense.ring import RingClient
 from fridgesense.table import FridgeTable
 
@@ -21,6 +24,53 @@ SETUP_MISSING = (
 CAMERA_MOVED = (
     "The camera has moved or changed angle. Update the references so detection stays accurate."
 )
+
+SETUP_MISMATCH = (
+    "Open/close detection doesn't match the camera's recordings, so the fridge light is used "
+    "instead. Replace the door references with frames from recent clips and run setup again."
+)
+MISMATCH_STREAK = 3  # suspect clips in a row
+MASK_CHANGED = (
+    "The camera's privacy mask changed and now covers part of {zones}. Move those door zones "
+    "or the mask, then retake their door references."
+)
+
+
+def join_names(names: list[str]) -> str:
+    """ "A", "A and B", "A, B and C"."""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def privacy_mask_changed(table: FridgeTable, account_id: str, device_id: str) -> dict | None:
+    """The mask-change warning while a changed mask hides part of a zone; left out if the
+    alignment can't be read."""
+    try:
+        state = alignment.load_alignment(table, account_id, device_id)
+    except Exception as e:
+        log_event("mask_state_unreadable", logging.WARNING, error=type(e).__name__)
+        return None
+    if state is None or not state.mask_zones:
+        return None
+    zones = list(state.mask_zones)
+    return {
+        "code": "privacy_mask_changed",
+        "message": MASK_CHANGED.format(zones=join_names(zones)),
+        "since": iso_utc(state.mask_changed_at_ms),
+        "zones": zones,
+    }
+
+
+def setup_mismatch(table: FridgeTable, account_id: str, device_id: str) -> dict | None:
+    """The mismatch warning after MISMATCH_STREAK suspect clips in a row; left out if the
+    streak can't be read."""
+    try:
+        state = alignment.load_alignment(table, account_id, device_id)
+    except Exception as e:
+        log_event("suspect_streak_unreadable", logging.WARNING, error=type(e).__name__)
+        return None
+    if state is None or state.suspect_streak < MISMATCH_STREAK:
+        return None
+    return {"code": "door_setup_mismatch", "message": SETUP_MISMATCH}
 
 
 def camera_moved(table: FridgeTable, account_id: str, device_id: str) -> dict | None:
@@ -64,4 +114,10 @@ def warnings_body(
         moved = camera_moved(table, account_id, device_id)
         if moved is not None:
             found.append(moved)
+        mismatch = setup_mismatch(table, account_id, device_id)
+        if mismatch is not None:
+            found.append(mismatch)
+        mask = privacy_mask_changed(table, account_id, device_id)
+        if mask is not None:
+            found.append(mask)
     return {"warnings": found, "checked_at": iso_utc(now_ms)}

@@ -105,7 +105,14 @@ def stills_open_at(numbers: set[int], count: int = 25) -> list[bytes]:
 
 
 def run(
-    ring_http, state=STATE, blurrer=None, check=CHECK, crop=None, setup_for=None, paused_for=None
+    ring_http,
+    state=STATE,
+    blurrer=None,
+    check=CHECK,
+    crop=None,
+    setup_for=None,
+    paused_for=None,
+    area_for=None,
 ):
     ring, http = ring_http
     return fetch_stills(
@@ -121,6 +128,7 @@ def run(
         crop=crop,
         setup_for=setup_for,
         paused_for=paused_for,
+        area_for=area_for,
     )
 
 
@@ -378,6 +386,38 @@ def test_detection_and_storage_get_the_cropped_still(aws, ring_http):
     body = boto3.client("s3").get_object(Bucket=BUCKET, Key=out["still_keys"][0])["Body"].read()
     assert body == seen[0]
     assert body != OPEN
+
+
+# Fridge area wins over STILL_CROP
+@respx.mock
+def test_fridge_area_wins_over_still_crop(aws, ring_http):
+    big_open = color_jpeg(GREY, [((0.4, 0.4, 0.15, 0.4), (40, 90, 200))], size=(2560, 1440))
+    ring_serves([big_open])
+    asked = []
+
+    def area_for(account_id, device_id):
+        asked.append((account_id, device_id))
+        return (0.362, 0.329, 0.233, 0.611)
+
+    check = DoorCheck(zones=((0.4, 0.4, 0.15, 0.4),), threshold=0.02)
+    out = run(ring_http, check=check, crop=(0.30, 0.0, 0.34, 1.0), area_for=area_for)
+    assert out["outcome"] == "door_open"
+    assert asked == [(STATE["account_id"], STATE["device_id"])]  # once per motion
+    body = boto3.client("s3").get_object(Bucket=BUCKET, Key=out["still_keys"][0])["Body"].read()
+    w, h = size(body)
+    assert abs(w - 716) <= 2 and abs(h - 968) <= 2
+
+
+# Crop to the visible strip (device without a fridge area)
+@respx.mock
+def test_still_crop_without_a_fridge_area(aws, ring_http):
+    big_open = color_jpeg(GREY, [((0.4, 0.4, 0.15, 0.4), (40, 90, 200))], size=(2560, 1440))
+    ring_serves([big_open])
+    check = DoorCheck(zones=((0.4, 0.4, 0.15, 0.4),), threshold=0.02)
+    out = run(ring_http, check=check, crop=(0.30, 0.0, 0.34, 1.0), area_for=lambda a, d: None)
+    body = boto3.client("s3").get_object(Bucket=BUCKET, Key=out["still_keys"][0])["Body"].read()
+    w, h = size(body)
+    assert abs(w - 870) <= 1 and h == 1440
 
 
 # Stills of a closed fridge are never cropped or stored

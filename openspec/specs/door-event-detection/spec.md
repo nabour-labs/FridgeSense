@@ -87,7 +87,7 @@ The system SHALL decide for each downloaded still whether it is *open*, using ru
 - **With a setup result** stored for the event's account and device (see the `door-calibration` capability), each zone has its own feature (`blue`, `color`, `brightness` or `change`, measured as setup measures it, against the stored baseline for `change`), direction and threshold. A still is open when, in any zone, the feature's value is at or above the threshold (direction `above`) or at or below it (direction `below`).
 - **Without a setup result**, every zone uses `blue` with direction `above`: the fraction of pixels that are both colorful (`max(R,G,B) − min(R,G,B) > 60` and `max(R,G,B) > 100`) and blue-lit (`B − max(R,G) > 20`), as the fridge's LED-lit interior is. Warm colors such as food held in front of the closed doors do not count. The zones are `DOOR_ZONES`, else the defaults `0.38,0.32,0.21,0.30` (doors) and `0.455,0.60,0.12,0.18` (drawers), and the threshold is `DOOR_THRESHOLD`, else 0.01.
 
-A still's *score* is the value of its best zone, the one furthest past (or closest to) its threshold. The event SHALL count as a door opening only if at least one still is open. The *open span* runs from the first open still through the first still after the last open one (or through the last open still if no still follows it). Up to 4 stills SHALL be sent on from the open span, evenly spaced and including its first and last still: positions `round(i · (n − 1) / 3)` for `i = 0 … 3` in a span of `n > 4` stills, or every still when `n ≤ 4`. The check SHALL run on the downloaded stills before any cropping, face detection or storage. Only door openings go on to face detection, storage and analysis.
+A still's *score* is the value of its best zone, the one furthest past (or closest to) its threshold. The event SHALL count as a door opening only if at least one still is open. A run of closed stills SHALL end an opening when the time from its first closed still to the next open still is 10 s or more; a shorter closed run stays inside the opening. Each opening's *open span* runs from its first open still through the first still after its last open one (or through its last open still if no still follows it). Up to 4 stills SHALL be sent on from each open span, evenly spaced and including its first and last still: positions `round(i · (n − 1) / 3)` for `i = 0 … 3` in a span of `n > 4` stills, or every still when `n ≤ 4`. The check SHALL run on the downloaded stills before any cropping, face detection or storage. Only door openings go on to face detection, storage and analysis.
 
 #### Scenario: Fridge light visible
 - **WHEN** zones are `0.0,0.0,0.5,1.0;0.5,0.0,0.5,1.0`, the threshold is 0.02, and one 200×100 still is grey `(128,128,128)` except a `(40,90,200)` block covering 10% of the left zone
@@ -100,6 +100,14 @@ A still's *score* is the value of its best zone, the one furthest past (or close
 #### Scenario: Setup result used for the device
 - **WHEN** setup for the event's device stored zone `0.6,0.0,0.4,1.0` with `color` above 0.3, `DOOR_ZONES` is `0.0,0.0,0.4,1.0`, and only the right 40% of a still is colorful (a color value of 1.0 in the stored zone)
 - **THEN** the event counts as a door opening, and the `door_event_recorded` log line has `zones_source = "setup"`
+
+#### Scenario: Short closed run stays inside the opening
+- **WHEN** 25 stills one second apart are downloaded, stills 6–10 and 15–20 are open, and stills 11–14 are closed (4 s from still 11 to still 15)
+- **THEN** there is one opening whose open span is stills 6–21
+
+#### Scenario: Long closed run splits the opening
+- **WHEN** 30 stills one second apart are downloaded, stills 3–6 and 20–24 are open, and stills 7–19 are closed (13 s from still 7 to still 20)
+- **THEN** there are two openings, with open spans stills 3–7 and stills 20–25
 
 #### Scenario: Setup threshold applied
 - **WHEN** setup stored `color` above 0.3 for a zone and the best still has a color value of 0.2 there
@@ -166,11 +174,15 @@ A still's *score* is the value of its best zone, the one furthest past (or close
 - **THEN** that still is open, because the stored rule's feature is `color`
 
 ### Requirement: Door event record
-For each door opening, the system SHALL save one door event under the account with the device ID, Ring event ID, `opened_at`, `closed_at` (ISO 8601 UTC), `duration_s`, the still keys, and a `status`. `opened_at` SHALL be the request time of the first open still. `closed_at` SHALL be the request time of the first still after the last open one, or the window end when no still follows it. `duration_s` SHALL be `closed_at − opened_at` in whole seconds, rounded. An event saved with `status = "no_media"` because too few stills were downloaded SHALL take `opened_at` and `closed_at` from the window. A second run for the same Ring event SHALL NOT create a second record or a second analysis.
+For each door opening, the system SHALL save one door event under the account with the device ID, Ring event ID, `opened_at`, `closed_at` (ISO 8601 UTC), `duration_s`, the still keys, and a `status`. `opened_at` SHALL be the request time of the opening's first open still. `closed_at` SHALL be the request time of the first still after the opening's last open one, or the window end when no still follows it. `duration_s` SHALL be `closed_at − opened_at` in whole seconds, rounded. An event saved with `status = "no_media"` because too few stills were downloaded SHALL take `opened_at` and `closed_at` from the window. A second run for the same Ring event SHALL NOT create a second record or a second analysis.
 
 #### Scenario: Door event saved
 - **WHEN** the window is 1786715596000–1786715621000, 25 stills are downloaded, and stills 6 to 15 are open
 - **THEN** a door event exists with `opened_at = "2026-08-14T13:53:21.769Z"`, `closed_at = "2026-08-14T13:53:31.384Z"`, `duration_s = 10` and `status = "analyzing"` before analysis starts
+
+#### Scenario: Two openings in one window
+- **WHEN** the window is 1786715596000–1786715626000, 30 stills are downloaded, and stills 3–6 and 20–24 are open
+- **THEN** two door events exist: the first runs from still 3's request time to still 7's, and the second from still 20's to still 25's, each with its own `duration_s`
 
 #### Scenario: Door still open at the end of the window
 - **WHEN** the last downloaded still is open
@@ -330,18 +342,26 @@ The fetch-stills step SHALL first request the event clip once with `POST /v1/dev
 - **THEN** the outcome is `door_open`, although 30 stills spread across the window would all fall outside the opening
 
 ### Requirement: Open and close times from clip frames
-For a door opening found in the clip, `opened_at` SHALL be the time of the first open frame. `closed_at` SHALL be the time of the first closed frame after the last open frame, or `end_ms` if no closed frame follows. `duration_s` SHALL be their difference, rounded to whole seconds.
+For a door opening found in the clip, `opened_at` SHALL be the time of the opening's first open frame. `closed_at` SHALL be the time of the first closed frame after the opening's last open frame, or `end_ms` if no closed frame follows. `duration_s` SHALL be their difference, rounded to whole seconds.
 
 #### Scenario: Open and close times
 - **WHEN** the window starts at 1786715596000 and the frames at offsets 4000–12000 ms are open while the frame at 12500 ms is closed
 - **THEN** the door event has `opened_at = "2026-08-14T13:53:20.000Z"`, `closed_at = "2026-08-14T13:53:28.500Z"` and `duration_s = 8`
+
+#### Scenario: Two openings in one clip
+- **WHEN** the window is 1786715596000–1786715626000, the frames at offsets 1000–5500 ms and 18000–23500 ms are open, and every other frame is closed (12 s from offset 6000 to 18000 ms)
+- **THEN** two door events exist: the first has `opened_at = "2026-08-14T13:53:17.000Z"`, `closed_at = "2026-08-14T13:53:22.000Z"` and `duration_s = 5`; the second has `opened_at = "2026-08-14T13:53:34.000Z"`, `closed_at = "2026-08-14T13:53:40.000Z"` and `duration_s = 6`
+
+#### Scenario: Brief closed run in one opening
+- **WHEN** the frames at offsets 4000–8000 ms and 12000–14000 ms are open and the frames in between are closed (3.5 s from offset 8500 to 12000 ms)
+- **THEN** one door event exists, with `opened_at` at offset 4000 ms and `closed_at` at offset 14500 ms
 
 #### Scenario: Still open at the end of the clip
 - **WHEN** the window is 1786715596000–1786715616000 and every frame from offset 15000 ms to the last one is open
 - **THEN** `closed_at` is `"2026-08-14T13:53:36.000Z"` (the window end)
 
 ### Requirement: Stills for an opening found in the clip
-For a door opening found in the clip, the system SHALL pick up to 4 frames from the open span. The span runs from the first open frame through the first closed frame after the last open one. The picks are evenly spaced and always include the span's first and last frame. Each picked clip frame, encoded as JPEG, SHALL be used as that still; the system SHALL NOT request Ring stills for them, since Ring's still at a timestamp can show a different moment than the frame the door check scored. These stills are then cropped, face-blurred, stored as `still-<n>.jpg` and analyzed exactly as stills are today.
+For each door opening found in the clip, the system SHALL pick up to 4 frames from that opening's open span. The span runs from the opening's first open frame through the first closed frame after its last open one. The picks are evenly spaced and always include the span's first and last frame. Each picked clip frame, encoded as JPEG, SHALL be used as that still; the system SHALL NOT request Ring stills for them, since Ring's still at a timestamp can show a different moment than the frame the door check scored. These stills are then cropped, face-blurred, stored as `still-<n>.jpg` and analyzed exactly as stills are today.
 
 #### Scenario: Four stills from the open span
 - **WHEN** the frame interval is 500 ms, the frames at offsets 4000–12000 ms are open and the frame at 12500 ms is closed
@@ -350,6 +370,10 @@ For a door opening found in the clip, the system SHALL pick up to 4 frames from 
 #### Scenario: Short open span
 - **WHEN** only the frame at offset 6000 ms is open and the frame at 6500 ms is closed
 - **THEN** exactly two stills are stored, the clip frames at offsets 6000 and 6500 ms
+
+#### Scenario: Stills from each opening
+- **WHEN** the frame interval is 500 ms and the frames at offsets 1000–5500 ms and 18000–23500 ms are open
+- **THEN** the first door event's stills are the frames at 1000, 2500, 4500 and 6000 ms under `events/<start_ms>/`, and the second's are the frames at 18000, 20000, 22000 and 24000 ms under `events/<start_ms>/opening-2/`
 
 #### Scenario: No Ring still requested
 - **WHEN** a door opening is found in the clip and Ring would answer still requests with a closed-door image
@@ -398,11 +422,15 @@ If the clip can't be used, the system SHALL log `clip_unavailable` with the devi
 - **THEN** the step fails with an error naming `DOOR_FRAME_INTERVAL_MS`, and no Ring request is made
 
 ### Requirement: Clips never stored
-The full event clip SHALL only be held in memory or in a temporary file in Lambda `/tmp`. The temporary file SHALL be deleted when the step ends, whether it succeeds or fails. The only clip object written to S3 SHALL be the open-span `clip.mp4` of a door opening. Apart from that clip, the stored stills and the debug-trace frames, no frame SHALL be written to S3.
+The full event clip SHALL only be held in memory or in a temporary file in Lambda `/tmp`. The temporary file SHALL be deleted when the step ends, whether it succeeds or fails. The only clip objects written to S3 SHALL be a door opening's open-span `clip.mp4` and, while face blurring is on, its transient `clip-raw.mp4` (see `clip-face-blur`). Apart from those clips, the stored stills and the debug-trace frames, no frame SHALL be written to S3.
 
 #### Scenario: Door opening processed
-- **WHEN** a door opening is processed from a clip with debug traces off
+- **WHEN** a door opening is processed from a clip with debug traces off and face blurring off
 - **THEN** the only S3 objects written are `still-<n>.jpg` and one `clip.mp4`, and `clip.mp4` is shorter than the event clip
+
+#### Scenario: Door opening processed with blurring on
+- **WHEN** a door opening is processed from a clip with debug traces off and face blurring on, and the blur step succeeds
+- **THEN** after the run the only S3 objects under the event's prefix are `still-<n>.jpg` and one `clip.mp4`, and no `clip-raw.mp4` remains
 
 #### Scenario: Temporary file removed on error
 - **WHEN** decoding fails partway through the clip
@@ -428,11 +456,15 @@ The find-window and fetch-stills steps SHALL retry a task failure (`States.TaskF
 - **THEN** it logs `analysis_failed` with `reason = "RingTimeout"`, writes no door event, and returns the state with `outcome = "analysis_failed"`
 
 ### Requirement: Open-span clip stored
-For a door opening found in the event clip, the system SHALL cut the clip to the open span (`opened_at` → `closed_at`) without re-encoding and store it as `clip.mp4` under the same prefix as the event's stills. The cut SHALL start at the last keyframe at or before `opened_at`. The system SHALL record on the door event `clip_key` and `clip_span = [start_s, end_s]`: where the open span starts and ends in the stored file, in seconds rounded to 0.1. A failed cut or upload SHALL be logged as `clip_not_stored` with a reason and SHALL NOT fail the step or change its outcome.
+For a door opening found in the event clip, the system SHALL cut the clip to the open span (`opened_at` → `closed_at`) without re-encoding. The cut SHALL start at the last keyframe at or before `opened_at`. `clip_span = [start_s, end_s]` is where the open span starts and ends in the cut, in seconds rounded to 0.1. While face blurring is off, the system SHALL store the cut as `clip.mp4` under the same prefix as the event's stills and SHALL record `clip_key` and `clip_span` on the door event. While face blurring is on, it SHALL instead store the cut as `clip-raw.mp4` tagged `transient=true`, SHALL NOT set `clip_key`, and SHALL pass `raw_key` and `clip_span` on in the step output for the clip blur step. A failed cut or upload SHALL be logged as `clip_not_stored` with a reason and SHALL NOT fail the step or change its outcome.
 
 #### Scenario: Clip cut to the open span
-- **WHEN** the event clip has keyframes every 2.0 s, the open span runs from offset 4500 ms to 12500 ms, and the door check outcome is `door_open`
+- **WHEN** face blurring is off, the event clip has keyframes every 2.0 s, the open span runs from offset 4500 ms to 12500 ms, and the door check outcome is `door_open`
 - **THEN** `clip.mp4` is stored under the stills prefix, starts at the 4.0 s keyframe, ends at or after 12.5 s and lasts under 9.0 s, and the door event has `clip_key` set to its key and `clip_span = [0.5, 8.5]`
+
+#### Scenario: Raw clip while blurring is on
+- **WHEN** face blurring is on and the same clip is processed
+- **THEN** `clip-raw.mp4` is stored under the stills prefix with tag `transient=true`, no `clip.mp4` is written by this step, the door event has no `clip_key`, and the step output has `clip.raw_key` set to its key and `clip.clip_span = [0.5, 8.5]`
 
 #### Scenario: Door still open at the end of the clip
 - **WHEN** the last clip frame is open
@@ -440,19 +472,19 @@ For a door opening found in the event clip, the system SHALL cut the clip to the
 
 #### Scenario: Cut fails
 - **WHEN** remuxing the clip raises a decode error
-- **THEN** `clip_not_stored` is logged with `reason = "cut_failed"`, the door event has no `clip_key`, the stills are stored, and the outcome is still `door_open`
+- **THEN** `clip_not_stored` is logged with `reason = "cut_failed"`, the door event has no `clip_key`, the step output has no `clip`, the stills are stored, and the outcome is still `door_open`
 
 #### Scenario: Upload fails
-- **WHEN** S3 rejects the `clip.mp4` upload
-- **THEN** `clip_not_stored` is logged with `reason = "upload_failed"`, the door event has no `clip_key`, and analysis goes ahead
+- **WHEN** S3 rejects the `clip.mp4` or `clip-raw.mp4` upload
+- **THEN** `clip_not_stored` is logged with `reason = "upload_failed"`, the door event has no `clip_key`, the step output has no `clip`, and analysis goes ahead
 
 #### Scenario: No clip on the fallback path
 - **WHEN** the clip is unavailable and the door check samples stills across the window
-- **THEN** no `clip.mp4` is written and the door event has no `clip_key`
+- **THEN** no `clip.mp4` or `clip-raw.mp4` is written and the door event has no `clip_key`
 
 #### Scenario: Not a door opening
 - **WHEN** the outcome is `not_door`
-- **THEN** no `clip.mp4` is written
+- **THEN** no `clip.mp4` or `clip-raw.mp4` is written
 
 ### Requirement: Signed media readable cross-origin
 The stills bucket SHALL have a CORS rule that allows `GET` and `HEAD` from any origin, allows the `Range` request header, and exposes `Content-Length`, `Content-Range` and `Accept-Ranges`, so the app can draw a clip frame onto a canvas. The bucket SHALL stay private: every read still needs a presigned link.
@@ -464,3 +496,101 @@ The stills bucket SHALL have a CORS rule that allows `GET` and `HEAD` from any o
 #### Scenario: Bucket still private
 - **WHEN** the stack is synthesized
 - **THEN** the stills bucket still blocks all public access and has no bucket policy statement that allows unsigned reads
+
+### Requirement: Clip blur step in the workflow
+After `Save` succeeds, the workflow SHALL run the clip blur step when the state has `clip.raw_key`, and SHALL go straight to `Done` otherwise. Any error from the blur step SHALL be caught by a `DropRawClip` step that deletes `clip-raw.mp4` and logs `clip_not_stored` with `reason = "blur_failed"`. After that the run SHALL still end in `Done`, never in `AnalysisFailed`.
+
+#### Scenario: Blur runs after save
+- **WHEN** a run with `clip.raw_key` set completes `Save`
+- **THEN** the next state is `BlurClip`, and then `Done`
+
+#### Scenario: No raw clip
+- **WHEN** a run without `clip.raw_key` completes `Save`
+- **THEN** `BlurClip` is not entered and the run ends in `Done`
+
+#### Scenario: Blur error caught
+- **WHEN** `BlurClip` fails with `States.ALL`
+- **THEN** `DropRawClip` runs and the run ends in `Done`
+
+### Requirement: Blocked suspect clips leave the streak unchanged
+For a suspect clip with a stored closed anchor, the system SHALL check each bookend (the first and last checked frames) that reads open. At such a bookend, a zone that reads open *looks closed* when the mean absolute difference between the bookend's edge map and the anchor inside the zone's box (after the event's alignment shift, at 128×72), divided by 255, is at most `ZONE_CLOSED_MAX_DIFF` (default 0.05). The clip SHALL be *blocked* when it has at least one open bookend and no open-reading zone at any open bookend looks closed. A blocked clip SHALL leave `suspect_streak` unchanged and SHALL log `door_check_blocked` with `frames`, `open_share` and `zones_source`. Every other suspect clip SHALL add 1 to the streak, as before. A blocked clip SHALL otherwise be handled as any suspect clip: re-scored with the fridge light, `suspect = true` in the run output, and no self-tuning sample.
+
+#### Scenario: Person in front of the zones at both bookends
+- **WHEN** setup rules read every frame of a 41-frame clip open, and at both bookends the zone's edge difference from the anchor is 0.15
+- **THEN** the clip is blocked, `suspect_streak` stays 2 (its value before), a `door_check_blocked` line is logged, and the outcome comes from the fridge-light re-score
+
+#### Scenario: Wrong rules on a clear view
+- **WHEN** setup rules read every frame of a 41-frame clip open, and at the first bookend the zone's edge difference from the anchor is 0.01
+- **THEN** the clip is not blocked and `suspect_streak` goes from 2 to 3
+
+#### Scenario: One bookend clear is enough to count
+- **WHEN** both bookends read open, the first bookend's zone differs from the anchor by 0.15 and the last bookend's zone by 0.02
+- **THEN** the clip is not blocked and the streak goes up by 1
+
+#### Scenario: Two zones, only the open one is checked
+- **WHEN** at both bookends zone A reads open and differs from the anchor by 0.12, and zone B reads closed and differs by 0.0
+- **THEN** the clip is blocked
+
+#### Scenario: Shift applied to the zone box
+- **WHEN** the event aligned with a shift of 4 px right and the bookend is the anchor's view moved 4 px right, with the rules reading it open
+- **THEN** the zone looks closed (difference ≤ 0.05) and the clip counts toward the streak
+
+#### Scenario: Suspect by share alone
+- **WHEN** a 100-frame clip is closed at frames 1–8 and 100 and open in between under setup rules (so it is suspect by its open share, with no open bookend)
+- **THEN** the clip is not blocked and the streak goes up by 1
+
+#### Scenario: No anchor stored
+- **WHEN** a suspect clip comes from a device whose setup has no anchor
+- **THEN** the clip is not blocked and the streak goes up by 1
+
+#### Scenario: Recorded clip with the owner in front
+- **WHEN** the anchor is the recorded closed reference fixture, the bookends are the recorded first and last frames from 2026-10-18, and the rules are the prod setup's three `change` zones reading open
+- **THEN** the clip is blocked
+
+### Requirement: One door event per opening in a motion
+Each opening in a motion SHALL be recorded as its own door event, numbered k = 1, 2, … in time order. Opening 1 SHALL use `sk = DOOR#<iso window start>#<device_id>` and the stills prefix `accounts/<account_id>/devices/<device_id>/events/<start_ms>/`. Opening k ≥ 2 SHALL use `DOOR#<iso window start>#<device_id>#<k>` and the prefix `…/events/<start_ms>/opening-<k>/`. Its stills, `clip.mp4`, `clip-raw.mp4` and `analysis.mp4` SHALL be built only from its own span and stored under its own prefix.
+
+#### Scenario: Keys per opening
+- **WHEN** the window starts at 1786715596000 on device `D1` and the clip shows two openings with a 13 s closed gap between them
+- **THEN** the door events have `sk` `DOOR#2026-08-14T13:53:16.000Z#D1` and `DOOR#2026-08-14T13:53:16.000Z#D1#2`, and the second one's `still_keys`, `clip_key` and the `analysis_video.key` in its step output all start with `accounts/A1/devices/D1/events/1786715596000/opening-2/`
+
+#### Scenario: Media from its own span only
+- **WHEN** face blurring is on and the clip shows openings at offsets 1000–5500 ms and 18000–23500 ms
+- **THEN** each opening's `clip-raw.mp4` covers only its own span (`clip_span` ends within 1 s of that span's close), each `analysis.mp4` starts at most one frame before its own span, and each opening's `still_ms` lies inside its own span
+
+#### Scenario: Each opening has its own status
+- **WHEN** the first opening's stills all fail face detection and the second's are stored
+- **THEN** the first door event is saved with `status = "no_media"`, the second with `status = "analyzing"`, the outcome is `door_open`, and `openings` holds only the second
+
+### Requirement: All openings claimed together
+All door events of one motion SHALL be written in one transaction together with the motion's single Ring-event claim. A second run for the same Ring event SHALL create no door event, SHALL delete every raw clip it uploaded, and SHALL end with `duplicate`.
+
+#### Scenario: Two openings in a re-run
+- **WHEN** a motion with two openings has been recorded and a second run resolves to the same Ring event
+- **THEN** the table still holds exactly two door events for it, no `clip-raw.mp4` from the second run remains, and the outcome is `duplicate`
+
+### Requirement: Openings handed to analysis
+For outcome `door_open`, the fetch-stills output SHALL hold `openings`: one entry per door event with `status = "analyzing"`, in time order. Each entry is the full step state for that opening (`door_sk`, `still_keys`, `still_ms`, and `clip` and `analysis_video` when present). The output's top-level fields SHALL equal its first entry's.
+
+#### Scenario: Output for two openings
+- **WHEN** a clip shows two openings and both store 4 stills
+- **THEN** the output has `outcome = "door_open"`, `openings` has 2 entries with different `door_sk`, and the top-level `door_sk`, `still_keys` and `still_ms` equal `openings[0]`'s
+
+#### Scenario: Output for one opening
+- **WHEN** a clip shows one opening
+- **THEN** `openings` has 1 entry equal to the top-level door event fields
+
+### Requirement: Each opening analyzed in turn
+After `IsDoorOpening`, the workflow SHALL run Analyze → Save → clip blur once for each entry in `openings`, one at a time, in order. A failure in one opening SHALL mark only that door event `analysis_failed`, and SHALL NOT stop the later openings. After all openings, the run SHALL end in `Done` when none failed, and otherwise in `AnalysisFailed`.
+
+#### Scenario: Openings run one at a time
+- **WHEN** the stack is synthesized
+- **THEN** a Map state reads items from `$.openings` with `MaxConcurrency = 1`, and its iterator starts at `Analyze`
+
+#### Scenario: One opening fails
+- **WHEN** the first opening's analysis fails after its retries and the second succeeds
+- **THEN** the first door event is `analysis_failed`, the second is saved, and the run ends in the `AnalysisFailed` Fail state
+
+#### Scenario: All openings succeed
+- **WHEN** every opening's Save succeeds
+- **THEN** the run ends in `Done`

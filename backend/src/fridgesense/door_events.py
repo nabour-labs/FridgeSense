@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -90,7 +90,11 @@ DEFAULT_ZONES: tuple[Box, ...] = ((0.38, 0.32, 0.21, 0.30), (0.455, 0.60, 0.12, 
 DEFAULT_THRESHOLD = 0.01
 MIN_CHROMA = 60  # max(R,G,B) - min(R,G,B): grey steel, white and wood stay below this
 MIN_PEAK = 100  # brightest channel: keeps dark saturated clothing (navy) out
-MIN_BLUE_LEAD = 20  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
+# Fridge light: stricter than "colourful". Daylight tints the steel doors a pale blue
+# (e.g. 110,150,200) that passes the colour test; the LED-lit interior is a deep blue.
+BLUE_MIN_CHROMA = 100
+BLUE_MIN_PEAK = 120
+BLUE_MIN_LEAD = 60  # B - max(R,G): the LED-lit interior is blue, food held in front is warm
 
 
 def still_times(start_ms: int, end_ms: int, count: int = STILL_COUNT) -> list[int]:
@@ -126,12 +130,99 @@ def open_span(scores: list[float], threshold: float) -> list[int] | None:
     return list(range(opened[0], end + 1))
 
 
+# A closed run this long ends an opening: someone blocking the zone for a moment does not.
+MIN_CLOSED_GAP_MS = 10_000
+
+
+def open_spans(
+    opened: list[bool], times_ms: list[int], min_gap_ms: int = MIN_CLOSED_GAP_MS
+) -> list[list[int]]:
+    """One open span per opening: a closed run of `min_gap_ms` or more (from its first closed
+    still to the next open one) splits them. Each span runs from its first open still through
+    the first still after its last open one, as `open_span` does."""
+    groups: list[list[int]] = []
+    for i in (i for i, is_open in enumerate(opened) if is_open):
+        if groups and times_ms[i] - times_ms[groups[-1][-1] + 1] < min_gap_ms:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    last = len(opened) - 1
+    return [list(range(g[0], min(g[-1] + 1, last) + 1)) for g in groups]
+
+
+SUSPECT_MIN_FRAMES = 10
+SUSPECT_OPEN_SHARE = 0.9
+
+
+def is_suspect(opened: list[bool], zones_source: str) -> bool:
+    """A clip checked with setup rules that reads open at both bookends, or nearly
+    throughout: a recording starts and ends with the door closed, so the rules are off."""
+    if zones_source not in ("setup", "tuned") or len(opened) < SUSPECT_MIN_FRAMES:
+        return False
+    return (opened[0] and opened[-1]) or sum(opened) / len(opened) >= SUSPECT_OPEN_SHARE
+
+
+# A zone's edges (at 128x72, /255) this close to the closed anchor's: the zone looks closed.
+# Measured on 2026-10-18: closed references 0.00-0.03, the owner in front 0.08-0.16.
+ZONE_CLOSED_MAX_DIFF = 0.05
+
+
+def is_blocked(
+    anchor: bytes | None,
+    check: "DoorCheck",
+    dx: float,
+    dy: float,
+    bookends: list[tuple[bytes | Image.Image, list["ZoneValue"]]],
+) -> bool:
+    """A suspect clip whose open bookends show nothing wrong with the rules: no zone that reads
+    open there still looks like the closed anchor (someone or something is in the way). False
+    without an anchor or an open bookend. `check` holds the zones where setup put them; the
+    bookends' content moved by (dx, dy)."""
+    from fridgesense import alignment  # alignment imports this module
+
+    opened = [(frame, values) for frame, values in bookends if any(v.open for v in values)]
+    if anchor is None or not opened:
+        return False
+    closed = alignment.edges_from_bytes(anchor)
+    w, h = alignment.SIZE
+
+    def pixels(box: Box) -> tuple[int, int, int, int]:
+        x, y, bw, bh = box
+        return (round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h))
+
+    for frame, values in opened:
+        edges = alignment.edge_map(frame)
+        for v in values:
+            if not v.open:
+                continue
+            box = check.rules[v.zone - 1].box
+            a = closed.crop(pixels(box))
+            b = edges.crop(pixels(alignment.shift_box(box, dx, dy)))
+            if a.size != b.size:  # rounding can leave the shifted box a pixel wider
+                b = b.resize(a.size)
+            diff = ImageStat.Stat(ImageChops.difference(a, b)).mean[0] / 255
+            if diff <= ZONE_CLOSED_MAX_DIFF:
+                return False
+    return True
+
+
 def pick(span: list[int], count: int = STILL_COUNT) -> list[int]:
     """Up to `count` evenly spaced items of `span`, always including its first and last."""
     if len(span) <= count:
         return list(span)
     n = len(span)
     return [span[round(i * (n - 1) / (count - 1))] for i in range(count)]
+
+
+MAX_VIDEO_FRAMES = 40  # ~288 tokens each at Nova 2 Lite's 672x672 video frames
+
+
+def video_frame_indexes(span: list[int]) -> tuple[list[int], int]:
+    """Frames for the analysis video: the one before the open span (if any) through the span,
+    every `step`-th one so that at most MAX_VIDEO_FRAMES remain. Returns (indexes, step)."""
+    frames = list(range(max(span[0] - 1, 0), span[-1] + 1))
+    step = -(-len(frames) // MAX_VIDEO_FRAMES)  # ceil
+    return frames[::step], step
 
 
 def parse_box(text: str, setting: str) -> Box:
@@ -151,14 +242,16 @@ def _crop_box(img: Image.Image, box: Box) -> Image.Image:
     return img.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
 
 
-def _colorful_mask(zone: Image.Image) -> Image.Image:
+def _colorful_mask(
+    zone: Image.Image, min_chroma: int = MIN_CHROMA, min_peak: int = MIN_PEAK
+) -> Image.Image:
     r, g, b = zone.split()
     peak = ImageChops.lighter(ImageChops.lighter(r, g), b)
     low = ImageChops.darker(ImageChops.darker(r, g), b)
     chroma = ImageChops.subtract(peak, low)
     return ImageChops.multiply(
-        chroma.point(lambda v: 255 if v > MIN_CHROMA else 0),
-        peak.point(lambda v: 255 if v > MIN_PEAK else 0),
+        chroma.point(lambda v: 255 if v > min_chroma else 0),
+        peak.point(lambda v: 255 if v > min_peak else 0),
     )
 
 
@@ -167,11 +260,13 @@ def _colorful(zone: Image.Image) -> float:
 
 
 def _blue_lit(zone: Image.Image) -> float:
-    """Share of colourful pixels whose blue leads red and green: the lit fridge interior."""
+    """Share of strongly colourful pixels whose blue clearly leads red and green: the lit
+    fridge interior."""
     r, g, b = zone.split()
     lead = ImageChops.subtract(b, ImageChops.lighter(r, g))
-    blue = lead.point(lambda v: 255 if v > MIN_BLUE_LEAD else 0)
-    return ImageStat.Stat(ImageChops.multiply(_colorful_mask(zone), blue)).mean[0] / 255
+    blue = lead.point(lambda v: 255 if v > BLUE_MIN_LEAD else 0)
+    mask = _colorful_mask(zone, BLUE_MIN_CHROMA, BLUE_MIN_PEAK)
+    return ImageStat.Stat(ImageChops.multiply(mask, blue)).mean[0] / 255
 
 
 def _open_rgb(still: bytes | Image.Image) -> Image.Image:
@@ -345,6 +440,11 @@ class DoorCheck:
         rules = tuple(replace(r, box=shift_box(r.box, dx, dy)) for r in self.rules)
         return replace(self, rules=rules)
 
+    def fridge_light(self, threshold: float) -> "DoorCheck":
+        """The same zone boxes, each judged by the fridge light alone (blue above `threshold`)."""
+        rules = tuple(ZoneRule(r.box, "blue", "above", threshold) for r in self.rules)
+        return replace(self, rules=rules, source="fallback")
+
     def evaluate(self, stills: list[bytes]) -> tuple[bool, float, int]:
         """(door open?, best still's value, its 1-based zone) over all stills."""
         best = self.best(self.results(stills))
@@ -368,6 +468,16 @@ class Downloaded:
     at_ms: int
     data: bytes | None
     status: int | None = None
+
+
+OPENING_DIR = "opening_dir"  # in a media state only: opening k >= 2's folder under the prefix
+
+
+def media_prefix(state: dict) -> str:
+    """Where a door opening's stills, clips and analysis video go: the motion's stills prefix,
+    plus `opening-<k>/` for the second and later openings of the motion."""
+    prefix = stills_prefix(state["account_id"], state["device_id"], state["window"]["start_ms"])
+    return prefix + state.get(OPENING_DIR, "")
 
 
 def download_all_stills(
@@ -419,7 +529,7 @@ def store_blurred_stills(
 
     Returns (key, blurred bytes) pairs. Only blurred stills are ever stored.
     """
-    prefix = stills_prefix(state["account_id"], state["device_id"], state["window"]["start_ms"])
+    prefix = media_prefix(state)
     saved = []
     for n, data in raw:
         blurred = blurrer.blur(
@@ -550,11 +660,14 @@ def _device_check(
 
 @dataclass(frozen=True)
 class FollowPlan:
-    """What the door check needs to follow the camera: the closed anchor and the stored shift."""
+    """What the door check needs to follow the camera: the closed anchor and the stored shift,
+    plus the anchor's visible map and the setup's named zones for spotting a mask change."""
 
     anchor: bytes
     dx: float
     dy: float
+    anchor_visible: bytes | None = None
+    zones: tuple[tuple[str, Box], ...] = ()
 
 
 def _follow_plan(
@@ -570,6 +683,8 @@ def _follow_plan(
         if anchor is None:
             return None
         stored = alignment.load_alignment(table, account_id, device_id)
+        visible = door_calibration.load_anchor_visible(table, account_id, device_id)
+        setup = door_calibration.load_setup(table, account_id, device_id)
     except Exception as e:  # a table hiccup must not drop a door opening
         log_event(
             "door_alignment_unavailable",
@@ -578,7 +693,10 @@ def _follow_plan(
             error=type(e).__name__,
         )
         return None
-    return FollowPlan(anchor, stored.dx if stored else 0.0, stored.dy if stored else 0.0)
+    zones = tuple((z.name, z.box) for z in setup.zones) if setup else ()
+    return FollowPlan(
+        anchor, stored.dx if stored else 0.0, stored.dy if stored else 0.0, visible, zones
+    )
 
 
 def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
@@ -586,8 +704,15 @@ def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
     from fridgesense import alignment
 
     try:
-        return alignment.align_event(
-            table, account_id, device_id, plan.anchor, first, last, window["start_ms"]
+        aligned = alignment.align_event(
+            table,
+            account_id,
+            device_id,
+            plan.anchor,
+            first,
+            last,
+            window["start_ms"],
+            plan.anchor_visible,
         )
     except Exception as e:
         log_event(
@@ -597,6 +722,32 @@ def _align(table, account_id, device_id, plan: FollowPlan, first, last, window):
             error=type(e).__name__,
         )
         return None
+    _check_mask(table, account_id, device_id, plan, aligned, window)
+    return aligned
+
+
+def _check_mask(table, account_id, device_id, plan: FollowPlan, aligned, window) -> None:
+    """Keep the mask-change state and adopt a new mask that hides no zone; a failure here
+    never changes the event's outcome."""
+    from fridgesense import alignment, door_calibration  # both import this module
+
+    if aligned is None or aligned.visible is None:
+        return
+    try:
+        adopt = alignment.record_mask(
+            table,
+            account_id,
+            device_id,
+            aligned.visible,
+            plan.anchor_visible,
+            list(plan.zones),
+            window["start_ms"],
+        )
+        if adopt is not None:
+            door_calibration.save_anchor_visible(table, account_id, device_id, adopt)
+            log_event("privacy_mask_adopted", account_id=account_id, device_id=device_id)
+    except Exception as e:
+        log_event("mask_check_failed", logging.WARNING, device_id=device_id, error=type(e).__name__)
 
 
 def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, window) -> None:
@@ -618,6 +769,32 @@ def _learn(table, account_id, device_id, check: "DoorCheck", raw, aligned, windo
         )
 
 
+def _blocked(plan, aligned, base: "DoorCheck", raw, values) -> bool:
+    """Whether a suspect clip's open bookends only show something in the way of the zones;
+    a failure here counts the clip as before."""
+    if plan is None:
+        return False
+    dx, dy = (aligned.dx, aligned.dy) if aligned is not None and aligned.ok else (plan.dx, plan.dy)
+    try:
+        bookends = [(raw[0][1], values[0]), (raw[-1][1], values[-1])]
+        return is_blocked(plan.anchor, base, dx, dy, bookends)
+    except Exception as e:
+        log_event("door_blocked_check_failed", logging.WARNING, error=type(e).__name__)
+        return False
+
+
+def _count_suspect(table, account_id: str, device_id: str, suspect: bool) -> None:
+    """Keep the device's suspect streak; a failure here never changes the event's outcome."""
+    from fridgesense import alignment  # alignment imports this module
+
+    try:
+        alignment.record_suspect(table, account_id, device_id, suspect)
+    except Exception as e:
+        log_event(
+            "suspect_streak_failed", logging.WARNING, device_id=device_id, error=type(e).__name__
+        )
+
+
 def _alignment_json(aligned) -> dict | None:
     if aligned is None:
         return None
@@ -634,13 +811,84 @@ def iso_utc(ms: int) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ms % 1000:03d}Z"
 
 
-def store_open_clip(
-    s3, bucket: str, state: dict, clip: Path, opened_ms: int, closed_ms: int | None, clip_dir=None
-) -> dict:
-    """Cut the clip to the open span and store it as `clip.mp4` next to the stills.
+def drop_raw_clip(s3, bucket: str, state: dict) -> dict:
+    """The workflow's catch after BlurClip fails: delete the raw clip and log it. The door event
+    keeps its analysis and never links an unblurred clip."""
+    s3.delete_object(Bucket=bucket, Key=state["clip"]["raw_key"])  # no error if already gone
+    log_event(
+        "clip_not_stored",
+        logging.WARNING,
+        device_id=state["device_id"],
+        reason="blur_failed",
+        error=(state.get("error") or {}).get("Error"),
+    )
+    return {**state, "outcome": "clip_dropped"}
 
-    Returns the door event's `clip_key` and `clip_span`, or {} when the cut or upload failed
-    (logged as clip_not_stored): a missing clip never costs the door event or its analysis.
+
+def store_analysis_video(
+    s3,
+    bucket: str,
+    state: dict,
+    frames: list[tuple[int, bytes]],
+    indexes: list[int],
+    step: int,
+    crop: Box | None,
+    interval_ms: int,
+) -> dict:
+    """Encode the chosen clip frames (cropped, unblurred) as `analysis.mp4`, tagged transient,
+    and return the step output's `analysis_video`; {} if encoding or the upload failed
+    (logged as analysis_video_not_stored): analysis then falls back to the stills."""
+    from fridgesense import clip_frames
+
+    def cropped(data: bytes) -> Image.Image:
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        return _crop_box(img, crop) if crop is not None else img
+
+    key = media_prefix(state) + "analysis.mp4"
+    try:
+        body = clip_frames.encode_video([cropped(frames[i][1]) for i in indexes])
+    except Exception as e:  # a missing video only costs the analysis its best input
+        log_event(
+            "analysis_video_not_stored",
+            logging.WARNING,
+            device_id=state["device_id"],
+            reason="encode_failed",
+            error=type(e).__name__,
+        )
+        return {}
+    try:
+        s3.put_object(
+            Bucket=bucket, Key=key, Body=body, ContentType="video/mp4", Tagging="transient=true"
+        )
+    except Exception as e:
+        log_event(
+            "analysis_video_not_stored",
+            logging.WARNING,
+            device_id=state["device_id"],
+            reason="upload_failed",
+            error=type(e).__name__,
+        )
+        return {}
+    return {"key": key, "frame_ms": interval_ms * step, "frames": len(indexes)}
+
+
+def store_open_clip(
+    s3,
+    bucket: str,
+    state: dict,
+    clip: Path,
+    opened_ms: int,
+    closed_ms: int | None,
+    clip_dir=None,
+    raw: bool = False,
+) -> dict:
+    """Cut the clip to the open span and store it next to the stills.
+
+    Without `raw` (face blurring off) it is `clip.mp4`, and this returns the door event's
+    `clip_key` and `clip_span`. With `raw` it is `clip-raw.mp4`, tagged transient and never
+    linked, and this returns `{"clip": {"raw_key", "clip_span"}}` for the BlurClip step.
+    Returns {} when the cut or upload failed (logged as clip_not_stored): a missing clip never
+    costs the door event or its analysis.
     """
     from fridgesense import clip_frames
 
@@ -653,9 +901,13 @@ def store_open_clip(
             "clip_not_stored", logging.WARNING, device_id=state["device_id"], reason="cut_failed"
         )
         return {}
-    key = stills_prefix(state["account_id"], state["device_id"], start_ms) + "clip.mp4"
+    name = "clip-raw.mp4" if raw else "clip.mp4"
+    key = media_prefix(state) + name
+    extra = {"Tagging": "transient=true"} if raw else {}
     try:
-        s3.put_object(Bucket=bucket, Key=key, Body=cut.read_bytes(), ContentType="video/mp4")
+        s3.put_object(
+            Bucket=bucket, Key=key, Body=cut.read_bytes(), ContentType="video/mp4", **extra
+        )
     except Exception as e:  # S3 trouble must not drop the door opening
         log_event(
             "clip_not_stored",
@@ -667,6 +919,8 @@ def store_open_clip(
         return {}
     finally:
         cut.unlink(missing_ok=True)
+    if raw:
+        return {"clip": {"raw_key": key, "clip_span": [start_s, end_s]}}
     return {"clip_key": key, "clip_span": [Decimal(str(start_s)), Decimal(str(end_s))]}
 
 
@@ -698,6 +952,7 @@ def _fetch_stills(
     face_blur: bool = True,
     paused_for: Callable[[str, str], bool] | None = None,
     kept: list[Path] | None = None,
+    area_for: Callable[[str, str], Box | None] | None = None,
 ) -> dict:
     """Download stills, run the door check, and claim + record the door event.
 
@@ -720,6 +975,11 @@ def _fetch_stills(
     if paused_for is not None and paused_for(account_id, device_id):
         log_event("door_check_paused", account_id=account_id, device_id=device_id)
         return {**state, "outcome": "paused"}
+    if area_for is not None:  # the owner's fridge area, once per motion, wins over STILL_CROP
+        from fridgesense.fridge_area import analysis_box  # fridge_area imports this module
+
+        crop = analysis_box(area_for(account_id, device_id), crop)
+    fallback_threshold = check.threshold  # DOOR_THRESHOLD: the default rules' threshold
     base = _device_check(check, setup_for, account_id, device_id)
     plan = _follow_plan(table, account_id, device_id, base)
     check = base.shifted(plan.dx, plan.dy) if plan else base
@@ -746,30 +1006,57 @@ def _fetch_stills(
             if clip is not None:  # frames were scored with the stored shift: score them again
                 clip_values = [check.zone_values(data) for _, data in raw]
     times = [d.at_ms for d in downloaded]
-    opened_ms, closed_ms = window["start_ms"], window["end_ms"]
-    still_keys: list[str] = []
-    clip_fields: dict = {}
-    status = "no_media"
+    # Too few stills: one no_media door event over the whole window.
+    openings = [_Opening(1, None, window["start_ms"], window["end_ms"])]
     rule_log: dict = {"zones_source": check.source, "source": "clip" if clip else "stills"}
     trace = DoorTrace(
         stills=downloaded, values={}, check=check, outcome="no_media", face_blur=face_blur
     )
     trace.alignment = _alignment_json(aligned)
+    suspect = False
 
     def done(result: dict) -> dict:
+        if suspect:
+            result = {**result, "suspect": True}
         if writer is not None:
             trace.outcome = result["outcome"]
             writer.door(state, trace)
         return result
 
+    def learn() -> None:
+        if not suspect:  # rules that read open throughout would teach the wrong thing
+            _learn(table, account_id, device_id, check, raw, aligned, window)
+
     if len(raw) >= MIN_STILLS:
         values = clip_values if clip else [check.zone_values(data) for _, data in raw]
         trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
         results = [check.result_of(v) for v in values]
+        opened = [r.is_open for r in results]
+        suspect = clip is not None and is_suspect(opened, check.source)
+        blocked = suspect and _blocked(plan, aligned, base, raw, values)
+        counted = clip is not None and check.source in ("setup", "tuned") and not blocked
+        if counted:
+            _count_suspect(table, account_id, device_id, suspect)
+        if suspect:
+            log_event(
+                "door_check_blocked" if blocked else "door_check_suspect",
+                account_id=account_id,
+                device_id=device_id,
+                frames=len(opened),
+                open_share=round(sum(opened) / len(opened), 3),
+                zones_source=check.source,
+            )
+            check = check.fridge_light(fallback_threshold)
+            trace.check = check
+            rule_log = {**rule_log, "zones_source": check.source}
+            values = [check.zone_values(data) for _, data in raw]
+            trace.values = {n: v for (n, _), v in zip(raw, values, strict=True)}
+            results = [check.result_of(v) for v in values]
         best = check.best(results)
         rule_log = {**rule_log, "feature": best.feature, "threshold": best.threshold}
-        span = open_span([1.0 if r.is_open else 0.0 for r in results], 1.0)
-        if span is None:
+        raw_ms = [times[n - 1] for n, _ in raw]
+        spans = open_spans([r.is_open for r in results], raw_ms)
+        if not spans:
             log_event(
                 "motion_not_door",
                 account_id=account_id,
@@ -778,41 +1065,37 @@ def _fetch_stills(
                 zone=best.zone,
                 **rule_log,
             )
-            _learn(table, account_id, device_id, check, raw, aligned, window)
+            learn()
             return done({**state, "outcome": "not_door", "score": round(best.value, 3)})
-        opened_ms = times[raw[span[0]][0] - 1]
-        if not results[span[-1]].is_open:  # the first closed still after the opening
-            closed_ms = times[raw[span[-1]][0] - 1]
-        picks = pick(span)
-        trace.open_span = [raw[i][0] for i in span]
-        trace.picked = [raw[i][0] for i in picks]
-        # On the clip path these are the scored frames themselves: a Ring still at the same
-        # time can show another moment (it is the nearest frame within ±10 s).
-        picked = [(k, crop_still(raw[i][1], crop)) for k, i in enumerate(picks, start=1)]
-        stills = store_blurred_stills(s3, bucket, blurrer, state, picked)
-        still_keys = [k for k, _ in stills]
-        trace.stored_keys = still_keys
-        if clip and kept:
-            closed = closed_ms if not results[span[-1]].is_open else None
-            clip_fields = store_open_clip(s3, bucket, state, kept[0], opened_ms, closed, clip_dir)
-        if len(stills) >= MIN_STILLS:
-            status = "analyzing"
+        openings = []
+        for k, span in enumerate(spans, start=1):
+            # the first closed still after the opening, or the window end if it never closed
+            closed = None if results[span[-1]].is_open else raw_ms[span[-1]]
+            o = _Opening(k, span, raw_ms[span[0]], closed or window["end_ms"])
+            o_state = o.media_state(state)
+            picks = pick(span)
+            o.picked = [raw[i][0] for i in picks]
+            # On the clip path these are the scored frames themselves: a Ring still at the same
+            # time can show another moment (it is the nearest frame within ±10 s).
+            picked = [(j, crop_still(raw[i][1], crop)) for j, i in enumerate(picks, start=1)]
+            stills = store_blurred_stills(s3, bucket, blurrer, o_state, picked)
+            o.still_keys = [key for key, _ in stills]
+            pick_ms = {f"still-{j}.jpg": raw_ms[i] for j, i in enumerate(picks, start=1)}
+            o.still_ms = [pick_ms[key.rsplit("/", 1)[1]] for key in o.still_keys]
+            if clip and kept:
+                o.clip_fields = store_open_clip(
+                    s3, bucket, o_state, kept[0], o.opened_ms, closed, clip_dir, raw=face_blur
+                )
+            if len(stills) >= MIN_STILLS:
+                o.status = "analyzing"
+            openings.append(o)
 
-    door_sk = f"DOOR#{iso_utc(window['start_ms'])}#{device_id}"
+    first = openings[0]
+    trace.open_span = [raw[i][0] for i in first.span or []]
+    trace.picked, trace.stored_keys = first.picked, first.still_keys
     claim = window["ring_event_id"] or f"ts-{state['timestamp_ms']}"
     pk = account_pk(account_id)
-    event = {
-        "pk": pk,
-        "sk": door_sk,
-        "device_id": device_id,
-        "ring_event_id": window["ring_event_id"],
-        "opened_at": iso_utc(opened_ms),
-        "closed_at": iso_utc(closed_ms),
-        "duration_s": round((closed_ms - opened_ms) / 1000),
-        "still_keys": still_keys,
-        **clip_fields,
-        "status": status,
-    }
+    items = [o.event(pk, window, device_id) for o in openings]
     try:
         table.transact(
             [
@@ -821,24 +1104,106 @@ def _fetch_stills(
                         "Item": {
                             "pk": pk,
                             "sk": f"RINGEVENT#{device_id}#{claim}",
-                            "door_sk": door_sk,
+                            "door_sk": first.door_sk(window, device_id),
                         },
                         "ConditionExpression": "attribute_not_exists(sk)",
                     }
                 },
-                {"Put": {"Item": event}},
+                *({"Put": {"Item": item}} for item in items),
             ]
         )
     except TransactionConflict as e:
         if e.reasons and e.reasons[0] == "ConditionalCheckFailed":
             log_event("door_event_duplicate", account_id=account_id, ring_event=claim)
+            for o in openings:
+                if "clip" in o.clip_fields:  # nothing will blur it
+                    s3.delete_object(Bucket=bucket, Key=o.clip_fields["clip"]["raw_key"])
             return done({**state, "outcome": "duplicate"})
         raise
-    outcome = "door_open" if status == "analyzing" else "no_media"
-    _learn(table, account_id, device_id, check, raw, aligned, window)
-    log_event(
-        "door_event_recorded", account_id=account_id, door_sk=door_sk, outcome=outcome, **rule_log
-    )
-    trace.door_sk = door_sk
-    trace.opened_at, trace.closed_at = event["opened_at"], event["closed_at"]
-    return done({**state, "outcome": outcome, "door_sk": door_sk, "still_keys": still_keys})
+    analyzed = []
+    for o, item in zip(openings, items, strict=True):
+        outcome = "door_open" if o.status == "analyzing" else "no_media"
+        video: dict = {}
+        if outcome == "door_open" and clip is not None and o.span is not None:
+            indexes, step = video_frame_indexes(o.span)
+            video = store_analysis_video(
+                s3, bucket, o.media_state(state), raw, indexes, step, crop, frame_interval_ms or 0
+            )
+            if video:
+                video = {**video, "start_ms": times[raw[indexes[0]][0] - 1]}
+        log_event(
+            "door_event_recorded",
+            account_id=account_id,
+            door_sk=item["sk"],
+            outcome=outcome,
+            **rule_log,
+        )
+        if outcome == "door_open":
+            analyzed.append(o.output(state, item["sk"], video))
+    learn()
+    trace.door_sk = items[0]["sk"]
+    trace.opened_at, trace.closed_at = items[0]["opened_at"], items[0]["closed_at"]
+    if first.span is not None:
+        trace.openings = [
+            {
+                "door_sk": item["sk"],
+                "opened_at": item["opened_at"],
+                "closed_at": item["closed_at"],
+                "open_span": [raw[i][0] for i in o.span or []],
+                "picked": o.picked,
+                "stored_keys": o.still_keys,
+            }
+            for o, item in zip(openings, items, strict=True)
+        ]
+    if analyzed:
+        return done({**analyzed[0], "openings": analyzed})
+    return done({**first.output(state, items[0]["sk"], {}), "outcome": "no_media"})
+
+
+@dataclass
+class _Opening:
+    """One door opening in a motion: its span (None: too few stills) and what was stored."""
+
+    k: int
+    span: list[int] | None
+    opened_ms: int
+    closed_ms: int
+    picked: list[int] = field(default_factory=list)
+    still_keys: list[str] = field(default_factory=list)
+    still_ms: list[int] = field(default_factory=list)
+    clip_fields: dict = field(default_factory=dict)
+    status: str = "no_media"
+
+    def door_sk(self, window: dict, device_id: str) -> str:
+        sk = f"DOOR#{iso_utc(window['start_ms'])}#{device_id}"
+        return sk if self.k == 1 else f"{sk}#{self.k}"
+
+    def media_state(self, state: dict) -> dict:
+        """The state the media helpers key from: opening k >= 2 stores under opening-<k>/."""
+        return state if self.k == 1 else {**state, OPENING_DIR: f"opening-{self.k}/"}
+
+    def event(self, pk: str, window: dict, device_id: str) -> dict:
+        return {
+            "pk": pk,
+            "sk": self.door_sk(window, device_id),
+            "device_id": device_id,
+            "ring_event_id": window["ring_event_id"],
+            "opened_at": iso_utc(self.opened_ms),
+            "closed_at": iso_utc(self.closed_ms),
+            "duration_s": round((self.closed_ms - self.opened_ms) / 1000),
+            "still_keys": self.still_keys,
+            **{k: v for k, v in self.clip_fields.items() if k != "clip"},
+            "status": self.status,
+        }
+
+    def output(self, state: dict, door_sk: str, video: dict) -> dict:
+        raw_clip = {"clip": self.clip_fields["clip"]} if "clip" in self.clip_fields else {}
+        return {
+            **state,
+            "outcome": "door_open",
+            "door_sk": door_sk,
+            "still_keys": self.still_keys,
+            "still_ms": self.still_ms,
+            **raw_clip,
+            **({"analysis_video": video} if video else {}),
+        }

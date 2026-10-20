@@ -1,5 +1,7 @@
 """door-self-calibration: event samples from recent activity, and rules re-tuned from them."""
 
+import weakref
+
 import pytest
 
 from fridgesense import door_calibration as dc
@@ -105,14 +107,68 @@ def test_sample_uses_the_shifted_zone(aws):
     assert zone.open is None
 
 
+# --- Event sampling memory stays bounded ---
+
+
+@pytest.fixture
+def decoded(monkeypatch):
+    """Tracks the most decoded frames alive at once while sampling."""
+    real = self_tuning._open_rgb
+    seen = {"alive": 0, "peak": 0}
+
+    def gone():
+        seen["alive"] -= 1
+
+    def spy(still):
+        img = real(still)
+        seen["alive"] += 1
+        seen["peak"] = max(seen["peak"], seen["alive"])
+        weakref.finalize(img, gone)
+        return img
+
+    monkeypatch.setattr(self_tuning, "_open_rgb", spy)
+    return seen
+
+
+# Long event sampled with two frames decoded
+def test_long_event_sampled_with_two_frames_decoded(aws, decoded):
+    frames = [CLOSED] * 240
+    frames[120] = block(0.4)
+    assert learn(frames)
+    [zone] = samples()[0].zones
+    assert zone.open is not None
+    assert decoded["peak"] <= 2
+
+
+# Several zones share one pass
+def test_several_zones_share_one_pass(aws, decoded):
+    right_box = (0.5, 0.0, 0.5, 1.0)
+    two = DoorCheck(
+        rules=(
+            ZoneRule(LEFT_BOX, "blue", "above", 0.05),
+            ZoneRule(right_box, "blue", "above", 0.05),
+        ),
+        source="setup",
+    )
+    left_lit = block(0.4)
+    right_lit = color_jpeg(GREY, [((0.55, 0.25, 0.4, 0.5), BLUE)], size=(200, 100))
+    frames = [CLOSED] * 40
+    frames[10], frames[30] = left_lit, right_lit
+    learn(frames, check=two)
+    left, right = samples()[0].zones
+    assert left.open.blue == pytest.approx(measure(left_lit, LEFT_BOX, "blue"), abs=0.001)
+    assert right.open.blue == pytest.approx(measure(right_lit, right_box, "blue"), abs=0.001)
+    assert decoded["peak"] <= 2
+
+
 # --- Rules re-tuned from samples ---
 
 
 def set_up():
     table = FridgeTable()
-    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0).sk
-    dc.add_reference(table, ACCOUNT, DEVICE, block(0.06), z, "open", T0)
-    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1)
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0, source="clip").sk
+    dc.add_reference(table, ACCOUNT, DEVICE, block(0.06), z, "open", T0, source="clip")
+    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1, source="clip")
     dc.run(table, ACCOUNT, DEVICE, T0 + 2)
 
 
@@ -195,3 +251,25 @@ def test_rerunning_setup_resets_tuning(aws):
     assert check().source == "setup"
     assert samples() == []
     assert dc.load_setup(FridgeTable(), ACCOUNT, DEVICE).tuned_at is None
+
+
+# Re-tune keeps blue
+BRIGHT_LIT = color_jpeg(
+    GREY,
+    [((0.0, 0.0, 0.5, 1.0), (230, 230, 230)), ((0.05, 0.25, 0.03, 0.5), BLUE)],
+    size=(200, 100),
+)  # the interior light floods the zone: brightness moves far more than the blue-lit share
+
+
+def test_retune_keeps_blue(aws):
+    table = FridgeTable()
+    z = dc.add_zone(table, ACCOUNT, DEVICE, "Doors", LEFT, T0, source="clip").sk
+    dc.add_reference(table, ACCOUNT, DEVICE, BRIGHT_LIT, z, "open", T0, source="clip")
+    dc.add_reference(table, ACCOUNT, DEVICE, CLOSED, z, "closed", T0 + 1, source="clip")
+    dc.run(table, ACCOUNT, DEVICE, T0 + 2)
+    for k in range(3):
+        learn([CLOSED, BRIGHT_LIT, CLOSED], check=check(), at=T0 + 10 + k)
+    assert retune()
+    [rule] = check().rules
+    assert check().source == "tuned"
+    assert rule.feature == "blue"

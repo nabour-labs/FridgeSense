@@ -1,0 +1,24 @@
+{
+  "openings": {
+    "1792359128052": {
+      "added": [],
+      "removed": [{"item": "soda can", "quantity": 1, "also": ["can", "soda", "pop", "beverage can"]}],
+      "note": "21:32Z: takes a can from the door bin and leaves holding it"
+    },
+    "1792360462137": {"added": [], "removed": [], "note": "21:54Z: door never opened; person on a phone"},
+    "1792364111647": {"skip": "22:55Z: reaches into the top-left shelf; the item is not visible"},
+    "1792364607784": {"added": [], "removed": [], "note": "23:03Z: glass filled at the in-door water dispenser"},
+    "1792364795841": {"skip": "23:06Z: bottom drawer; leaves holding something too small to name"},
+    "1792365062239": {"skip": "23:11Z: bottom drawer; already holding a spoon, nothing clear"},
+    "1792366602510": {"added": [], "removed": [], "note": "23:36Z: glass filled at the in-door water dispenser"},
+    "1792366696502": {"skip": "23:38Z: two openings in one event (door shut 38-111 s); eggs taken at ~36 s not certain"},
+    "1792366818546": {
+      "added": [],
+      "removed": [{"item": "eggs", "quantity": 2, "also": ["egg"]}],
+      "note": "23:40Z: takes two eggs from the top shelf, one in each hand"
+    },
+    "1792367053696": {"added": [], "removed": [], "note": "23:44Z: cup filled at the in-door water dispenser"},
+    "1792367162289": {"skip": "23:46Z: water dispenser, then an adult takes an unidentified item from the bottom drawer"},
+    "1792368091888": {"skip": "00:01Z: handles a white container on the top shelf for 2 s; direction unclear"}
+  }
+}

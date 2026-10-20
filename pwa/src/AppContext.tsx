@@ -20,6 +20,7 @@ export type Api = Pick<
   | "config"
   | "saveInstructions"
   | "addReference"
+  | "updateReference"
   | "deleteReference"
   | "camera"
   | "setMonitoring"
@@ -41,6 +42,7 @@ export type Api = Pick<
   | "warnings"
   | "debugMotions"
   | "debugMotion"
+  | "debugUsage"
 >;
 
 export interface AppContextValue {

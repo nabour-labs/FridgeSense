@@ -14,3 +14,8 @@ test("unknown names fall back to the category, then a plate", () => {
   expect(itemIcon("kefir", "dairy")).toBe("🧀");
   expect(itemIcon("mystery jar", "other")).toBe("🍽️");
 });
+
+// Phone unchanged
+test("the phone app keeps the jar for ketchup", () => {
+  expect(itemIcon("ketchup", "condiment")).toBe("🫙");
+});

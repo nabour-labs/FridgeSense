@@ -238,15 +238,21 @@ def get_events(ctx: Context) -> dict:
         )
 
     def clip_of(e: dict) -> str | None:
-        """The open-span clip, played from open to close; never for viewers (not face-blurred)."""
-        if ctx.role == "viewer" or not e.get("clip_key"):
+        """The open-span clip, played from open to close; viewers get it only face-blurred."""
+        if not e.get("clip_key") or (ctx.role == "viewer" and not e.get("clip_blurred")):
             return None
         start_s, end_s = (float(t) for t in e["clip_span"])
         return f"{link(e['clip_key'])}#t={start_s:g},{end_s:g}"
 
+    def with_proof(c: dict, keys: list[str]) -> dict:
+        """The change with `proof` as links to the stills it names (indexes into `keys`)."""
+        named = [int(i) for i in c.get("proof", []) if 0 <= int(i) < len(keys)]
+        return {**c, "proof": [link(keys[i]) for i in named]}
+
     events = []
     for e in found:
         recent = e.get("opened_at", "") >= stills_since
+        keys = e.get("still_keys", []) if recent else []
         events.append(
             {
                 "id": encode_id(e["sk"]),
@@ -254,9 +260,9 @@ def get_events(ctx: Context) -> dict:
                 "closed_at": e.get("closed_at"),
                 "duration_s": e.get("duration_s"),
                 "status": e.get("status"),
-                "changes": e.get("changes", []),
+                "changes": [with_proof(c, keys) for c in e.get("changes", [])],
                 "pending_count": e.get("pending_count", 0),
-                "stills": [link(key) for key in (e.get("still_keys", []) if recent else [])],
+                "stills": [link(key) for key in keys],
                 "clip": clip_of(e) if recent else None,
             }
         )
@@ -300,7 +306,8 @@ def get_motion(ctx: Context) -> dict:
     sk = decode_id(ctx.params["id"], "TRACE#") or decode_id(ctx.params["id"], "DOOR#")
     if sk is None:
         return json_response(400, {"error": "invalid id"})
-    sk = "TRACE#" + sk.split("#", 1)[1]  # a door event's trace shares its time and device
+    # a door event's trace shares its time and device; a later opening's adds `#<k>`
+    sk = "TRACE#" + "#".join(sk.split("#")[1:3])
     item = ctx.table.get(account_pk(ctx.account_id), sk)
     if item is None:
         return json_response(404, {"error": "no trace"})
@@ -323,6 +330,33 @@ def get_motion(ctx: Context) -> dict:
             **motion,
             "door": traces.with_links(door, sign),
             "nova": [traces.with_links(c, sign) for c in calls],
+        },
+    )
+
+
+@route("GET", "/api/debug/usage", owner=True)
+def get_usage(ctx: Context) -> dict:
+    """One household day's LLM totals; input counts cached input too."""
+    day = ctx.req.query.get("day", "")
+    try:
+        if datetime.strptime(day, "%Y-%m-%d").date().isoformat() != day:
+            raise ValueError
+    except ValueError:
+        return json_response(400, {"error": "day must be YYYY-MM-DD"})
+    item = ctx.table.get(account_pk(ctx.account_id), f"USAGE#{day}") or {}
+    input_tokens = sum(
+        int(item.get(f, 0)) for f in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
+    )
+    output_tokens = int(item.get("output_tokens", 0))
+    return json_response(
+        200,
+        {
+            "day": day,
+            "calls": int(item.get("calls", 0)),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "usd": round(float(item.get("usd", 0)), 6),
         },
     )
 
@@ -525,6 +559,28 @@ def delete_reference(ctx: Context) -> dict:
     return json_response(200, config_body(ctx.table, ctx.account_id))
 
 
+@route("PATCH", "/api/config/references/{id}", write=True)
+def patch_reference(ctx: Context) -> dict:
+    body = _json_body(ctx.req) or {}
+    if "annotation" not in body and "image" not in body:
+        return json_response(400, {"error": "send an annotation or an image"})
+    try:
+        annotation = (
+            analysis_config.validate_annotation(body["annotation"])
+            if "annotation" in body
+            else None
+        )
+        image = analysis_config.decode_image(body["image"]) if "image" in body else None
+    except analysis_config.Invalid as e:
+        return json_response(400, {"error": e.message})
+    sk = decode_id(ctx.params["id"], analysis_config.REF_PREFIX)
+    if sk is None or not analysis_config.update_reference(
+        ctx.table, ctx.account_id, sk, annotation, image, now_ms=int(now() * 1000)
+    ):
+        return json_response(404, {"error": "not found"})
+    return json_response(200, config_body(ctx.table, ctx.account_id))
+
+
 @route("GET", "/api/settings/face-blur")
 def get_face_blur(ctx: Context) -> dict:
     return json_response(200, {"enabled": face_blur.load(ctx.table, ctx.account_id)})
@@ -638,7 +694,7 @@ MAX_OFFER_CHARS = 20_000
 SESSION_ID = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
 
 
-@route("POST", "/api/camera/live", write=True)  # live video is never face-blurred
+@route("POST", "/api/camera/live", owner=True)  # live video is never face-blurred
 @with_device
 def post_live(ctx: Context, device_id: str) -> dict:
     offer = (_json_body(ctx.req) or {}).get("offer")
@@ -653,7 +709,7 @@ def post_live(ctx: Context, device_id: str) -> dict:
     )
 
 
-@route("DELETE", "/api/camera/live/{session_id}", write=True)
+@route("DELETE", "/api/camera/live/{session_id}", owner=True)
 @with_device
 def delete_live(ctx: Context, device_id: str) -> dict:
     session_id = ctx.params["session_id"]
@@ -706,6 +762,7 @@ def door_setup_body(
                 "box": door_calibration.box_json(z.box),
                 "open": count(z.sk, "open"),
                 "closed": count(z.sk, "closed"),
+                "source": z.source,
             }
             for z in zones
         ],
@@ -718,6 +775,7 @@ def door_setup_body(
                 "status": r.status,
                 "score": None if scores.get(r.sk) is None else round(scores[r.sk], 3),
                 "created_at": r.created_at,
+                "source": r.source,
             }
             for r in refs
         ],
@@ -769,7 +827,14 @@ def post_door_reference(ctx: Context, device_id: str) -> dict:
         image = door_calibration.decode_image(body.get("image"))
         status = door_calibration.validate_status(body.get("status"))
         door_calibration.add_reference(
-            ctx.table, ctx.account_id, device_id, image, zone_sk, status, now_ms=int(now() * 1000)
+            ctx.table,
+            ctx.account_id,
+            device_id,
+            image,
+            zone_sk,
+            status,
+            now_ms=int(now() * 1000),
+            source=body.get("source"),
         )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})
@@ -791,6 +856,7 @@ def post_door_zone(ctx: Context, device_id: str) -> dict:
             body.get("name"),
             body.get("box"),
             now_ms=int(now() * 1000),
+            source=body.get("source"),
         )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})
@@ -813,6 +879,7 @@ def patch_door_zone(ctx: Context, device_id: str) -> dict:
             now_ms=int(now() * 1000),
             name=body.get("name"),
             box=body.get("box"),
+            source=body.get("source"),
         )
     except analysis_config.Invalid as e:
         return json_response(400, {"error": e.message})

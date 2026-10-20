@@ -60,7 +60,7 @@ Every place that blurs faces SHALL read the setting when it handles a still, a s
 - **THEN** the snapshot is blurred, or the route answers 502 if detection also fails
 
 ### Requirement: Blur faces switch on the Camera tab
-The Config "Camera" tab SHALL show a "Blur faces" section with a switch reflecting `GET /api/settings/face-blur`, and the text "Blurs faces in stored stills, snapshots and debug traces. Livestream is never blurred." For the owner, the switch SHALL be enabled. Toggling it SHALL send `PUT /api/settings/face-blur` and, on success, show the saved value. On failure it SHALL go back to the previous value and the error SHALL go to the app's normal error handling. For the user and the viewer, the switch SHALL be shown disabled with the current value. While the setting is off, the section SHALL also say "Faces are stored as recorded for 7 days."
+The Config "Camera" tab SHALL show a "Blur faces" section with a switch reflecting `GET /api/settings/face-blur`, and the text "Blurs faces in stored stills, snapshots and debug traces. Livestream is never blurred." For the owner, the switch SHALL be enabled. Toggling it SHALL send `PUT /api/settings/face-blur` and, on success, show the saved value. On failure it SHALL go back to the previous value and the error SHALL go to the app's normal error handling. The section SHALL be shown only to the owner: for the user and the viewer, the Camera tab SHALL show no "Privacy" section and no "Blur faces" switch, and SHALL NOT call `GET /api/settings/face-blur`. While the setting is off, the section SHALL also say "Faces are stored as recorded for 7 days."
 
 #### Scenario: Owner sees it on by default
 - **WHEN** the owner opens the Camera tab and the API answers `{"enabled": true}`
@@ -74,6 +74,6 @@ The Config "Camera" tab SHALL show a "Blur faces" section with a switch reflecti
 - **WHEN** the owner unchecks "Blur faces" and the API answers 500
 - **THEN** the switch is checked again
 
-#### Scenario: Others see it read-only
-- **WHEN** a user or a viewer opens the Camera tab and the API answers `{"enabled": false}`
-- **THEN** the "Blur faces" switch is shown unchecked and disabled, and no `PUT` can be sent
+#### Scenario: Hidden from others
+- **WHEN** a user or a viewer opens the Camera tab
+- **THEN** no "Privacy" section or "Blur faces" switch is shown, and `GET /api/settings/face-blur` is not called

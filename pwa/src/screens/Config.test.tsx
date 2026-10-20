@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { Mock } from "vitest";
 import { ApiError } from "../api/client";
-import type { Resize } from "../image";
+import type { Crop, Resize } from "../image";
 import type { Config as ConfigData, Reference, Role } from "../api/types";
 import { AppContext, type Api } from "../AppContext";
 import { drag, fakeApi } from "../test-utils";
@@ -17,10 +17,16 @@ const MILK = ref("r1", "milk bag");
 
 function renderConfig(
   config: ConfigData,
-  { role = "owner", api: overrides = {}, resize = vi.fn().mockResolvedValue("/9j/RESIZED") } = {} as {
+  {
+    role = "owner",
+    api: overrides = {},
+    resize = vi.fn().mockResolvedValue("/9j/RESIZED"),
+    crop = vi.fn().mockResolvedValue(new Blob(["cropped"], { type: "image/jpeg" })),
+  } = {} as {
     role?: Role;
     api?: Partial<Record<keyof Api, unknown>>;
     resize?: Mock<Resize>;
+    crop?: Mock<Crop>;
   },
 ) {
   const api = fakeApi({ config: vi.fn().mockResolvedValue(config), ...overrides });
@@ -28,10 +34,10 @@ function renderConfig(
   if (!location.hash) location.hash = "#config/refs";
   render(
     <AppContext.Provider value={{ api, role, report, online: vi.fn(), go: vi.fn() }}>
-      <Config resize={resize} />
+      <Config resize={resize} crop={crop} />
     </AppContext.Provider>,
   );
-  return { api, report, resize };
+  return { api, report, resize, crop };
 }
 
 // Viewer sees read-only config
@@ -77,6 +83,20 @@ test("Save stays disabled until there is an annotation", async () => {
   await userEvent.type(screen.getByLabelText("Annotation"), "   ");
   expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" })).toBeDisabled();
   expect(api.addReference).not.toHaveBeenCalled();
+});
+
+// Long annotation
+test("the annotation field takes 300 characters and Save sends all of them", async () => {
+  const long = "x".repeat(300);
+  const { api } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { addReference: vi.fn().mockResolvedValue({ instructions: "", references: [ref("r2", long)] }) } },
+  );
+  await openAdd();
+  fireEvent.change(screen.getByLabelText("Annotation"), { target: { value: long } });
+  expect(screen.getByLabelText("Annotation")).toHaveAttribute("maxLength", "300");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+  expect(api.addReference).toHaveBeenCalledWith(long, "/9j/RESIZED");
 });
 
 // Limit reached
@@ -333,22 +353,80 @@ test("a snapshot with no recent footage says so and keeps Choose photo", async (
 });
 
 // Draw on the image
-test("boxes and lines drawn on the image go into the upload", async () => {
+test("boxes drawn on the image go into the upload, with no Box or Line tool", async () => {
   const { api, resize } = renderConfig(
     { instructions: "", references: [] },
     { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT), addReference: vi.fn().mockResolvedValue({ instructions: "", references: [] }) } },
   );
   await openSnapshot(api);
-  await userEvent.click(screen.getByRole("button", { name: "Box" }));
+  expect(screen.queryByRole("button", { name: "Box" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Line" })).not.toBeInTheDocument();
   drag([10, 10], [40, 50]);
-  await userEvent.click(screen.getByRole("button", { name: "Line" }));
   drag([50, 50], [90, 90]);
   await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");
   await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
   expect(resize.mock.calls[0][1]).toEqual([
     { kind: "box", x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.5 },
-    { kind: "line", x1: 0.5, y1: 0.5, x2: 0.9, y2: 0.9 },
+    { kind: "box", x1: 0.5, y1: 0.5, x2: 0.9, y2: 0.9 },
   ]);
+});
+
+function stubObjectUrls() {
+  const create = vi.fn().mockReturnValue("blob:cropped");
+  Object.assign(URL, { createObjectURL: create, revokeObjectURL: vi.fn() });
+  return () => Object.assign(URL, { createObjectURL: undefined, revokeObjectURL: undefined });
+}
+
+// Crop to the box
+test("Crop crops to the last box, clears the boxes and uploads the cropped image", async () => {
+  const restore = stubObjectUrls();
+  const { api, resize, crop } = renderConfig(
+    { instructions: "", references: [] },
+    { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT), addReference: vi.fn().mockResolvedValue({ instructions: "", references: [] }) } },
+  );
+  await openSnapshot(api);
+  drag([60, 60], [90, 90]);
+  drag([10, 10], [40, 50]);
+  await userEvent.click(screen.getByRole("button", { name: "Crop" }));
+  const [source, box] = crop.mock.calls[0];
+  expect((source as Blob).type).toBe("image/jpeg");
+  expect(box).toEqual({ kind: "box", x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.5 });
+  const img = await within(screen.getByRole("dialog")).findByRole("img", { name: "Reference to draw on" });
+  await waitFor(() => expect(img).toHaveAttribute("src", "blob:cropped"));
+  expect(screen.queryAllByTestId("markup-shape")).toHaveLength(0);
+  await userEvent.type(screen.getByLabelText("Annotation"), "milk bag");
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+  const [uploaded, shapes] = resize.mock.calls[0];
+  expect(uploaded).toBe(await crop.mock.results[0].value);
+  expect(shapes).toBeUndefined();
+  restore();
+});
+
+// Crop needs a box
+test("Crop is disabled until a box is drawn", async () => {
+  const { api } = renderConfig({ instructions: "", references: [] }, { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) } });
+  await openSnapshot(api);
+  expect(screen.getByRole("button", { name: "Crop" })).toBeDisabled();
+  drag([10, 10], [40, 50]);
+  expect(screen.getByRole("button", { name: "Crop" })).toBeEnabled();
+});
+
+// Undo a crop
+test("Undo after a crop restores the original image and its box", async () => {
+  const restore = stubObjectUrls();
+  const { api } = renderConfig({ instructions: "", references: [] }, { api: { cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) } });
+  await openSnapshot(api);
+  drag([10, 10], [40, 50]);
+  await userEvent.click(screen.getByRole("button", { name: "Crop" }));
+  const img = () => within(screen.getByRole("dialog")).getByRole("img", { name: "Reference to draw on" });
+  await waitFor(() => expect(img()).toHaveAttribute("src", "blob:cropped"));
+  const undo = screen.getByRole("button", { name: "Undo" });
+  expect(undo).toBeEnabled();
+  await userEvent.click(undo);
+  expect(img()).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
+  expect(screen.getAllByTestId("markup-shape")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Crop" })).toBeEnabled();
+  restore();
 });
 
 // Undo a shape
@@ -492,4 +570,93 @@ test("a snapshot from an offline camera warns and keeps Choose photo", async () 
   expect(screen.getByRole("button", { name: "Camera snapshot" })).toBeEnabled();
   expect(screen.queryByRole("img", { name: "Reference to draw on" })).not.toBeInTheDocument();
   expect(api.addReference).not.toHaveBeenCalled();
+});
+
+const CHOCO = ref("r1", "chocomilk");
+
+async function openEdit(name = "chocomilk") {
+  await userEvent.click(await screen.findByRole("button", { name: `Edit ${name}` }));
+  return screen.getByRole("dialog", { name: "Edit reference" });
+}
+
+// Edit an annotation
+test("editing an annotation sends only the annotation and updates the card", async () => {
+  const edited = { instructions: "", references: [{ ...CHOCO, annotation: "chocolate milk carton" }] };
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockResolvedValue(edited) } },
+  );
+  const sheet = await openEdit();
+  expect(within(sheet).getByRole("img", { name: "Reference to draw on" })).toHaveAttribute("src", "data:image/jpeg;base64,/9j/AAAA");
+  const field = within(sheet).getByLabelText("Annotation");
+  expect(field).toHaveValue("chocomilk");
+  await userEvent.clear(field);
+  await userEvent.type(field, " chocolate milk carton ");
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  expect(api.updateReference).toHaveBeenCalledWith("r1", { annotation: "chocolate milk carton" });
+  expect(resize).not.toHaveBeenCalled();
+  const refs = screen.getByRole("region", { name: "Reference images" });
+  expect(await within(refs).findByText("chocolate milk carton")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+// Replace the image
+test("replacing the image sends only the resized new image", async () => {
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockResolvedValue({ instructions: "", references: [CHOCO] }) } },
+  );
+  const sheet = await openEdit();
+  await userEvent.upload(within(sheet).getByLabelText("Choose photo"), PHOTO);
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  expect(resize).toHaveBeenCalledWith(PHOTO);
+  expect(api.updateReference).toHaveBeenCalledWith("r1", { image: "/9j/RESIZED" });
+});
+
+// Draw on the current image
+test("drawing a box on the current image sends only the image, with that box", async () => {
+  const { api, resize } = renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockResolvedValue({ instructions: "", references: [CHOCO] }) } },
+  );
+  const sheet = await openEdit();
+  drag([10, 10], [40, 50]);
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  const [blob, shapes] = resize.mock.calls[0];
+  expect((blob as Blob).type).toBe("image/jpeg");
+  expect(shapes).toEqual([{ kind: "box", x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.5 }]);
+  expect(api.updateReference).toHaveBeenCalledWith("r1", { image: "/9j/RESIZED" });
+});
+
+// Nothing changed
+test("Save is disabled in the edit sheet until something changes", async () => {
+  renderConfig({ instructions: "", references: [CHOCO] });
+  const sheet = await openEdit();
+  const save = within(sheet).getByRole("button", { name: "Save" });
+  expect(save).toBeDisabled();
+  await userEvent.type(within(sheet).getByLabelText("Annotation"), "!");
+  expect(save).toBeEnabled();
+  await userEvent.clear(within(sheet).getByLabelText("Annotation"));
+  expect(save).toBeDisabled();
+});
+
+// Edit refused
+test("an edit the API refuses shows its error and leaves the list unchanged", async () => {
+  renderConfig(
+    { instructions: "", references: [CHOCO] },
+    { api: { updateReference: vi.fn().mockRejectedValue(new ApiError(400, "annotation must be 1 to 300 characters")) } },
+  );
+  const sheet = await openEdit();
+  await userEvent.type(within(sheet).getByLabelText("Annotation"), "!");
+  await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  expect(await within(sheet).findByRole("alert")).toHaveTextContent("annotation must be 1 to 300 characters");
+  const refs = screen.getByRole("region", { name: "Reference images" });
+  expect(within(refs).getByText("chocomilk")).toBeInTheDocument();
+});
+
+// Viewer has no edit
+test("a viewer gets no Edit button", async () => {
+  renderConfig({ instructions: "", references: [CHOCO] }, { role: "viewer" });
+  await screen.findByText("chocomilk");
+  expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
 });

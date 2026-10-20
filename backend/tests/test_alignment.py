@@ -21,7 +21,7 @@ def scene() -> Image.Image:
     for _ in range(90):
         x, y = rng.randrange(0, img.width - 60), rng.randrange(0, img.height - 60)
         w, h = rng.randrange(40, 260), rng.randrange(40, 200)
-        level = rng.randrange(0, 256)
+        level = max(rng.randrange(0, 256), 24)  # nothing as dark as a privacy mask
         draw.rectangle([x, y, x + w, y + h], fill=(level, level, level))
     return img
 
@@ -68,7 +68,6 @@ def test_alignment_fails_when_rotated():
     rotated = SCENE.rotate(15, resample=Image.Resampling.BICUBIC, fillcolor=(120, 120, 120))
     result = alignment.align_bookends(ANCHOR, view(source=rotated), view(source=rotated))
     assert not result.ok
-    assert result.error > alignment.ALIGN_MAX_ERROR
 
 
 # Lighting change alone
@@ -80,7 +79,7 @@ def test_lighting_change_alone():
 
 
 def test_default_limit():
-    assert alignment.ALIGN_MAX_ERROR == 0.05
+    assert alignment.ALIGN_MIN_MATCH == 0.5
 
 
 def test_edge_map_size_and_round_trip():
@@ -235,3 +234,279 @@ def test_reset_keeps_last_moved_at(aws):
 def test_alignment_kept_per_device(aws):
     event(2, 0)
     assert alignment.load_alignment(FridgeTable(), ACCOUNT, "ava1.ring.device.D2") is None
+
+
+# --- Suspect streak per device ---
+
+
+def streak() -> int:
+    s = alignment.load_alignment(FridgeTable(), ACCOUNT, DEVICE)
+    return 0 if s is None else s.suspect_streak
+
+
+# Three suspect events in a row
+def test_three_suspect_events_in_a_row(aws):
+    for _ in range(3):
+        alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    assert streak() == 3
+
+
+# Normal event resets the streak
+def test_normal_event_resets_the_streak(aws):
+    for _ in range(2):
+        alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, False)
+    assert streak() == 0
+
+
+def test_streak_kept_by_an_alignment(aws):
+    alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    ok = alignment.Alignment(True, 0.01, 0, 0.01, "first")
+    alignment.record(FridgeTable(), ACCOUNT, DEVICE, ok, T0)
+    assert streak() == 1
+
+
+# Setup run resets the streak
+def test_setup_run_resets_the_streak(aws):
+    for _ in range(5):
+        alignment.record_suspect(FridgeTable(), ACCOUNT, DEVICE, True)
+    alignment.reset(FridgeTable(), ACCOUNT, DEVICE)
+    assert streak() == 0
+
+
+# --- Visible map stored with the anchor ---
+
+
+def masked(img: Image.Image, left: float, right: float) -> Image.Image:
+    """`img` painted black in its left `left` and right `right` share of columns, like a
+    privacy mask."""
+    out = img.copy()
+    draw = ImageDraw.Draw(out)
+    if left:
+        draw.rectangle([0, 0, round(W * left) - 1, H], fill=(0, 0, 0))
+    if right:
+        draw.rectangle([W - round(W * right), 0, W, H], fill=(0, 0, 0))
+    return out
+
+
+def visible_cols(vis: Image.Image, y: int = 36) -> list[int]:
+    return [x for x in range(128) if vis.getpixel((x, y)) == 255]
+
+
+# Map from the newest closed reference
+def test_map_from_masked_reference():
+    vis = alignment.visible_map(masked(view(), 0.3125, 0.34375))
+    assert vis.size == (128, 72) and vis.mode == "L"
+    cols = visible_cols(vis)
+    # columns 0-39 and 84-127 are black at 128 wide; grown by 2 px
+    assert cols[0] == 40 + 2
+    assert cols[-1] == 83 - 2
+    assert all(c in cols for c in range(cols[0], cols[-1] + 1))
+
+
+def test_unmasked_reference_all_visible():
+    vis = alignment.visible_map(view())
+    assert vis.getextrema() == (255, 255)
+
+
+# Overlay text in the mask stays masked
+def test_overlay_text_in_the_mask_stays_masked():
+    img = masked(view(), 0.0, 0.35)
+    draw = ImageDraw.Draw(img)
+    for line in range(3):  # three lines of white text, ~2 px high at 128x72
+        draw.text(
+            (W - 400, 30 + line * 50), "Generated-At: 2026-10-18", fill=(255,) * 3, font_size=22
+        )
+    vis = alignment.visible_map(img)
+    for x in range(128 - 40, 128):
+        for y in range(2, 20):
+            assert vis.getpixel((x, y)) == 0, (x, y)
+
+
+# Dark but unmasked detail stays visible
+def test_dark_but_unmasked_detail_stays_visible():
+    img = Image.new("RGB", (W, H), (200, 200, 200))
+    ImageDraw.Draw(img).rectangle([600, 300, 639, 339], fill=(0, 0, 0))  # 4x4 at 128x72
+    vis = alignment.visible_map(img)
+    assert vis.getextrema() == (255, 255)
+
+
+def test_visible_map_round_trip():
+    vis = alignment.visible_map(masked(view(), 0.3, 0.3))
+    assert alignment.visible_from_bytes(alignment.visible_to_bytes(vis)).tobytes() == vis.tobytes()
+
+
+# --- Alignment ignores masked pixels and blocked views ---
+
+
+def masked_anchor(left: float, right: float, px: int = 0, py: int = 0):
+    source = masked(view(px, py), left, right)
+    return alignment.edge_map(source), alignment.visible_map(source)
+
+
+# Wider mask after setup
+def test_wider_mask_after_setup():
+    anchor, vis = masked_anchor(0.25, 0.25)
+    bookend = masked(view(), 0.31, 0.31)
+    result = alignment.align_bookends(anchor, bookend, bookend, vis)
+    assert result.ok
+    assert (result.dx, result.dy) == (0, 0)
+
+
+# Known shift with a mask
+def test_known_shift_with_a_mask():
+    anchor, vis = masked_anchor(0.2, 0.2)
+    bookend = masked(view(3, 1), 0.2, 0.2)  # content moved, mask fixed on the screen
+    result = alignment.align_bookends(anchor, bookend, bookend, vis)
+    assert result.ok
+    assert result.dx == pytest.approx(3 / 128, abs=0.001)
+    assert result.dy == pytest.approx(1 / 72, abs=0.001)
+
+
+# Person in front of the zones in both bookends
+def test_person_in_front_of_the_zones_in_both_bookends():
+    person = view()
+    ImageDraw.Draw(person).rectangle([int(W * 0.35), 0, int(W * 0.65), H], fill=(60, 50, 40))
+    result = alignment.align_bookends(ANCHOR, person, person)
+    assert result.ok
+    assert (result.dx, result.dy) == (0, 0)
+    assert 1 - result.error < 0.9  # the person really did block some blocks
+
+
+# Rotated camera still fails
+def test_rotated_camera_still_fails():
+    rotated = view(source=SCENE.rotate(5, resample=Image.Resampling.BICUBIC, fillcolor=(120,) * 3))
+    result = alignment.align_bookends(ANCHOR, rotated, rotated)
+    assert not result.ok
+    assert 1 - result.error < alignment.ALIGN_MIN_MATCH
+
+
+# Too little left to compare
+def test_too_little_left_to_compare():
+    anchor, vis = masked_anchor(0.45, 0.45)
+    result = alignment.align_bookends(
+        anchor, masked(view(), 0.45, 0.45), masked(view(), 0.45, 0.45), vis
+    )
+    assert not result.ok
+
+
+def test_used_bookend_visible_map_returned():
+    bookend = masked(view(), 0.31, 0.31)
+    result = alignment.align_bookends(ANCHOR, bookend, bookend)
+    assert result.visible == alignment.visible_to_bytes(alignment.visible_map(bookend))
+
+
+# Recorded clip after a mask change
+def test_recorded_clip_after_a_mask_change():
+    """The 2026-10-18 prod case at 128x72 grayscale: setup's newest closed reference, and the
+    first and last frames of a clip taken after the owner changed the privacy mask, with the
+    owner in front of the fridge in both."""
+    from pathlib import Path
+
+    folder = Path(__file__).parent / "fixtures" / "alignment" / "mask_change"
+    reference = Image.open(folder / "closed_reference.png")
+    first, last = Image.open(folder / "first.png"), Image.open(folder / "last.png")
+    result = alignment.align_bookends(
+        alignment.edge_map(reference), first, last, alignment.visible_map(reference)
+    )
+    assert result.ok
+    assert (result.dx, result.dy) == (0, 0)
+
+
+# --- Privacy mask change detected ---
+
+ZONES = [  # (name, box) in setup order
+    ("Chiller", (0.40, 0.30, 0.20, 0.30)),
+    ("Freezer Drawer 1", (0.40, 0.65, 0.20, 0.10)),
+]
+
+
+def vis_bytes(left: float, right: float) -> bytes:
+    return alignment.visible_to_bytes(alignment.visible_map(masked(view(), left, right)))
+
+
+OLD_MAP = vis_bytes(0.25, 0.25)
+
+
+def mask_event(new_map: bytes, at=T0, anchor_map=OLD_MAP, zones=ZONES):
+    return alignment.record_mask(FridgeTable(), ACCOUNT, DEVICE, new_map, anchor_map, zones, at)
+
+
+def map_diff(a: bytes, b: bytes) -> float:
+    return sum(x != y for x, y in zip(a, b, strict=True)) / len(a)
+
+
+# Mask change that misses every zone
+def test_mask_change_that_misses_every_zone(aws):
+    new = vis_bytes(0.31, 0.31)  # still clear of both zones
+    assert map_diff(new, OLD_MAP) > 0.03
+    assert mask_event(new, at=T0) is None
+    assert mask_event(new, at=T0 + 1) == new  # adopt it
+    s = state()
+    assert s.mask_zones == () and s.mask_changed_at_ms is None and s.mask_streak == 0
+    assert not s.moved
+
+
+# Mask change that covers a zone
+def test_mask_change_that_covers_a_zone(aws):
+    new = alignment.visible_to_bytes(
+        alignment.visible_map(masked(view(), 0.48, 0.25))  # hides the left 40% of Chiller
+    )
+    assert mask_event(new, at=T0) is None
+    assert mask_event(new, at=T0 + 1) is None  # keep the old map until setup runs
+    s = state()
+    assert s.mask_zones == ("Chiller", "Freezer Drawer 1")  # both start at x = 0.40
+    assert s.mask_changed_at_ms == T0 + 1
+
+
+def test_mask_change_that_covers_one_of_two_zones(aws):
+    zones = [("Chiller", (0.40, 0.30, 0.20, 0.30)), ("Side", (0.55, 0.65, 0.15, 0.10))]
+    new = vis_bytes(0.48, 0.25)
+    mask_event(new, at=T0, zones=zones)
+    mask_event(new, at=T0 + 1, zones=zones)
+    assert state().mask_zones == ("Chiller",)
+
+
+# One odd event
+def test_one_odd_event(aws):
+    mask_event(vis_bytes(0.31, 0.31), at=T0)
+    assert state().mask_streak == 1
+    assert mask_event(OLD_MAP, at=T0 + 1) is None
+    s = state()
+    assert s.mask_streak == 0 and s.mask_zones == () and s.mask_changed_at_ms is None
+
+
+# Small difference ignored
+def test_small_difference_ignored(aws):
+    new = vis_bytes(0.26, 0.25)
+    assert 0 < map_diff(new, OLD_MAP) <= 0.03
+    assert mask_event(new, at=T0) is None
+    assert mask_event(new, at=T0 + 1) is None
+    s = state() or alignment.AlignState()  # nothing to store
+    assert s.mask_streak == 0 and s.mask_zones == ()
+
+
+def test_no_anchor_map_counts_everything_visible(aws):
+    assert mask_event(OLD_MAP, at=T0, anchor_map=None) is None
+    assert state().mask_streak == 1
+
+
+# Setup run clears the mask change
+def test_setup_run_clears_the_mask_change(aws):
+    new = vis_bytes(0.48, 0.25)
+    mask_event(new, at=T0)
+    mask_event(new, at=T0 + 1)
+    alignment.reset(FridgeTable(), ACCOUNT, DEVICE)
+    s = state()
+    assert s.mask_zones == () and s.mask_changed_at_ms is None and s.mask_streak == 0
+
+
+# Mask change while the camera also moved
+def test_mask_change_while_the_camera_also_moved(aws):
+    new = vis_bytes(0.48, 0.25)
+    for k in range(3):
+        event(frame=ROTATED, at=T0 + k)
+        mask_event(new, at=T0 + k)
+    s = state()
+    assert s.moved
+    assert s.mask_zones == ("Chiller", "Freezer Drawer 1")

@@ -38,16 +38,33 @@ def test_request_built_from_stills_and_inventory():
     assert req["inferenceConfig"]["temperature"] == 0
 
 
-def test_tool_schema_follows_nova_rules():
+# Schema order and required fields
+def test_schema_order_and_required_fields():
     req = build_request(DEFAULT_MODEL_ID, STILLS, [])
     [tool] = req["toolConfig"]["tools"]
     schema = tool["toolSpec"]["inputSchema"]["json"]
     assert set(schema) == {"type", "properties", "required"}
-    assert schema["required"] == ["added", "removed"]
-    item = schema["properties"]["added"]["items"]
-    assert item["required"] == ["item", "category", "quantity", "confidence"]
+    assert list(schema["properties"]) == ["observations", "items"]
+    assert schema["required"] == ["observations", "items"]
+    assert schema["properties"]["observations"]["type"] == "string"
+    item = schema["properties"]["items"]["items"]
+    assert item["required"] == ["item", "category", "quantity", "going_in", "coming_out"]
     assert item["properties"]["category"]["enum"] == CATEGORIES
-    assert schema["properties"]["removed"]["items"] == item
+    assert item["properties"]["going_in"]["type"] == "boolean"
+    assert item["properties"]["coming_out"]["type"] == "boolean"
+
+
+# Hand-evidence instructions
+def test_hand_evidence_instructions():
+    text = content_of(build_request(DEFAULT_MODEL_ID, STILLS, ["milk"]))[-1]["text"]
+    assert "in a person's hand" in text
+    assert "crossing the fridge opening" in text
+    assert "resting on shelves or in the door are not changes" in text
+    assert (
+        "Names already in the inventory (reuse them for the same kind of item; "
+        "do not report them unless you see them carried): [milk]"
+    ) in text
+    assert "Compare" not in text
 
 
 # Empty inventory
@@ -218,3 +235,49 @@ def test_retry_sends_the_same_cached_request():
     first, second = sent
     assert first == second
     assert has_cache_point(first)
+
+
+# Scenario: Schema and prompt ask for images
+def test_schema_and_prompt_ask_for_images():
+    req = build_request(DEFAULT_MODEL_ID, STILLS, [])
+    [tool] = req["toolConfig"]["tools"]
+    item = tool["toolSpec"]["inputSchema"]["json"]["properties"]["items"]["items"]
+    assert item["properties"]["moments"]["type"] == "array"
+    assert item["properties"]["moments"]["items"] == {"type": "number"}
+    assert "moments" not in item["required"]
+    assert "moments" in content_of(req)[-1]["text"]
+
+
+VIDEO = b"\x00\x00\x00\x18ftypmp42 analysis video bytes"
+VIDEO_TEXT = "Video of the door opening, slowed down, in time order."
+
+
+# Video instead of stills
+def test_video_instead_of_stills():
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS, ["milk"], video=VIDEO))
+    assert [c for c in content if "image" in c] == []
+    assert content[0] == {"text": VIDEO_TEXT}
+    assert content[1] == {"video": {"format": "mp4", "source": {"bytes": VIDEO}}}
+    assert len(content) == 3
+    assert "seconds from the start of the video" in content[-1]["text"]
+
+
+# References before the video
+def test_references_before_the_video():
+    refs = [("milk bag", jpeg(0.3)), ("soda can", jpeg(0.6))]
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS, [], refs, video=VIDEO))
+    assert [content[i].get("text") for i in (0, 1, 3)] == [
+        REF_HEADER,
+        "Reference 1: milk bag",
+        "Reference 2: soda can",
+    ]
+    assert content[5] == {"text": VIDEO_TEXT}
+    assert "video" in content[6]
+
+
+# Cache point after the video
+def test_cache_point_after_the_video():
+    content = content_of(build_request(DEFAULT_MODEL_ID, STILLS, [], video=VIDEO, cache=True))
+    points = [i for i, c in enumerate(content) if "cachePoint" in c]
+    assert points == [2]
+    assert "video" in content[1] and "text" in content[3]

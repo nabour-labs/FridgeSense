@@ -246,3 +246,23 @@ def test_faint_fridge_light_counts_at_the_default_threshold():
     open_, score, _ = DoorCheck.from_config("0,0,1,1", None).evaluate([still])
     assert score == pytest.approx(0.015, abs=0.003)
     assert open_ is True
+
+
+# Cool daylight on closed doors
+DAYLIT_STEEL = (110, 150, 200)
+TEAL = (40, 150, 200)
+
+
+def test_cool_daylight_on_closed_doors():
+    still = color_jpeg(GREY, [((0.0, 0.0, 0.3, 1.0), DAYLIT_STEEL)])
+    open_, score, _ = DoorCheck.from_config("0,0,1,1", None).evaluate([still])
+    assert score == pytest.approx(0.0, abs=0.002)
+    assert open_ is False
+
+
+# Weakly blue pixels do not count
+def test_weakly_blue_pixels_do_not_count():
+    still = color_jpeg(GREY, [((0.0, 0.0, 0.1, 1.0), TEAL)])
+    open_, score, _ = DoorCheck.from_config("0,0,1,1", None).evaluate([still])
+    assert score == pytest.approx(0.0, abs=0.002)
+    assert open_ is False

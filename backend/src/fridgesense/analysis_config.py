@@ -9,7 +9,7 @@ from typing import Any
 from fridgesense.door_events import iso_utc
 from fridgesense.table import FridgeTable, account_pk
 
-MAX_ANNOTATION = 80
+MAX_ANNOTATION = 300
 MAX_IMAGE_BYTES = 200_000
 MAX_INSTRUCTIONS = 1000
 MAX_REFERENCES = 6
@@ -107,6 +107,27 @@ def add_reference(
 def delete_reference(table: FridgeTable, account_id: str, sk: str) -> bool:
     """False if the account has no such reference."""
     return sk.startswith(REF_PREFIX) and table.delete(account_pk(account_id), sk)
+
+
+def update_reference(
+    table: FridgeTable,
+    account_id: str,
+    sk: str,
+    annotation: str | None,
+    image: bytes | None,
+    now_ms: int,
+) -> bool:
+    """Change the annotation and/or image in place, keeping the sort key (so the id and
+    order); False if the account has no such reference."""
+    item = table.get(account_pk(account_id), sk) if sk.startswith(REF_PREFIX) else None
+    if item is None:
+        return False
+    if annotation is not None:
+        item["annotation"] = annotation
+    if image is not None:
+        item["image_b64"] = base64.b64encode(image).decode()
+    table.put({**item, "updated_at": iso_utc(now_ms)})
+    return True
 
 
 def save_instructions(table: FridgeTable, account_id: str, text: str, now_ms: int) -> None:

@@ -122,3 +122,73 @@ test("#config/doors opens Config on the detection tab", async () => {
   expect(api.doorCalibration).toHaveBeenCalled();
   location.hash = "";
 });
+
+// Open at #tv
+test("a signed-in app opened at #tv shows the TV dashboard without tabs or Config", async () => {
+  signedIn("viewer");
+  location.hash = "#tv";
+  render(<App api={fakeApi()} />);
+  expect(await screen.findByRole("region", { name: "TV dashboard" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Fridge" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Config" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+  location.hash = "";
+});
+
+// Other hashes unchanged
+test("other hashes show the tabbed app, not the TV dashboard", async () => {
+  signedIn();
+  location.hash = "#fridge";
+  render(<App api={fakeApi()} />);
+  expect(await screen.findByRole("heading", { name: "Fridge" })).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "TV dashboard" })).not.toBeInTheDocument();
+  location.hash = "";
+});
+
+// Switch to #tv while open
+test("changing the hash to #tv shows the TV dashboard without a reload", async () => {
+  signedIn();
+  location.hash = "#fridge";
+  render(<App api={fakeApi()} />);
+  await screen.findByRole("heading", { name: "Fridge" });
+  act(() => {
+    location.hash = "#tv";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(await screen.findByRole("region", { name: "TV dashboard" })).toBeInTheDocument();
+  location.hash = "";
+});
+
+// Session expired on the TV
+test("a 401 on the TV dashboard returns to the passcode screen", async () => {
+  signedIn("viewer");
+  location.hash = "#tv";
+  render(<App api={fakeApi({ inventory: vi.fn().mockRejectedValue(new Unauthorized()) })} />);
+  expect(await screen.findByLabelText("Passcode")).toBeInTheDocument();
+  location.hash = "";
+});
+
+// Field focused
+test("at #tv with no session the passcode field has focus and nothing loads", () => {
+  location.hash = "#tv";
+  const api = fakeApi();
+  render(<App api={api} />);
+  expect(screen.getByLabelText("Passcode")).toHaveFocus();
+  expect(api.inventory).not.toHaveBeenCalled();
+  location.hash = "";
+});
+
+// Enter signs in to the dashboard
+test("typing the viewer passcode and Enter signs in to the TV dashboard", async () => {
+  location.hash = "#tv";
+  const api = fakeApi({
+    signIn: vi.fn().mockResolvedValue({ token: "tok", expires_at: new Date(Date.now() + 3600_000).toISOString(), role: "viewer" }),
+  });
+  render(<App api={api} />);
+  await userEvent.keyboard("look-only{Enter}");
+  expect(api.signIn).toHaveBeenCalledWith("look-only");
+  expect(await screen.findByRole("region", { name: "TV dashboard" })).toBeInTheDocument();
+  expect(location.hash).toBe("#tv");
+  expect(localStorage.getItem("fridgesense.role")).toBe("viewer");
+  location.hash = "";
+});

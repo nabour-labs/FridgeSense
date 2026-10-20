@@ -29,6 +29,8 @@ export interface Change {
   confidence: number;
   applied?: boolean;
   rejected?: boolean;
+  /** Links to up to 2 stills that show this change (door event listings only). */
+  proof?: string[];
 }
 
 export interface DoorEvent {
@@ -152,6 +154,8 @@ export interface Snapshot {
 
 export type DoorStatus = "open" | "closed";
 export type DoorFeature = "blue" | "color" | "brightness" | "change";
+/** Where a door zone's or reference's picture came from: a recorded clip, or the live view. */
+export type PictureSource = "clip" | "live";
 
 /** A named box around a door or drawer; setup makes one rule per zone. */
 export interface DoorZone {
@@ -161,6 +165,7 @@ export interface DoorZone {
   /** How many open and closed references it has. */
   open: number;
   closed: number;
+  source: PictureSource;
 }
 
 /** A camera snapshot of one door zone, labeled open or closed. */
@@ -175,6 +180,7 @@ export interface DoorReference {
   /** The value of its zone's chosen feature, or null before setup. */
   score: number | null;
   created_at: string;
+  source: PictureSource;
 }
 
 export interface SetupZone extends Box {
@@ -217,8 +223,9 @@ export interface Alignment {
 
 export type SetupWarning =
   | { code: "monitoring_paused"; message: string; since: string }
-  | { code: "motion_detection_off" | "door_setup_missing" | "needs_relink"; message: string }
-  | { code: "camera_moved"; message: string; since: string; update: ("door_references" | "fridge_area")[] };
+  | { code: "motion_detection_off" | "door_setup_missing" | "door_setup_mismatch" | "needs_relink"; message: string }
+  | { code: "camera_moved"; message: string; since: string; update: ("door_references" | "fridge_area")[] }
+  | { code: "privacy_mask_changed"; message: string; since: string; zones: string[] };
 
 export interface WarningsBody {
   warnings: SetupWarning[];
@@ -254,6 +261,16 @@ export interface DebugMotion {
   stills_downloaded: number;
   door_event_id: string | null;
   nova: NovaTotals;
+}
+
+/** One household day's LLM totals; input counts cached input too. */
+export interface UsageTotals {
+  day: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  usd: number;
 }
 
 export interface MotionPage {

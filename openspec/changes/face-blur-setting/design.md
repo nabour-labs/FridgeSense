@@ -42,7 +42,7 @@
    - Alternative: mask everything outside the door zones. Rejected because the person opening the door stands inside them.
 6. **PWA:**
    - `api.faceBlur()` and `api.setFaceBlur(enabled)`.
-   - A "Blur faces" section at the bottom of `Camera.tsx`: a `role="switch"` checkbox, enabled only when `isAdmin(role)`.
+   - A "Blur faces" section at the bottom of `Camera.tsx`: a `role="switch"` checkbox, rendered only when `isAdmin(role)`.
    - Toggling is optimistic, reverts on error, and hands the error to `report`.
    - It loads on its own, so a slow `GET /api/camera` doesn't hold it up. A failed load shows the switch as on and disabled, which matches the server's fail-on rule.
 7. **The CDK default flips to `"false"`.** The code default (on unless `false`) stays, so local and test runs are unchanged.

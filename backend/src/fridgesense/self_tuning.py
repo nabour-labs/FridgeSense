@@ -70,25 +70,37 @@ def sample_event(
     check: DoorCheck, frames: list[bytes | Image.Image], used: str
 ) -> tuple[ZoneSample, ...]:
     """Each zone's closed look (the alignment bookend, if the rules call it closed there) and
-    open look (the frame that differs most from it, if clearly)."""
-    images = [_open_rgb(f) for f in frames]
-    bookend = 0 if used == "first" else len(images) - 1
-    zones = []
-    for rule in check.rules:
-        closed_img = images[bookend]
-        if rule.is_open(rule.value(closed_img)):
-            zones.append(ZoneSample(None, None))
+    open look (the frame that differs most from it, if clearly).
+
+    Frames are decoded one at a time (a long clip's frames would not fit in memory decoded):
+    one pass scores every zone, then each zone's best frame is decoded again for its look.
+    """
+    bookend = 0 if used == "first" else len(frames) - 1
+    closed_img = _open_rgb(frames[bookend])
+    closed = [
+        None if rule.is_open(rule.value(closed_img)) else _look(closed_img, rule.box)
+        for rule in check.rules
+    ]
+    del closed_img
+    best: list[tuple[int | None, float]] = [(None, MIN_OPEN_CHANGE)] * len(closed)
+    for k, frame in enumerate(frames):
+        if k == bookend:
             continue
-        closed = _look(closed_img, rule.box)
-        best, best_change = None, MIN_OPEN_CHANGE
-        for k, img in enumerate(images):
-            if k == bookend:
+        img = _open_rgb(frame)
+        for z, (rule, look) in enumerate(zip(check.rules, closed, strict=True)):
+            if look is None:
                 continue
-            change = _change(_thumb(_crop_box(img, rule.box)), closed.thumb)
-            if change >= best_change:
-                best, best_change = img, change
-        zones.append(ZoneSample(closed, None if best is None else _look(best, rule.box)))
-    return tuple(zones)
+            change = _change(_thumb(_crop_box(img, rule.box)), look.thumb)
+            if change >= best[z][1]:
+                best[z] = (k, change)
+        del img
+    return tuple(
+        ZoneSample(
+            look,
+            None if look is None or k is None else _look(_open_rgb(frames[k]), rule.box),
+        )
+        for rule, look, (k, _) in zip(check.rules, closed, best, strict=True)
+    )
 
 
 def _look_json(look: Look | None) -> dict | None:
@@ -182,11 +194,9 @@ def _zone_rule(zone: dc.SetupZone, refs, images, events, k: int):
             getattr(s, feature) for s in looks
         ]
 
-    best = None
-    for feature in FEATURES:  # ties keep the earlier feature, as in setup
-        rule = dc._choose(values(feature, ref_open, opened), values(feature, ref_closed, closed))
-        if rule and rule[2] >= dc.MIN_MARGIN and (best is None or rule[2] > best[3]):
-            best = (feature, *rule)
+    best = dc.choose_feature(  # chosen as setup chooses
+        {f: (values(f, ref_open, opened), values(f, ref_closed, closed)) for f in FEATURES}
+    )
     if best is None:
         return None
     return (*best, baseline, len(opened) + len(closed))

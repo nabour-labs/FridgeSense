@@ -18,7 +18,9 @@ WHOLE = {"x": 0, "y": 0, "width": 1, "height": 1}
 
 
 def add(image, zone_id, status, device=D1, at=T0):
-    return dc.add_reference(FridgeTable(), ACCOUNT, device, image, zone_id, status, now_ms=at)
+    return dc.add_reference(
+        FridgeTable(), ACCOUNT, device, image, zone_id, status, now_ms=at, source="clip"
+    )
 
 
 def run(device=D1, at=T0 + 60_000):
@@ -34,7 +36,7 @@ def plain(level: int) -> bytes:
 
 
 def zone(box=LEFT, name="Doors", device=D1, at=T0):
-    return dc.add_zone(FridgeTable(), ACCOUNT, device, name, box, now_ms=at)
+    return dc.add_zone(FridgeTable(), ACCOUNT, device, name, box, now_ms=at, source="clip")
 
 
 def zones(device=D1):
@@ -564,6 +566,89 @@ def test_failed_run_keeps_the_anchor(aws):
     assert alignment.load_alignment(FridgeTable(), ACCOUNT, D1).dx == pytest.approx(0.02)
 
 
+# --- privacy-mask-change: the visible map stored with the anchor ---
+
+
+def black_sides() -> bytes:
+    """A closed reference black in its left 30% and right 35%, like a privacy mask."""
+    return color_jpeg(
+        (128, 128, 128),
+        [
+            ((0.0, 0.0, 0.3, 1.0), (0, 0, 0)),
+            ((0.65, 0.0, 0.35, 1.0), (0, 0, 0)),
+            ((0.4, 0.3, 0.1, 0.3), (230, 230, 230)),
+        ],
+        size=(1280, 720),
+    )
+
+
+def visible_of(image: bytes) -> bytes:
+    return alignment.visible_to_bytes(alignment.visible_map(image))
+
+
+# Map from the newest closed reference
+def test_setup_stores_the_visible_map(aws):
+    z = zone()
+    add(checker_halves(30), z.sk, "closed", at=T0)
+    add(lit(), z.sk, "open", at=T0 + 1)
+    add(black_sides(), z.sk, "closed", at=T0 + 2)
+    run()
+    assert dc.load_anchor_visible(FridgeTable(), ACCOUNT, D1) == visible_of(black_sides())
+
+
+def test_failed_run_keeps_the_visible_map(aws):
+    z = zone()
+    add(lit(), z.sk, "open")
+    add(black_sides(), z.sk, "closed", at=T0 + 1)
+    run()
+    other = zone({"x": 0.6, "y": 0, "width": 0.4, "height": 1}, "Drawer", at=T0 + 2)
+    add(plain(128), other.sk, "closed", at=T0 + 3)
+    assert_fails("Drawer needs an open and a closed reference")
+    assert dc.load_anchor_visible(FridgeTable(), ACCOUNT, D1) == visible_of(black_sides())
+
+
+def drop_visible_map():
+    """The stored setup as it was before visible maps existed."""
+    from fridgesense.table import account_pk
+
+    t = FridgeTable()
+    item = t.get(account_pk(ACCOUNT), dc.setup_sk(D1))
+    item.pop("anchor_visible")
+    t.put(item)
+
+
+# Setup stored before visible maps
+def test_setup_stored_before_visible_maps(aws):
+    z = zone()
+    add(lit(), z.sk, "open")
+    add(black_sides(), z.sk, "closed", at=T0 + 1)
+    run()
+    drop_visible_map()
+    assert dc.load_anchor_visible(FridgeTable(), ACCOUNT, D1) == visible_of(black_sides())
+    from fridgesense.table import account_pk
+
+    stored = FridgeTable().get(account_pk(ACCOUNT), dc.setup_sk(D1))
+    assert bytes(stored["anchor_visible"]) == visible_of(black_sides())
+
+
+# No closed reference left for the backfill
+def test_no_closed_reference_left_for_the_backfill(aws):
+    z = zone()
+    add(lit(), z.sk, "open")
+    closed = add(black_sides(), z.sk, "closed", at=T0 + 1)
+    run()
+    drop_visible_map()
+    dc.delete_reference(FridgeTable(), ACCOUNT, D1, closed.sk, now_ms=T0 + 5)
+    assert dc.load_anchor_visible(FridgeTable(), ACCOUNT, D1) is None
+    from fridgesense.table import account_pk
+
+    assert "anchor_visible" not in FridgeTable().get(account_pk(ACCOUNT), dc.setup_sk(D1))
+
+
+def test_no_visible_map_before_setup(aws):
+    assert dc.load_anchor_visible(FridgeTable(), ACCOUNT, D1) is None
+
+
 # Setup run clears moved
 def test_setup_run_clears_moved(aws):
     z = zone()
@@ -576,3 +661,82 @@ def test_setup_run_clears_moved(aws):
     s = alignment.load_alignment(FridgeTable(), ACCOUNT, D1)
     assert (s.dx, s.dy, s.failures, s.moved, s.moved_at_ms) == (0, 0, 0, False, None)
     assert s.last_moved_at_ms == T0 + 7
+
+
+# Fridge light measured strictly in setup
+DAYLIT_STEEL = (110, 150, 200)
+
+
+def _blue_setup_scores(extra: bytes) -> tuple[float, float]:
+    """Scores of a lit open reference and `extra` (closed) under a `blue` setup zone."""
+    z = zone()
+    opened = add(lit(), z.sk, "open")
+    add(plain(128), z.sk, "closed", at=T0 + 1)
+    setup = run()
+    assert setup.zones[0].feature == "blue"
+    other = add(extra, z.sk, "closed", at=T0 + 120_000)
+    scores = dc.reference_scores(dc.list_references(FridgeTable(), ACCOUNT, D1), setup)
+    return scores[opened.sk], scores[other.sk]
+
+
+# Daylit steel is not fridge light
+def test_daylit_steel_is_not_fridge_light(aws):
+    daylit = color_jpeg(GREY, [((0.0, 0.0, 0.15, 1.0), DAYLIT_STEEL)], size=(200, 100))
+    _, score = _blue_setup_scores(daylit)
+    assert score == pytest.approx(0.0, abs=0.002)
+
+
+# Fridge interior is fridge light
+def test_fridge_interior_is_fridge_light(aws):
+    opened, _ = _blue_setup_scores(plain(128))
+    assert opened == pytest.approx(0.1, abs=0.005)
+
+
+# Fridge light preferred in setup: values per feature as (open values, closed values)
+def _values(**margins: float) -> dict[str, tuple[list[float], list[float]]]:
+    """Each feature separates "above" by its margin, from closed 0.1; others overlap."""
+    out = {f: ([0.5], [0.5]) for f in ("blue", "color", "change", "brightness")}
+    out.update({f: ([0.1 + m], [0.1]) for f, m in margins.items()})
+    return out
+
+
+# Blue wins over a larger change margin
+def test_blue_wins_over_a_larger_change_margin():
+    feature, direction, threshold, margin = dc.choose_feature(_values(blue=0.04, change=0.09))
+    assert (feature, direction) == ("blue", "above")
+    assert threshold == pytest.approx(0.12)
+    assert margin == pytest.approx(0.04)
+
+
+# Blue too close to call
+def test_blue_too_close_to_call():
+    feature, *_ = dc.choose_feature(_values(blue=0.005, change=0.09))
+    assert feature == "change"
+
+
+# Drawer without fridge light
+def test_drawer_without_fridge_light():
+    values = _values(change=0.2)
+    values["blue"] = ([0.0], [0.0])
+    feature, _, _, margin = dc.choose_feature(values)
+    assert feature == "change"
+    assert margin == pytest.approx(0.2)
+
+
+def test_largest_margin_without_blue_ties_in_order():
+    assert dc.choose_feature(_values(color=0.1, change=0.1, brightness=0.1))[0] == "color"
+    assert dc.choose_feature(_values(change=0.1, brightness=0.3))[0] == "brightness"
+
+
+def test_nothing_separates():
+    assert dc.choose_feature(_values()) is None
+
+
+def test_blue_wins_in_a_setup_run(aws):
+    """A lit open reference against a closed one whose daylit steel moves `color` further."""
+    z = zone()
+    add(lit(), z.sk, "open")
+    daylit = color_jpeg(GREY, [((0.0, 0.0, 0.3, 1.0), DAYLIT_STEEL)], size=(200, 100))
+    add(daylit, z.sk, "closed", at=T0 + 1)
+    [only] = run().zones
+    assert only.feature == "blue"

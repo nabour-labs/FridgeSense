@@ -1,0 +1,24 @@
+{
+  "added": [
+    {
+      "item": "bottle",
+      "images": [
+        1
+      ],
+      "quantity": 1,
+      "category": "beverage",
+      "confidence": 0.9
+    }
+  ],
+  "removed": [
+    {
+      "item": "bottle",
+      "images": [
+        1
+      ],
+      "quantity": 1,
+      "category": "beverage",
+      "confidence": 0.9
+    }
+  ]
+}

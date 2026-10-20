@@ -70,7 +70,7 @@ export function Camera({ createPeer }: { createPeer?: () => RTCPeerConnection | 
         <Overview info={data} />
         <Details info={data} />
         <History info={data} />
-        {canEdit(role) && <Decoder createPeer={createPeer} />}
+        {isAdmin(role) && <Decoder createPeer={createPeer} />}
       </>
     );
   }
@@ -78,7 +78,7 @@ export function Camera({ createPeer }: { createPeer?: () => RTCPeerConnection | 
   return (
     <div className="space-y-5">
       {camera}
-      <BlurFaces />
+      {isAdmin(role) && <BlurFaces />}
     </div>
   );
 }
@@ -140,9 +140,9 @@ function Monitoring({ state: loaded }: { state: MonitoringState }) {
   );
 }
 
-/** The owner's face-blur switch; everyone else sees it read-only. On until the API says otherwise. */
+/** The owner's face-blur switch; hidden from everyone else. On until the API says otherwise. */
 function BlurFaces() {
-  const { api, role, report } = useApp();
+  const { api, report } = useApp();
   const [enabled, setEnabled] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -175,7 +175,7 @@ function BlurFaces() {
     ).finally(() => setSaving(false));
   };
 
-  const canChange = isAdmin(role) && loaded && !saving;
+  const canChange = loaded && !saving;
   return (
     <section aria-labelledby="camera-blur" className="space-y-2">
       <h3 id="camera-blur" className={HEADING}>

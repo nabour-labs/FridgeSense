@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Camera tab
-The Config "Camera" tab SHALL show the camera's product image and name, an "Online" or "Offline" badge (or "Unknown" when `online` is null), the manufacturer, video codecs, aspect ratio, max and supported resolutions (as "1080p"), image enhancements with On/Off, motion detection, end-to-end encryption and location. Values Ring did not report SHALL show as "Not reported". The camera details SHALL be read-only for every role. The tab also holds the "Blur faces" switch (see `face-blur-setting`), which only the owner can change.
+The Config "Camera" tab SHALL show the camera's product image and name, an "Online" or "Offline" badge (or "Unknown" when `online` is null), the manufacturer, video codecs, aspect ratio, max and supported resolutions (as "1080p"), image enhancements with On/Off, motion detection, end-to-end encryption and location. Values Ring did not report SHALL show as "Not reported". The camera details SHALL be read-only for every role. The tab also holds the "Blur faces" switch (see `face-blur-setting`), which only the owner sees.
 
 #### Scenario: Camera tab shows details
 - **WHEN** `GET /api/camera` answers with the details from the fixture
