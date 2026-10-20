@@ -4,7 +4,7 @@ import type { DoorEvent } from "../api/types";
 import { titleCase } from "../format";
 import { deviceTimeZone } from "../stats";
 import { useLoad } from "../useLoad";
-import { cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
+import { activityRows, cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const INVENTORY_MS = 10_000;
 const EVENTS_MS = 30_000;
@@ -16,8 +16,8 @@ const EVENT_DAYS = 28;
 /**
  * The kitchen TV: the camera's status, what is in the fridge, the latest door openings and when
  * the door gets opened, read-only and sized for 1920×1080 across a room. The only pictures are
- * the app icon and the openings' proof photos; nothing to select, no pointer, no key handling, so Back
- * reaches the Fire TV app.
+ * the app icon and the openings' stills and proof photos. Right and Left switch between the overview
+ * and the Activity page; no pointer, and Back reaches the Fire TV app.
  */
 export function TvDashboard() {
   const { api } = useApp();
@@ -34,6 +34,7 @@ export function TvDashboard() {
     CAMERA_MS,
   );
   const updated = useUpdatedAt(inventory.data, events.data);
+  const page = usePage();
   return (
     <section
       aria-label="TV dashboard"
@@ -55,16 +56,59 @@ export function TvDashboard() {
           {updated && <p className="text-2xl tabular-nums text-slate-400">Updated {updated}</p>}
         </div>
       </header>
-      <div className="grid min-h-0 flex-1 grid-cols-[1.4fr_1fr_1fr] gap-[2vw]">
-        <Panel title="In the fridge">
-          {inventory.data ? <Fridge items={inventory.data.items} /> : <Status failed={inventory.failed} />}
-        </Panel>
-        <Panel title="Recent changes">
-          {events.data ? <Recent events={events.data} /> : <Status failed={events.failed} />}
-        </Panel>
-        <Panel title="Opens">{events.data ? <Opens events={events.data} /> : <Status failed={events.failed} />}</Panel>
-      </div>
+      {page === "Overview" ? (
+        <div className="grid min-h-0 flex-1 grid-cols-[1.4fr_1fr_1fr] gap-[2vw]">
+          <Panel title="In the fridge">
+            {inventory.data ? <Fridge items={inventory.data.items} /> : <Status failed={inventory.failed} />}
+          </Panel>
+          <Panel title="Recent changes">
+            {events.data ? <Recent events={events.data} /> : <Status failed={events.failed} />}
+          </Panel>
+          <Panel title="Opens">{events.data ? <Opens events={events.data} /> : <Status failed={events.failed} />}</Panel>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <Panel title="Activity">{events.data ? <Activity events={events.data} /> : <Status failed={events.failed} />}</Panel>
+        </div>
+      )}
+      <PageDots page={page} />
     </section>
+  );
+}
+
+const PAGES = ["Overview", "Activity"] as const;
+type Page = (typeof PAGES)[number];
+
+/**
+ * The page on screen: the remote's Right and Left move between the two pages. Only those two keys
+ * are taken (default-prevented); everything else, Back (Escape) included, is left to the TV app.
+ */
+function usePage(): Page {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      setIndex((i) => Math.min(PAGES.length - 1, Math.max(0, i + step)));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return PAGES[index];
+}
+
+/** Which page is on screen, as text: there is nothing to select. */
+function PageDots({ page }: { page: Page }) {
+  return (
+    <nav aria-label="Pages" className="flex justify-center gap-6 text-xl">
+      {PAGES.map((p) => (
+        <span key={p} className={`flex items-center gap-2 ${p === page ? "font-semibold text-slate-100" : "text-slate-500"}`}>
+          <span aria-hidden>{p === page ? "●" : "○"}</span>
+          <span aria-current={p === page ? "page" : undefined}>{p}</span>
+        </span>
+      ))}
+    </nav>
   );
 }
 
@@ -148,6 +192,31 @@ function Recent({ events }: { events: DoorEvent[] }) {
             <div className="flex gap-2 pt-1">
               {r.proofs.map((src) => (
                 <Photo key={stillBase(src)} src={src} alt="" className="h-14 aspect-[4/3] rounded-lg" />
+              ))}
+            </div>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Activity({ events }: { events: DoorEvent[] }) {
+  const rows = activityRows(events, Date.now(), deviceTimeZone());
+  if (rows.length === 0) return <p className="text-3xl text-slate-400">No door openings this week</p>;
+  return (
+    // Two columns, filled top to bottom; rows that don't fit are cut off by the panel.
+    <ol className="columns-2 gap-[2vw]">
+      {rows.map((r) => (
+        <li key={r.id} className="mb-6 break-inside-avoid space-y-2">
+          <p className="text-xl font-semibold tabular-nums text-slate-400">{r.when}</p>
+          <p className="text-3xl font-semibold">
+            {r.state === "checking" ? "Checking…" : r.state === "none" ? "No changes" : r.labels.join(", ")}
+          </p>
+          {r.stills.length + r.proofs.length > 0 && (
+            <div className="flex gap-2">
+              {[...r.stills, ...r.proofs].map((src) => (
+                <Photo key={stillBase(src)} src={src} alt="" className="h-20 aspect-[4/3] rounded-lg" />
               ))}
             </div>
           )}

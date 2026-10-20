@@ -413,3 +413,134 @@ test("the icon and title show even when every load fails", async () => {
   expect(await screen.findByText("Camera: No Data")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "FridgeSense" }).closest("header")!.querySelector('img[src="/icon.svg"]')).not.toBeNull();
 });
+
+const pages = () => screen.getByRole("navigation", { name: "Pages" });
+const currentPage = () => within(pages()).getAllByText(/Overview|Activity/).find((el) => el.getAttribute("aria-current") === "page")?.textContent;
+const press = (key: string) => fireEvent.keyDown(window, { key });
+const OVERVIEW = ["In the fridge", "Recent changes", "Opens"];
+
+async function onActivity(overrides: Parameters<typeof renderTv>[0] = {}) {
+  const rendered = renderTv(overrides);
+  await within(await panel("Recent changes")).findByRole("listitem").catch(() => undefined);
+  act(() => void press("ArrowRight"));
+  return { ...rendered, activity: await panel("Activity") };
+}
+
+// Opens on the overview
+test("the dashboard opens on the overview", async () => {
+  renderTv();
+  for (const name of OVERVIEW) expect(await panel(name)).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Activity" })).not.toBeInTheDocument();
+  expect(currentPage()).toBe("Overview");
+});
+
+// Right shows Activity
+test("ArrowRight shows the Activity page and is default-prevented", async () => {
+  renderTv();
+  await panel("In the fridge");
+  let handled = true;
+  act(() => void (handled = press("ArrowRight")));
+  expect(handled).toBe(false);
+  expect(await panel("Activity")).toBeInTheDocument();
+  for (const name of OVERVIEW) expect(screen.queryByRole("region", { name })).not.toBeInTheDocument();
+  expect(currentPage()).toBe("Activity");
+  expect(screen.getByRole("heading", { name: "FridgeSense" })).toBeInTheDocument();
+});
+
+// Left goes back
+test("ArrowLeft goes back to the overview", async () => {
+  await onActivity();
+  let handled = true;
+  act(() => void (handled = press("ArrowLeft")));
+  expect(handled).toBe(false);
+  for (const name of OVERVIEW) expect(await panel(name)).toBeInTheDocument();
+  expect(currentPage()).toBe("Overview");
+});
+
+// Keys at the ends do nothing
+test("ArrowLeft on the overview and ArrowRight on Activity change nothing", async () => {
+  renderTv();
+  await panel("In the fridge");
+  act(() => void press("ArrowLeft"));
+  expect(currentPage()).toBe("Overview");
+  act(() => void press("ArrowRight"));
+  act(() => void press("ArrowRight"));
+  expect(currentPage()).toBe("Activity");
+});
+
+// No extra requests when paging
+test("paging makes no extra requests", async () => {
+  const { api } = await onActivity();
+  act(() => void press("ArrowLeft"));
+  await panel("In the fridge");
+  expect(api.inventory).toHaveBeenCalledTimes(1);
+  expect(api.events).toHaveBeenCalledTimes(1);
+  expect(api.camera).toHaveBeenCalledTimes(1);
+});
+
+// Opening with changes, stills and proof (on screen)
+test("the Activity page lists each opening with its stills and proof photos", async () => {
+  const { activity } = await onActivity({ events: vi.fn().mockResolvedValue({ events: [PROOF_EVENT, event(30), event(40)] }) });
+  const rows = within(activity).getAllByRole("listitem");
+  expect(rows).toHaveLength(3);
+  expect(rows[0]).toHaveTextContent(`Today · ${clockTime(PROOF_EVENT.opened_at, deviceTimeZone())} · 20 s`);
+  expect(rows[0]).toHaveTextContent("+ 2 milk, − eggs");
+  expect(proofImages(rows[0]).map((i) => i.getAttribute("src"))).toEqual([
+    "https://s3/1.jpg",
+    "https://s3/2.jpg",
+    "https://s3/3.jpg",
+    "https://s3/a.jpg",
+    "https://s3/c.jpg",
+  ]);
+  for (const img of proofImages(rows[0])) expect(img).toHaveAttribute("alt", "");
+  expect(rows[1]).toHaveTextContent("No changes");
+  expect(rows[2]).toHaveTextContent("No changes");
+});
+
+// Nothing this week (on screen)
+test("an empty week on the Activity page says so", async () => {
+  const { activity } = await onActivity({ events: vi.fn().mockResolvedValue({ events: [] }) });
+  expect(within(activity).getByText("No door openings this week")).toBeInTheDocument();
+});
+
+// Events fail (Activity)
+test("the Activity page shows No Data when events fail", async () => {
+  const { activity } = await onActivity({ events: vi.fn().mockRejectedValue(new ApiError(500)) });
+  expect(await within(activity).findByText("No Data")).toBeInTheDocument();
+});
+
+// Broken Activity still hidden
+test("an Activity still that fails to load is removed, and the row stays", async () => {
+  const { activity } = await onActivity({ events: vi.fn().mockResolvedValue({ events: [PROOF_EVENT] }) });
+  const row = within(activity).getByRole("listitem");
+  fireEvent.error(proofImages(row)[0]);
+  expect(proofImages(row).map((i) => i.getAttribute("src"))).toEqual(["https://s3/2.jpg", "https://s3/3.jpg", "https://s3/a.jpg", "https://s3/c.jpg"]);
+  expect(row).toHaveTextContent("+ 2 milk, − eggs");
+});
+
+// No clips or video (Activity)
+test("the Activity page shows no clip or video", async () => {
+  await onActivity();
+  const dashboard = screen.getByRole("region", { name: "TV dashboard" });
+  expect(dashboard.querySelectorAll("video")).toHaveLength(0);
+  expect(dashboard.innerHTML).not.toContain("clip.mp4");
+});
+
+// Only opening pictures and the icon shown (Activity)
+test("the only pictures on the Activity page are the icon, stills and proof photos", async () => {
+  await onActivity();
+  const dashboard = screen.getByRole("region", { name: "TV dashboard" });
+  const srcs = [...dashboard.querySelectorAll("img")].map((img) => img.getAttribute("src"));
+  expect(srcs.sort()).toEqual(["/icon.svg", "https://s3/proof-1.jpg", "https://s3/still-1.jpg"]);
+});
+
+// Back is left to the TV app (Activity)
+test("Escape on the Activity page is not handled and the page stays", async () => {
+  location.hash = "#tv";
+  await onActivity();
+  const notHandled = fireEvent.keyDown(window, { key: "Escape", keyCode: 27 });
+  expect(notHandled).toBe(true);
+  expect(location.hash).toBe("#tv");
+  expect(currentPage()).toBe("Activity");
+  location.hash = "";
+});

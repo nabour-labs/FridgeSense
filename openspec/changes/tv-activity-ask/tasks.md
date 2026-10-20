@@ -17,8 +17,8 @@
 
 - [x] 3.1 Write failing tests in `tv.test.ts` for `activityRows`, covering the scenarios "Opening with changes, stills and proof", "At most four stills", "Every opening has its own row", "Still being analyzed", "Older than a week left out" and "Nothing this week". Run them and see them fail because `activityRows` doesn't exist
 - [x] 3.2 Implement `activityRows` in `tv.ts`, sharing the proof selection with `recentRows`. Verify: the `tv.test.ts` tests are green and the existing `recentRows` tests are unchanged and green
-- [ ] 3.3 Write failing component tests for "Opens on the overview", "Right shows Activity", "Left goes back", "Keys at the ends do nothing", "No extra requests when paging", Activity "Events fail", "Broken Activity still hidden", and "No clips or video", "Only opening pictures and the icon shown" and "Back is left to the TV app" on both pages. Run them and see them fail
-- [ ] 3.4 Implement the page state, the `window` keydown listener, the page indicator and the Activity panel, using `Photo` for its pictures. Verify: `npm test` in `pwa/` is green
+- [x] 3.3 Write failing component tests for "Opens on the overview", "Right shows Activity", "Left goes back", "Keys at the ends do nothing", "No extra requests when paging", Activity "Events fail", "Broken Activity still hidden", and "No clips or video", "Only opening pictures and the icon shown" and "Back is left to the TV app" on both pages. Run them and see them fail
+- [x] 3.4 Implement the page state, the `window` keydown listener, the page indicator and the Activity panel, using `Photo` for its pictures. Verify: `npm test` in `pwa/` is green
 
 ## 4. Ask by voice
 
