@@ -197,7 +197,7 @@ For each door opening, the system SHALL save one door event under the account wi
 - **THEN** only the first run analyzes it; the second ends with `skipped_duplicate` and makes no analysis call
 
 ### Requirement: Faces blurred before storage
-Before a still is stored, the system SHALL send it (after cropping, if a crop box is configured) to face detection and SHALL blur every face reported, whatever its confidence. Each face box (fractions of the image sent to detection) SHALL be enlarged by 30% about its centre, clipped to the image, and made unrecognizable. With no crop box and no faces, the still SHALL be stored byte for byte as downloaded.
+While face blurring is on (the default, see `face-blur-setting`), before a still is stored the system SHALL send it (after cropping, if a crop box is configured) to face detection and SHALL blur every face reported, whatever its confidence. Each face box (fractions of the image sent to detection) SHALL be enlarged by 30% about its centre, clipped to the image, and made unrecognizable. With no crop box and no faces, the still SHALL be stored byte for byte as downloaded. While face blurring is off, face detection SHALL NOT be called. The still SHALL be stored cropped (if a crop box is configured) and otherwise as downloaded.
 
 #### Scenario: One face found
 - **WHEN** a 320×180 still with a black-and-white checkerboard of 4 px squares is downloaded, and face detection reports one face with `BoundingBox = {"Left": 0.40, "Top": 0.20, "Width": 0.20, "Height": 0.30}` and `Confidence = 99.1`
@@ -223,8 +223,16 @@ Before a still is stored, the system SHALL send it (after cropping, if a crop bo
 - **WHEN** a still is downloaded and face detection reports one face
 - **THEN** the detection request carries the JPEG bytes inline (not an S3 reference): the downloaded bytes with no crop box, or the cropped JPEG with one. The only object written for that still is the blurred JPEG with `ContentType = "image/jpeg"`
 
+#### Scenario: Blurring off, no crop box
+- **WHEN** face blurring is off, no crop box is configured, and a door opening's 4 stills are downloaded
+- **THEN** face detection is never called, each `still-<n>.jpg` is byte for byte the downloaded still, and no `face_detect_cost` line is logged
+
+#### Scenario: Blurring off, with a crop box
+- **WHEN** face blurring is off and a crop box is configured
+- **THEN** each stored still is the cropped JPEG, and face detection is never called
+
 ### Requirement: Fail closed when face detection fails
-If face detection fails for a still (any service error, throttling, timeout, or an image it rejects), the system SHALL drop that still: nothing is stored for it, it does not count toward the stills downloaded, and a `face_detect_failed` warning is logged with the still number and the error code. An unblurred still SHALL never be stored as an event still or sent to analysis. The only unblurred copies are the owner-only debug trace's `debug/raw-<n>.jpg`. They are written only while `DEBUG_TRACES` is on and expire with the bucket's 7-day lifecycle.
+While face blurring is on, if face detection fails for a still (any service error, throttling, timeout, or an image it rejects), the system SHALL drop that still: nothing is stored for it as an event still, it does not count toward the stills downloaded, and a `face_detect_failed` warning is logged with the still number and the error code. While face blurring is on, an unblurred still SHALL never be stored or sent to analysis. The only copy that may be stored is the owner-only debug trace's `debug/raw-<n>.jpg`, a blurred thumbnail at most 160 px on its longest side, written only while `DEBUG_TRACES` is on and expiring with the bucket's 7-day lifecycle.
 
 #### Scenario: Detection fails for one still
 - **WHEN** face detection answers `ThrottlingException` for still 2 and reports no faces for stills 1, 3 and 4
@@ -239,8 +247,8 @@ If face detection fails for a still (any service error, throttling, timeout, or 
 - **THEN** that still is dropped the same way as for any other detection error
 
 #### Scenario: Debug copy is not an event still
-- **WHEN** `DEBUG_TRACES` is on and face detection fails for still 2
-- **THEN** `debug/raw-2.jpg` may exist, but no `still-<n>.jpg` holds still 2's bytes and `still_keys` does not list it
+- **WHEN** face blurring and `DEBUG_TRACES` are on and face detection fails for still 2
+- **THEN** `debug/raw-2.jpg` may exist as a blurred thumbnail at most 160 px on its longest side, no stored object holds still 2's downloaded bytes, and `still_keys` does not list it
 
 ### Requirement: Face detection cost logged per still
 For every successful face-detection call, the system SHALL log a `face_detect_cost` line with `account_id`, `device_id`, `still` (1–4), `faces` (count found) and `usd`. The price per image SHALL default to 0.001 USD and SHALL be overridable through configuration.
@@ -273,19 +281,23 @@ Once a door event has been recorded with `status = "analyzing"`, the workflow ru
 - **THEN** the run moves to a `Fail` state named `AnalysisFailed` with error `AnalysisFailed`, so the execution's status is `FAILED`
 
 ### Requirement: Only blurred stills are analyzed
-The item analysis SHALL use only the stored (blurred and, if configured, cropped) stills. No unblurred still SHALL be sent to the analysis model or stored as an event still. The door check reads the downloaded, uncropped stills in memory. Unblurred copies are kept only as the owner-only debug trace's raw stills.
+The item analysis SHALL use only the stored stills: blurred and, if configured, cropped while face blurring is on; cropped only while it is off. No still SHALL be sent to the analysis model other than the stored object. The door check reads the downloaded, uncropped stills in memory. While face blurring is on, the owner-only debug trace keeps only blurred thumbnails of them.
 
 #### Scenario: Analysis receives blurred bytes
 - **WHEN** a door opening's still 1 had a face blurred and the event goes on to analysis
 - **THEN** the image bytes for still 1 in the analysis request equal the stored blurred object, not the downloaded bytes or `debug/raw-<n>.jpg`
 
 #### Scenario: Door check runs on downloaded stills
-- **WHEN** a downloaded still passes the door check and contains a face
-- **THEN** the event counts as a door opening, face detection is called only after the door check, and the only stored event still is the blurred one
+- **WHEN** face blurring is on and a downloaded still passes the door check and contains a face
+- **THEN** the event counts as a door opening, face detection is called only after the door check, and the only full-size stored still is the blurred one
 
 #### Scenario: No debug stills when tracing is off
-- **WHEN** `DEBUG_TRACES=false` and a downloaded still contains a face
-- **THEN** no unblurred copy of it is stored anywhere
+- **WHEN** face blurring is on, `DEBUG_TRACES=false` and a downloaded still contains a face
+- **THEN** no copy of it is stored anywhere except its blurred event still
+
+#### Scenario: Analysis while blurring is off
+- **WHEN** face blurring is off and a door opening goes on to analysis
+- **THEN** the image bytes for each still in the analysis request equal the stored `still-<n>.jpg`
 
 ### Requirement: Stills cropped to the visible area
 When `STILL_CROP` is set (fractions `x, y, width, height` of the downloaded still), the system SHALL crop each still of a door opening to that box and re-encode it as JPEG before face detection, so the stored still and the analysis image are the crop. When `STILL_CROP` is unset or empty, stills SHALL NOT be cropped. Stills of events that fail the door check SHALL never be cropped or stored.
