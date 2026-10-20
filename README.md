@@ -36,7 +36,7 @@
 
 - [How it works](#how-it-works)
 - [Tech stack](#tech-stack)
-- [Try it (judges)](#try-it-judges)
+- [Try it](#try-it)
 - [Setup: deploy and link a Ring camera](#setup-deploy-and-link-a-ring-camera)
 - [Features](#features)
 - [Costs](#costs)
@@ -106,7 +106,7 @@ Built for the Ring and Alexa+ tracks and the AWS Builder challenge. Everything r
 
 Hackathon notes: [product feedback](docs/product-feedback.md) and [friction log](docs/friction-log.md).
 
-## Try it (judges)
+## Try it
 
 > **TODO before submitting:** replace the two placeholders below after `cdk deploy` and after setting the demo passcode (see [Demo access](#demo-access)).
 
@@ -451,8 +451,6 @@ set -a; source .env; set +a; aws logs tail /fridgesense/clip-blur --since 24h --
 ```
 
 ## Development
-
-The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec) and built test-first. See [CLAUDE.md](CLAUDE.md) for the workflow.
 
 ### Layout
 
