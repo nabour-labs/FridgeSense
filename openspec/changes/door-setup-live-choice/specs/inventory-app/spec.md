@@ -35,6 +35,10 @@ In Open/close detection, "Add zone", "Edit zone" and "Add reference" SHALL open 
 - **WHEN** the owner edits zone "Doors", taps "Recent clip", uses a frame, draws a box and taps "Save"
 - **THEN** `PATCH /api/door-calibration/zones/{id}` is sent with the box and `source = "clip"`
 
+#### Scenario: Rename keeps the source
+- **WHEN** the owner edits zone "Doors", changes only its name to "Fridge doors" and taps "Save"
+- **THEN** `PATCH /api/door-calibration/zones/{id}` is sent with `{"name": "Fridge doors"}` only, so the zone keeps its box and `source`
+
 #### Scenario: Picker cancelled
 - **WHEN** the owner taps "Recent clip" and then "Cancel" in the picker
 - **THEN** the sheet stays open with the live snapshot, and no request is sent

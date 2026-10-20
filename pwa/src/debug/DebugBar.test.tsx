@@ -140,17 +140,16 @@ it("Switch off: Fridge area takes its snapshot from a live view", async () => {
   expect(api.cameraSnapshot).not.toHaveBeenCalled();
 });
 
-// Open/close detection takes no live frame
-it("Switch off: Open/close detection opens the recent-clip picker, not a live view", async () => {
-  vi.stubGlobal("RTCPeerConnection", StubPeer);
+// Open/close detection takes a live frame
+it("Switch off: Open/close detection opens on a live snapshot", async () => {
   signedIn();
   location.hash = "#config/doors";
-  const api = fakeApi({ camera: vi.fn().mockResolvedValue(ONLINE), events: vi.fn().mockResolvedValue({ events: [] }) });
+  const api = fakeApi({ camera: vi.fn().mockResolvedValue(ONLINE), cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT) });
   render(<App api={api} />);
   await userEvent.click(await screen.findByRole("button", { name: "Add zone" }));
-  expect(await screen.findByRole("dialog", { name: "Snapshot from a recent clip" })).toBeInTheDocument();
-  expect(api.startLive).not.toHaveBeenCalled();
-  expect(api.cameraSnapshot).not.toHaveBeenCalled();
+  expect(await screen.findByRole("img", { name: "Snapshot to box the zone on" })).toBeInTheDocument();
+  expect(api.cameraSnapshot).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument();
 });
 
 it("Switch off without WebRTC: the Ring still is used", async () => {
@@ -165,20 +164,26 @@ it("Switch off without WebRTC: the Ring still is used", async () => {
   expect(api.cameraSnapshot).toHaveBeenCalledTimes(1);
 });
 
-it("Cancelling the door sheet's clip picker sends no frame and opens no live view", async () => {
-  vi.stubGlobal("RTCPeerConnection", StubPeer);
+it("Cancelling the door sheet's clip picker keeps the sheet and sends no frame", async () => {
   signedIn();
   location.hash = "#config/doors";
-  const api = fakeApi({ camera: vi.fn().mockResolvedValue(ONLINE), events: vi.fn().mockResolvedValue({ events: [] }) });
+  const api = fakeApi({
+    camera: vi.fn().mockResolvedValue(ONLINE),
+    cameraSnapshot: vi.fn().mockResolvedValue(SNAPSHOT),
+    events: vi.fn().mockResolvedValue({ events: [] }),
+  });
   const errors = vi.spyOn(console, "error");
   render(<App api={api} />);
   await userEvent.click(await screen.findByRole("button", { name: "Add zone" }));
+  await screen.findByRole("img", { name: "Snapshot to box the zone on" });
+  await userEvent.click(screen.getByRole("button", { name: "Recent clip" }));
   const dialog = await screen.findByRole("dialog", { name: "Snapshot from a recent clip" });
   await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(api.startLive).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole("dialog", { name: "Add a door zone" })).toBeInTheDocument();
   expect(api.cameraFrame).not.toHaveBeenCalled();
-  expect(api.cameraSnapshot).not.toHaveBeenCalled();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(errors).not.toHaveBeenCalled();
 });
