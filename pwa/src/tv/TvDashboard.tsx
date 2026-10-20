@@ -1,9 +1,11 @@
+import { Mic, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useApp } from "../AppContext";
 import type { DoorEvent } from "../api/types";
 import { titleCase } from "../format";
 import { deviceTimeZone } from "../stats";
 import { useLoad } from "../useLoad";
+import { useVoiceQuestion, type VoiceState } from "./useVoiceQuestion";
 import { activityRows, cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const INVENTORY_MS = 10_000;
@@ -17,7 +19,8 @@ const EVENT_DAYS = 28;
  * The kitchen TV: the camera's status, what is in the fridge, the latest door openings and when
  * the door gets opened, read-only and sized for 1920×1080 across a room. The only pictures are
  * the app icon and the openings' stills and proof photos. Right and Left switch between the overview
- * and the Activity page; no pointer, and Back reaches the Fire TV app.
+ * and the Activity page, and the mic button asks a spoken question; no pointer, and Back reaches the
+ * Fire TV app.
  */
 export function TvDashboard() {
   const { api } = useApp();
@@ -35,6 +38,7 @@ export function TvDashboard() {
   );
   const updated = useUpdatedAt(inventory.data, events.data);
   const page = usePage();
+  const voice = useVoiceQuestion(api);
   return (
     <section
       aria-label="TV dashboard"
@@ -54,8 +58,10 @@ export function TvDashboard() {
         </div>
         <div className="flex items-center gap-6">
           {updated && <p className="text-2xl tabular-nums text-slate-400">Updated {updated}</p>}
+          {voice.available && <MicButton listening={voice.state.kind === "listening"} onPress={voice.press} />}
         </div>
       </header>
+      <AnswerBanner state={voice.state} />
       {page === "Overview" ? (
         <div className="grid min-h-0 flex-1 grid-cols-[1.4fr_1fr_1fr] gap-[2vw]">
           <Panel title="In the fridge">
@@ -73,6 +79,49 @@ export function TvDashboard() {
       )}
       <PageDots page={page} />
     </section>
+  );
+}
+
+/** The one control: the remote's select presses it, since it has focus from the start. */
+function MicButton({ listening, onPress }: { listening: boolean; onPress: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Ask a question"
+      aria-pressed={listening}
+      autoFocus
+      onClick={onPress}
+      className={`grid size-20 place-items-center rounded-full outline-none ring-brand-300 focus-visible:ring-4 ${
+        listening ? "bg-warm-600 text-white" : "bg-brand-500 text-slate-950"
+      }`}
+    >
+      {listening ? <Square aria-hidden className="size-9" /> : <Mic aria-hidden className="size-10" />}
+    </button>
+  );
+}
+
+/** The question and its answer (or what is going on), under the header on either page. */
+function AnswerBanner({ state }: { state: VoiceState }) {
+  const question = state.kind === "thinking" || state.kind === "answered" ? state.question : state.kind === "error" ? state.question : undefined;
+  const text =
+    state.kind === "listening"
+      ? "Listening…"
+      : state.kind === "thinking"
+        ? "Thinking…"
+        : state.kind === "answered"
+          ? state.answer
+          : state.kind === "error"
+            ? state.message
+            : null;
+  return (
+    <div role="status" aria-label="Answer" aria-live="polite">
+      {text && (
+        <div className="space-y-1 rounded-3xl bg-brand-950 px-[1.5vw] py-4 ring-1 ring-brand-800">
+          {question && <p className="text-2xl text-brand-200">{question}</p>}
+          <p className="text-3xl font-semibold">{text}</p>
+        </div>
+      )}
+    </div>
   );
 }
 

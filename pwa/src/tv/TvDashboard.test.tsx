@@ -204,29 +204,6 @@ test("the camera's image is not shown", async () => {
   expect(dashboard.innerHTML).not.toContain("ring/cam.png");
 });
 
-// No controls
-test("the dashboard has no buttons, links or inputs", async () => {
-  renderTv();
-  await within(await panel("Recent changes")).findByText(/2 min ago/);
-  await screen.findByText(/Fridge Cam/);
-  const dashboard = screen.getByRole("region", { name: "TV dashboard" });
-  expect(within(dashboard).queryAllByRole("button")).toHaveLength(0);
-  expect(within(dashboard).queryAllByRole("link")).toHaveLength(0);
-  expect(within(dashboard).queryAllByRole("textbox")).toHaveLength(0);
-});
-
-// Only three endpoints
-test("only the inventory, events and camera endpoints are called", async () => {
-  const { api } = renderTv();
-  await within(await panel("Recent changes")).findByText(/2 min ago/);
-  const called = Object.entries(api)
-    .filter(([, fn]) => vi.isMockFunction(fn) && fn.mock.calls.length > 0)
-    .map(([name]) => name)
-    .sort();
-  expect(called).toEqual(["camera", "events", "inventory"]);
-  expect(api.cameraSnapshot).not.toHaveBeenCalled();
-});
-
 // Back is left to the TV app
 test("Escape is not handled by the dashboard", async () => {
   location.hash = "#tv";
@@ -543,4 +520,233 @@ test("Escape on the Activity page is not handled and the page stays", async () =
   expect(location.hash).toBe("#tv");
   expect(currentPage()).toBe("Activity");
   location.hash = "";
+});
+
+// Voice questions: a fake recognizer, audio element and speech synthesis (jsdom has none of them).
+class FakeRecognition {
+  static last: FakeRecognition | null = null;
+  lang = "";
+  interimResults = true;
+  maxAlternatives = 0;
+  onresult: ((e: unknown) => void) | null = null;
+  onerror: ((e: unknown) => void) | null = null;
+  onend: (() => void) | null = null;
+  start = vi.fn();
+  stop = vi.fn(() => this.end());
+  abort = vi.fn();
+  constructor() {
+    FakeRecognition.last = this;
+  }
+  hear(transcript: string) {
+    act(() => {
+      const result = Object.assign([{ transcript, confidence: 0.9 }], { isFinal: true });
+      this.onresult?.({ resultIndex: 0, results: [result] });
+    });
+  }
+  end() {
+    act(() => this.onend?.());
+  }
+}
+
+class FakeAudio {
+  static instances: FakeAudio[] = [];
+  src = "";
+  play = vi.fn(() => Promise.resolve());
+  pause = vi.fn();
+  constructor() {
+    FakeAudio.instances.push(this);
+  }
+}
+
+class FakeUtterance {
+  constructor(readonly text: string) {}
+}
+
+const AUDIO = "SUQz";
+let synth: { speak: ReturnType<typeof vi.fn>; cancel: ReturnType<typeof vi.fn> };
+const spoken = () => synth.speak.mock.calls.map(([u]) => (u as FakeUtterance).text);
+const played = () => FakeAudio.instances.flatMap((a) => (a.play.mock.calls.length ? [a.src] : []));
+const askAnswer = (answer: string, audio: string | null = AUDIO) => ({ intent: "agent", answer, data: null, source: "agent", audio });
+const micButton = () => screen.getByRole("button", { name: "Ask a question" });
+const banner = () => screen.getByRole("status", { name: "Answer" });
+
+describe("asking by voice", () => {
+  beforeEach(() => {
+    FakeRecognition.last = null;
+    FakeAudio.instances = [];
+    synth = { speak: vi.fn(), cancel: vi.fn() };
+    vi.stubGlobal("SpeechRecognition", FakeRecognition);
+    vi.stubGlobal("Audio", FakeAudio);
+    vi.stubGlobal("speechSynthesis", synth);
+    vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function askByVoice(question: string, ask: unknown = vi.fn().mockResolvedValue(askAnswer("Yes, you have 2 milk."))) {
+    const rendered = renderTv({ ask });
+    await panel("In the fridge");
+    fireEvent.click(micButton());
+    const rec = FakeRecognition.last!;
+    rec.hear(question);
+    rec.end();
+    return { ...rendered, rec };
+  }
+
+  // No speech recognition
+  test("no mic button without speech recognition", async () => {
+    vi.stubGlobal("SpeechRecognition", undefined);
+    renderTv();
+    await within(await panel("Recent changes")).findByText(/2 min ago/);
+    expect(screen.queryByRole("button", { name: "Ask a question" })).not.toBeInTheDocument();
+  });
+
+  test("webkitSpeechRecognition also shows the mic button", async () => {
+    vi.stubGlobal("SpeechRecognition", undefined);
+    vi.stubGlobal("webkitSpeechRecognition", FakeRecognition);
+    renderTv();
+    expect(await screen.findByRole("button", { name: "Ask a question" })).toBeInTheDocument();
+  });
+
+  // Mic has focus
+  test("the mic button has focus when the dashboard shows", async () => {
+    renderTv();
+    await panel("In the fridge");
+    expect(micButton()).toHaveFocus();
+  });
+
+  // Listening shown
+  test("pressing the mic listens in US English for final results", async () => {
+    renderTv();
+    await panel("In the fridge");
+    fireEvent.click(micButton());
+    const rec = FakeRecognition.last!;
+    expect(rec.start).toHaveBeenCalledTimes(1);
+    expect(rec.lang).toBe("en-US");
+    expect(rec.interimResults).toBe(false);
+    expect(screen.getByText("Listening…")).toBeInTheDocument();
+  });
+
+  // Spoken question answered
+  test("a spoken question is asked, answered on screen and played", async () => {
+    const { api } = await askByVoice("  do I have milk ");
+    expect(await within(banner()).findByText("Yes, you have 2 milk.")).toBeInTheDocument();
+    expect(within(banner()).getByText("do I have milk")).toBeInTheDocument();
+    expect(api.ask).toHaveBeenCalledTimes(1);
+    expect(api.ask).toHaveBeenCalledWith("do I have milk");
+    expect(played()).toEqual([`data:audio/mpeg;base64,${AUDIO}`]);
+    expect(spoken()).toEqual([]);
+  });
+
+  test("Thinking… shows with the question while the answer is on its way", async () => {
+    await askByVoice("do I have milk", vi.fn().mockReturnValue(new Promise(() => {})));
+    expect(within(banner()).getByText("do I have milk")).toBeInTheDocument();
+    expect(within(banner()).getByText("Thinking…")).toBeInTheDocument();
+  });
+
+  // No audio in the answer
+  test("an answer without audio is read with speech synthesis", async () => {
+    await askByVoice("do I have milk", vi.fn().mockResolvedValue(askAnswer("Yes, you have 2 milk.", null)));
+    await within(banner()).findByText("Yes, you have 2 milk.");
+    expect(spoken()).toEqual(["Yes, you have 2 milk."]);
+  });
+
+  // Stopped while listening
+  test("pressing the mic again stops listening and asks nothing", async () => {
+    const { api } = renderTv();
+    await panel("In the fridge");
+    fireEvent.click(micButton());
+    fireEvent.click(micButton());
+    expect(FakeRecognition.last!.stop).toHaveBeenCalled();
+    expect(screen.queryByText("Listening…")).not.toBeInTheDocument();
+    expect(api.ask).not.toHaveBeenCalled();
+    expect(screen.queryByText("Didn't catch that. Try again.")).not.toBeInTheDocument();
+  });
+
+  // Nothing heard
+  test("listening that hears nothing says so and asks nothing", async () => {
+    const { api } = renderTv();
+    await panel("In the fridge");
+    fireEvent.click(micButton());
+    FakeRecognition.last!.end();
+    expect(within(banner()).getByText("Didn't catch that. Try again.")).toBeInTheDocument();
+    expect(api.ask).not.toHaveBeenCalled();
+  });
+
+  // Ask fails
+  test("a failed ask says so", async () => {
+    await askByVoice("do I have milk", vi.fn().mockRejectedValue(new ApiError(500)));
+    expect(await within(banner()).findByText("Couldn't get an answer. Try again.")).toBeInTheDocument();
+  });
+
+  // Banner goes away
+  test("the answer goes away after 20 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      renderTv({ ask: vi.fn().mockResolvedValue(askAnswer("Yes, you have 2 milk.")) });
+      await act(async () => void vi.advanceTimersByTime(0));
+      fireEvent.click(micButton());
+      FakeRecognition.last!.hear("do I have milk");
+      FakeRecognition.last!.end();
+      await act(async () => void vi.advanceTimersByTime(0));
+      expect(screen.getByText("Yes, you have 2 milk.")).toBeInTheDocument();
+      await act(async () => void vi.advanceTimersByTime(19_000));
+      expect(screen.getByText("Yes, you have 2 milk.")).toBeInTheDocument();
+      await act(async () => void vi.advanceTimersByTime(1_000));
+      expect(screen.queryByText("Yes, you have 2 milk.")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a new question replaces the last answer", async () => {
+    await askByVoice("do I have milk");
+    await within(banner()).findByText("Yes, you have 2 milk.");
+    fireEvent.click(micButton());
+    expect(screen.queryByText("Yes, you have 2 milk.")).not.toBeInTheDocument();
+    expect(screen.getByText("Listening…")).toBeInTheDocument();
+  });
+
+  // Answer on the Activity page
+  test("an answer arriving on the Activity page shows there", async () => {
+    let reply!: (r: unknown) => void;
+    renderTv({ ask: vi.fn().mockReturnValue(new Promise((r) => (reply = r))) });
+    await panel("In the fridge");
+    fireEvent.click(micButton());
+    FakeRecognition.last!.hear("do I have milk");
+    FakeRecognition.last!.end();
+    act(() => void press("ArrowRight"));
+    await act(async () => reply(askAnswer("Yes, you have 2 milk.")));
+    expect(within(banner()).getByText("Yes, you have 2 milk.")).toBeInTheDocument();
+    expect(await panel("Activity")).toBeInTheDocument();
+  });
+
+  // Only the mic button
+  test("the mic is the only control, on both pages", async () => {
+    renderTv();
+    await within(await panel("Recent changes")).findByText(/2 min ago/);
+    await screen.findByText(/Fridge Cam/);
+    const dashboard = screen.getByRole("region", { name: "TV dashboard" });
+    const check = () => {
+      expect(within(dashboard).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Ask a question"]);
+      expect(within(dashboard).queryAllByRole("link")).toHaveLength(0);
+      expect(within(dashboard).queryAllByRole("textbox")).toHaveLength(0);
+    };
+    check();
+    act(() => void press("ArrowRight"));
+    await panel("Activity");
+    check();
+  });
+
+  // Only the listed endpoints
+  test("without a question only inventory, events and camera are called", async () => {
+    const { api } = renderTv();
+    await within(await panel("Recent changes")).findByText(/2 min ago/);
+    const called = Object.entries(api)
+      .filter(([, fn]) => vi.isMockFunction(fn) && fn.mock.calls.length > 0)
+      .map(([name]) => name)
+      .sort();
+    expect(called).toEqual(["camera", "events", "inventory"]);
+    expect(api.cameraSnapshot).not.toHaveBeenCalled();
+    expect(api.ask).not.toHaveBeenCalled();
+  });
 });
