@@ -110,10 +110,8 @@ When the browser has speech recognition (`SpeechRecognition` or `webkitSpeechRec
 - **WHEN** an answer arrives while the Activity page is shown
 - **THEN** the banner is shown and the Activity page stays on screen
 
-## MODIFIED Requirements
-
-### Requirement: Nothing private or interactive on the TV dashboard
-The TV dashboard SHALL show no clips, video, live view, reference images, camera snapshots or the camera's product image; the only pictures it SHALL show are the app icon and the door-opening stills and proof photos from `GET /api/events`. Its only control SHALL be the "Ask a question" button; it SHALL have no links or inputs. It SHALL request only `GET /api/inventory`, `GET /api/events` and `GET /api/camera`, plus `POST /api/ask` after a question has been heard, and SHALL NOT handle the Back (Escape) key, so the Fire TV app can close on Back.
+### Requirement: Only opening pictures on the TV dashboard
+The TV dashboard SHALL show no clips, video, live view, reference images, camera snapshots or the camera's product image, on either page; the only pictures it SHALL show are the app icon and the door-opening stills and proof photos from `GET /api/events`.
 
 #### Scenario: No clips or video
 - **WHEN** an opening in the list has a `clip` link, on either page
@@ -127,6 +125,9 @@ The TV dashboard SHALL show no clips, video, live view, reference images, camera
 - **WHEN** `GET /api/camera` returns an `image_url`
 - **THEN** the TV dashboard contains no `img` element pointing at it
 
+### Requirement: One control and few requests on the TV dashboard
+The TV dashboard's only control SHALL be the "Ask a question" button; it SHALL have no links or inputs. It SHALL request only `GET /api/inventory`, `GET /api/events` and `GET /api/camera`, plus `POST /api/ask` after a question has been heard, and SHALL NOT handle the Back (Escape) key, so the Fire TV app can close on Back.
+
 #### Scenario: Only the mic button
 - **WHEN** the TV dashboard is shown with items, openings with photos, camera details and speech recognition available, on either page
 - **THEN** its only button is "Ask a question", and it contains no link or input
@@ -139,7 +140,7 @@ The TV dashboard SHALL show no clips, video, live view, reference images, camera
 - **WHEN** the Escape key is pressed on either page
 - **THEN** the event is not default-prevented, the hash stays `#tv` and the page on screen does not change
 
-### Requirement: Photos load quietly
+### Requirement: Pictures load quietly
 A photo on the TV dashboard (a proof photo or an Activity still) that fails to load SHALL be removed instead of showing a broken image, without affecting the rest of its row. When an events refresh returns a new link for the same picture (same address without its query string) that is already shown, the TV dashboard SHALL keep showing it with its current link, so it is not downloaded again.
 
 #### Scenario: Broken link hidden
@@ -155,6 +156,14 @@ A photo on the TV dashboard (a proof photo or an Activity still) that fails to l
 - **THEN** its `img` `src` is still "https://s3/a.jpg?X-Amz-Signature=1"
 
 ## REMOVED Requirements
+
+### Requirement: Nothing private on the TV dashboard
+**Reason**: Its "No controls" and "Only three endpoints" scenarios no longer hold once the mic button and `POST /api/ask` exist, and a MODIFIED block can't drop scenarios.
+**Migration**: Replaced by "Only opening pictures on the TV dashboard" (pictures) and "One control and few requests on the TV dashboard" (controls, requests, Back) in this change.
+
+### Requirement: Photos load quietly
+**Reason**: Its "Header still fails" and "New picture replaces the old" scenarios were about the removed latest still, and a MODIFIED block can't drop scenarios.
+**Migration**: Replaced by "Pictures load quietly" in this change, which also covers Activity stills.
 
 ### Requirement: Latest still in the header
 **Reason**: Jayson asked for it to go (2026-10-20); the proof photos and the new Activity page show the openings' pictures, and the header needs the room for the icon and the mic button.

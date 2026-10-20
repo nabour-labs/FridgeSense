@@ -21,7 +21,7 @@ None.
 
 ### Modified Capabilities
 
-- `tv-dashboard`: remove the header's latest still; add the title icon, the Activity page with remote paging, and voice questions; relax "Nothing private or interactive on the TV dashboard" for the mic button and `POST /api/ask`; drop the latest still from "Photos load quietly".
+- `tv-dashboard`: remove the header's latest still; add the title icon, the Activity page with remote paging, and voice questions; replace "Nothing private on the TV dashboard" with two requirements (pictures; one control and its request), so the mic button and `POST /api/ask` are allowed; replace "Photos load quietly" with "Pictures load quietly", without the latest still and with Activity stills. OpenSpec can't drop scenarios from a MODIFIED requirement, so these are removed and re-added under new names.
 - `firetv-app`: the app declares a launcher icon that is the PWA's icon.
 
 ## Hackathon tracks

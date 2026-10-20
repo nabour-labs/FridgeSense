@@ -2,7 +2,7 @@
 
 ## 0. Spec base
 
-- [ ] 0.1 With Jayson's OK on the 2026-10-20 Vega screenshot, tick `tv-dashboard-more` 3.1 and `tv-proof-photos` 4.2 (and its 0.1). Add a friction-log entry: the Vega remote pointer still shows over the dashboard despite `cursor: none`. Archive `tv-dashboard-more`, then `tv-proof-photos`. Verify: `openspec validate tv-activity-ask` passes, and `openspec/specs/tv-dashboard/spec.md` has "Latest still in the header" and "Photos load quietly"
+- [x] 0.1 With Jayson's OK on the 2026-10-20 Vega screenshot, tick `tv-dashboard-more` 3.1 and `tv-proof-photos` 4.2 (and its 0.1). Add a friction-log entry: the Vega remote pointer still shows over the dashboard despite `cursor: none`. Archive `tv-dashboard-more`, then `tv-proof-photos`. Verify: `openspec validate tv-activity-ask` passes, and `openspec/specs/tv-dashboard/spec.md` has "Latest still in the header" and "Photos load quietly". (`tv-proof-photos` had to re-add its privacy requirement as "Nothing private on the TV dashboard": a MODIFIED block can't drop a scenario.)
 
 ## 1. Header: remove the latest still, add the icon
 
@@ -17,12 +17,12 @@
 
 - [ ] 3.1 Write failing tests in `tv.test.ts` for `activityRows`, covering the scenarios "Opening with changes, stills and proof", "At most four stills", "Every opening has its own row", "Still being analyzed", "Older than a week left out" and "Nothing this week". Run them and see them fail because `activityRows` doesn't exist
 - [ ] 3.2 Implement `activityRows` in `tv.ts`, sharing the proof selection with `recentRows`. Verify: the `tv.test.ts` tests are green and the existing `recentRows` tests are unchanged and green
-- [ ] 3.3 Write failing component tests for "Opens on the overview", "Right shows Activity", "Left goes back", "Keys at the ends do nothing", "No extra requests when paging", Activity "Events fail", "Broken Activity still hidden", and the modified "No clips or video", "Only opening pictures and the icon shown" and "Back is left to the TV app" on both pages. Run them and see them fail
+- [ ] 3.3 Write failing component tests for "Opens on the overview", "Right shows Activity", "Left goes back", "Keys at the ends do nothing", "No extra requests when paging", Activity "Events fail", "Broken Activity still hidden", and "No clips or video", "Only opening pictures and the icon shown" and "Back is left to the TV app" on both pages. Run them and see them fail
 - [ ] 3.4 Implement the page state, the `window` keydown listener, the page indicator and the Activity panel, using `Photo` for its pictures. Verify: `npm test` in `pwa/` is green
 
 ## 4. Ask by voice
 
-- [ ] 4.1 Write failing component tests with a fake `window.SpeechRecognition` and a fake `api.ask`. Cover "No speech recognition", "Mic has focus", "Listening shown", "Spoken question answered" (with `HTMLMediaElement.prototype.play` stubbed), "No audio in the answer" (with `speechSynthesis` stubbed), "Stopped while listening", "Nothing heard", "Ask fails", "Banner goes away" (fake timers), "Answer on the Activity page", plus the modified "Only the mic button" and "Only the listed endpoints". Run them and see them fail
+- [ ] 4.1 Write failing component tests with a fake `window.SpeechRecognition` and a fake `api.ask`. Cover "No speech recognition", "Mic has focus", "Listening shown", "Spoken question answered" (with `HTMLMediaElement.prototype.play` stubbed), "No audio in the answer" (with `speechSynthesis` stubbed), "Stopped while listening", "Nothing heard", "Ask fails", "Banner goes away" (fake timers), "Answer on the Activity page", plus "Only the mic button" and "Only the listed endpoints". Run them and see them fail
 - [ ] 4.2 Implement `useVoiceQuestion` and the mic button and answer banner in the header, using `voice.ts`. Verify: `npm test` in `pwa/` is green
 - [ ] 4.3 Check the layout in the browser preview at 1920×1080 with the mock API: the overview and Activity pages, the banner, and the mic focus ring. Attach a screenshot to the task report
 

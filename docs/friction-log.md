@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-20 · Fire TV (Vega SDK) · WebView draws the remote's pointer even with CSS `cursor: none`
+
+- **Task:** show the read-only kitchen dashboard full screen on the Vega Virtual Device without the remote's pointer covering it.
+- **Steps:** set `cursor: none` on the dashboard's root element (`#tv` page), deployed the PWA, relaunched the `firetv` app (`vega run-app build/aarch64-release/fridgesensetv_aarch64.vpkg ca.nabour.fridgesense.main -d VirtualDevice`).
+- **Expected:** no pointer over the page, as in desktop browsers and other WebViews that honour the page's cursor style.
+- **Actual:** a large teal circle pointer still sits over the Recent changes panel and follows the remote. The `@amazon-devices/webview` props have nothing about the pointer or a D-pad (focus) navigation mode.
+- **Severity:** Low
+- **Workaround:** none yet; the pointer is cosmetic on a read-only page.
+- **Suggestion:** honour CSS `cursor: none`, or add a WebView prop to hide the pointer or switch to D-pad focus navigation, and document how remote keys reach the page in each mode.
+
 ### 2026-10-20 · Ring Partner API · Clip download sometimes answers 206, which the docs don't mention
 
 - **Task:** download each motion's clip for the door check and the analysis video.
