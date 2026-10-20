@@ -4,7 +4,7 @@ import type { DoorEvent } from "../api/types";
 import { titleCase } from "../format";
 import { deviceTimeZone } from "../stats";
 import { useLoad } from "../useLoad";
-import { cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, tvIcon } from "./tv";
+import { cameraLine, clockTime, fridgeRows, heatCells, latestStill, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const INVENTORY_MS = 10_000;
 const EVENTS_MS = 30_000;
@@ -15,8 +15,9 @@ const EVENT_DAYS = 28;
 
 /**
  * The kitchen TV: the camera's status, what is in the fridge, the latest door openings and when
- * the door gets opened, read-only and sized for 1920×1080 across a room. No pictures, nothing to
- * select, no pointer, no key handling, so Back reaches the Fire TV app.
+ * the door gets opened, read-only and sized for 1920×1080 across a room. The only pictures are
+ * the openings' stills and proof photos; nothing to select, no pointer, no key handling, so Back
+ * reaches the Fire TV app.
  */
 export function TvDashboard() {
   const { api } = useApp();
@@ -40,14 +41,17 @@ export function TvDashboard() {
       style={{ cursor: "none" }}
       className="dark flex h-dvh flex-col gap-[2vw] overflow-hidden bg-slate-950 p-[3vw] text-slate-100"
     >
-      <header className="space-y-2">
-        <div className="flex items-baseline justify-between">
+      <header className="flex items-center justify-between gap-[2vw]">
+        <div className="space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">FridgeSense</h1>
+          <p className="text-2xl text-slate-300">
+            {camera.data ? cameraLine(camera.data) : camera.failed ? "Camera: No Data" : "\u00a0"}
+          </p>
+        </div>
+        <div className="flex items-center gap-6">
+          {events.data && <LatestStill events={events.data} />}
           {updated && <p className="text-2xl tabular-nums text-slate-400">Updated {updated}</p>}
         </div>
-        <p className="text-2xl text-slate-300">
-          {camera.data ? cameraLine(camera.data) : camera.failed ? "Camera: No Data" : "\u00a0"}
-        </p>
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-[1.4fr_1fr_1fr] gap-[2vw]">
         <Panel title="In the fridge">
@@ -124,9 +128,10 @@ function Recent({ events }: { events: DoorEvent[] }) {
   const rows = recentRows(events, Date.now(), deviceTimeZone());
   if (rows.length === 0) return <p className="text-3xl text-slate-400">No door openings this week</p>;
   return (
-    <ol className="space-y-5">
+    // A column that wraps: a row that doesn't fit whole moves to a second column, off the panel.
+    <ol className="flex h-full flex-col flex-wrap content-start gap-x-8 gap-y-5">
       {rows.map((r) => (
-        <li key={r.id} className="space-y-1">
+        <li key={r.id} className="w-full space-y-1">
           <p className="text-xl font-semibold tabular-nums text-slate-400">{r.when}</p>
           <p className="text-3xl font-semibold">
             {r.state === "checking"
@@ -137,10 +142,56 @@ function Recent({ events }: { events: DoorEvent[] }) {
                   : "No changes"
                 : r.labels.join(", ")}
           </p>
+          {r.proofs.length > 0 && (
+            <div className="flex gap-2 pt-1">
+              {r.proofs.map((src) => (
+                <Photo key={stillBase(src)} src={src} alt="" className="h-14 aspect-[4/3] rounded-lg" />
+              ))}
+            </div>
+          )}
         </li>
       ))}
     </ol>
   );
+}
+
+function LatestStill({ events }: { events: DoorEvent[] }) {
+  const still = latestStill(events, deviceTimeZone());
+  return still && <StillFigure key={stillBase(still.src)} {...still} />;
+}
+
+function StillFigure({ src, caption }: { src: string; caption: string }) {
+  const photo = useStillSrc(src);
+  if (!photo) return null;
+  return (
+    <figure className="flex items-center gap-4">
+      <figcaption className="text-xl tabular-nums text-slate-400">{caption}</figcaption>
+      <img {...photo} alt="Latest still from the fridge camera" decoding="async" className={`${PHOTO} h-28 aspect-video rounded-xl`} />
+    </figure>
+  );
+}
+
+const PHOTO = "bg-slate-800 object-cover";
+
+/** A proof photo, filling its box; gone while its link is broken. */
+function Photo({ src, alt, className }: { src: string; alt: string; className: string }) {
+  const photo = useStillSrc(src);
+  return photo && <img {...photo} alt={alt} decoding="async" className={`${PHOTO} ${className}`} />;
+}
+
+/**
+ * The link to show for one picture (callers key it by `stillBase`). Each events refresh re-signs
+ * every link; keeping the first one means the browser doesn't download the picture again. After a
+ * load error the picture hides (null) until a refresh brings a fresh link.
+ */
+function useStillSrc(src: string): { src: string; onError: () => void } | null {
+  const [shown, setShown] = useState(src);
+  const [failed, setFailed] = useState(false);
+  if (failed && src !== shown) {
+    setShown(src);
+    setFailed(false);
+  }
+  return failed ? null : { src: shown, onError: () => setFailed(true) };
 }
 
 function Opens({ events }: { events: DoorEvent[] }) {

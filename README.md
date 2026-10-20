@@ -360,12 +360,12 @@ Then test in the simulator under [Alexa+ add-ons](https://developer.amazon.com/a
 
 The app has a read-only TV view at `<SiteUrl>/#tv`, sized for a 1080p TV across the room:
 
-- **Header:** the camera's name, Online / Offline, whether monitoring is paused, its 30-day uptime and motion detection, plus when the data last updated.
+- **Header:** the camera's name, Online / Offline, whether monitoring is paused, its 30-day uptime and motion detection, plus when the data last updated and the latest still from the newest door opening.
 - **In the fridge:** what is in stock by category, then what has run out ("Out: milk, eggs").
-- **Recent changes:** the latest door openings with time and seconds open, and what was added or removed. Back-to-back openings with no changes share one row.
+- **Recent changes:** the latest door openings with time and seconds open, and what was added or removed, with up to 3 proof photos showing where each change was seen. Back-to-back openings with no changes share one row.
 - **Opens:** today's count and open time, opens per day for the week, and a heatmap of opens by day and hour over 4 weeks.
 
-It shows no photos, not even the camera's, and has nothing to select, so it is safe to leave on in a shared kitchen. It refreshes the inventory every 10 s, the openings every 30 s and the camera every 5 minutes (each camera read calls Ring). Sign in once with the demo passcode.
+The only photos are door-opening stills, face-blurred when the face-blur setting is on (the default); there are no clips, no live view and no camera product image. It has nothing to select. A photo that fails to load is hidden until the next refresh. It refreshes the inventory every 10 s, the openings every 30 s and the camera every 5 minutes (each camera read calls Ring). Sign in once with the demo passcode.
 
 ![TV dashboard](docs/screenshots/dark/tv-dashboard.jpg)
 
