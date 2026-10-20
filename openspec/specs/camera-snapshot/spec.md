@@ -73,10 +73,6 @@ When the owner is signed in, a setup screen asks for a camera snapshot ("Camera 
 - **WHEN** the frame route answers 502
 - **THEN** the screen shows the same message it shows today when `POST /api/camera/snapshot` answers 502 (for Reference images, "The camera can't be reached right now."), no image is shown, and `POST /api/camera/snapshot` is not requested
 
-#### Scenario: Open/close detection takes no live frame
-- **WHEN** "Mock video" is off and the owner taps "Add reference" in Open/close detection
-- **THEN** `POST /api/camera/live` and `POST /api/camera/snapshot` are not requested
-
 ### Requirement: Fall back to the Ring still
 If the live view cannot give a frame, the app SHALL request `POST /api/camera/snapshot` once instead and handle its answer as before (including 409 "No recent footage. Walk past the camera, then try again."). The live view cannot give a frame when the browser has no WebRTC, `POST /api/camera/live` fails, or the connection fails. Any live session already opened SHALL be ended. If the live view connects but fewer than 10 frames are decoded within 15 s, the camera is not sending video: the app SHALL NOT fall back, and the screen SHALL show "The camera isn't sending video. Check that it's plugged in." with "Try again".
 
