@@ -12,6 +12,10 @@ While face blurring is on, every image or clip that a door event links or an API
 - **WHEN** face blurring is on, a door opening has no analysis video, its still 1 had a face blurred, and the event goes on to analysis
 - **THEN** the image bytes for still 1 in the analysis request equal the stored blurred object, not the downloaded bytes or `debug/raw-<n>.jpg`
 
+#### Scenario: Analysis while blurring is off
+- **WHEN** face blurring is off and a door opening with no analysis video goes on to analysis
+- **THEN** the image bytes for each still in the analysis request equal the stored `still-<n>.jpg`
+
 #### Scenario: Analysis video never shown
 - **WHEN** face blurring is on and a door opening has an analysis video
 - **THEN** the door event has no field holding the `analysis.mp4` key, `GET /api/events` and `GET /api/debug/motions/{id}` return no link to it, and the stored stills and `clip.mp4` are blurred as before
