@@ -52,4 +52,4 @@ Priority if time runs short: groups 1–4 and 6–7 (alignment, moved detection,
 
 - [x] 8.1 Add a short note to the README's Config section on auto-alignment, the warnings and re-running setup after moving the camera. If any AWS or Ring step hit friction, add a `docs/friction-log.md` entry; otherwise add nothing.
 - [x] 8.2 Run all suites and linters green: `cd backend && uv run pytest -q && uv run ruff check . && uv run ruff format --check .`, `cd pwa && npm test && npm run build`, `cd infra && npm test`. Report the commands and their results.
-- [ ] 8.3 Run `cdk diff` and ask Jayson before `cdk deploy`. After the deploy: re-run setup on the phone (to store the anchor), open the fridge once and confirm the trace shows `alignment.ok = true`. Turn motion detection off in the Ring app and confirm the banner appears, then turn it back on.
+- [x] 8.3 Run `cdk diff` and ask Jayson before `cdk deploy`. After the deploy: re-run setup on the phone (to store the anchor), open the fridge once and confirm the trace shows `alignment.ok = true`. Turn motion detection off in the Ring app and confirm the banner appears, then turn it back on.

@@ -35,4 +35,4 @@ Branch: `feat/door-zones-defined` off `local`. Backend: `cd backend && uv run py
 ## 6. Ship and clean up
 
 - [x] 6.1 Run the full suite and linters green: `cd backend && uv run pytest && uv run ruff check .`, `cd pwa && npm test && npm run typecheck`. Report the commands and results, and add any friction-log entries.
-- [ ] 6.2 With Jayson's OK, after deploying: list the `DOORREF#` items without `zone_id` (`aws dynamodb scan … --filter-expression "begins_with(sk, :p) AND attribute_not_exists(zone_id)"`), show the count, then delete them. Verify the second scan returns 0 items.
+- [x] 6.2 With Jayson's OK, after deploying: list the `DOORREF#` items without `zone_id` (`aws dynamodb scan … --filter-expression "begins_with(sk, :p) AND attribute_not_exists(zone_id)"`), show the count, then delete them. Verify the second scan returns 0 items.

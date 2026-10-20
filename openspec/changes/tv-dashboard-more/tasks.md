@@ -21,7 +21,7 @@
 
 ## 3. On the TV
 
-- [ ] 3.1 After the PWA deploy (ask first), relaunch the Fire TV app on the Vega Virtual Device and check: 🧂 for condiments, no cursor over the panels, camera line, heatmap. If the cursor still shows, add a friction-log entry (design.md decision 6)
+- [x] 3.1 After the PWA deploy (ask first), relaunch the Fire TV app on the Vega Virtual Device and check: 🧂 for condiments, no cursor over the panels, camera line, heatmap. If the cursor still shows, add a friction-log entry (design.md decision 6)
 - [x] 3.2 Update the README's Fire TV section with what the dashboard shows
 
 ## 4. Finish

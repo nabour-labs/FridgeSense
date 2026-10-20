@@ -54,4 +54,4 @@
 
 - [x] 8.1 Update the README privacy and debug notes (the switch, the default on, thumbnails, `-c debugTraces=true`). Tick items 23–24 in `docs/submission-checklist.md`, noting that Livestream stays open to the viewer by choice.
 - [x] 8.2 Run the full suites green: `cd backend && uv run pytest && uv run ruff check .`, `cd pwa && npm test`, `cd infra && npm test`. Report the commands and results.
-- [ ] 8.3 With Jayson's OK, run `cdk diff` and then `cdk deploy`. Toggle the switch as the owner, open the fridge once with it on, and confirm the stored stills are blurred. Add friction-log entries for anything surprising.
+- [x] 8.3 With Jayson's OK, run `cdk diff` and then `cdk deploy`. Toggle the switch as the owner, open the fridge once with it on, and confirm the stored stills are blurred. Add friction-log entries for anything surprising.

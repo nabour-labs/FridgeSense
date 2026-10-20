@@ -7,7 +7,7 @@ The system SHALL decide for each downloaded still whether it is *open*, using ru
 - **With a setup result** stored for the event's account and device (see the `door-calibration` capability), each zone has its own feature (`blue`, `color`, `brightness` or `change`, measured as setup measures it, against the stored baseline for `change`), direction and threshold. A still is open when, in any zone, the feature's value is at or above the threshold (direction `above`) or at or below it (direction `below`).
 - **Without a setup result**, every zone uses `blue` with direction `above`: the fraction of pixels that are both strongly colorful (`max(R,G,B) − min(R,G,B) > 100` and `max(R,G,B) > 120`) and strongly blue-lit (`B − max(R,G) > 60`), as the fridge's LED-lit interior is. Warm colors such as food held in front of the closed doors do not count, and neither does the cool tint daylight gives the steel doors. The zones are `DOOR_ZONES`, else the defaults `0.38,0.32,0.21,0.30` (doors) and `0.455,0.60,0.12,0.18` (drawers), and the threshold is `DOOR_THRESHOLD`, else 0.01.
 
-A still's *score* is the value of its best zone, the one furthest past (or closest to) its threshold. The event SHALL count as a door opening only if at least one still is open. The *open span* runs from the first open still through the first still after the last open one (or through the last open still if no still follows it). Up to 4 stills SHALL be sent on from the open span, evenly spaced and including its first and last still: positions `round(i · (n − 1) / 3)` for `i = 0 … 3` in a span of `n > 4` stills, or every still when `n ≤ 4`. The check SHALL run on the downloaded stills before any cropping, face detection or storage. Only door openings go on to face detection, storage and analysis.
+A still's *score* is the value of its best zone, the one furthest past (or closest to) its threshold. The event SHALL count as a door opening only if at least one still is open. A run of closed stills SHALL end an opening when the time from its first closed still to the next open still is 10 s or more; a shorter closed run stays inside the opening. Each opening's *open span* runs from its first open still through the first still after its last open one (or through its last open still if no still follows it). Up to 4 stills SHALL be sent on from each open span, evenly spaced and including its first and last still: positions `round(i · (n − 1) / 3)` for `i = 0 … 3` in a span of `n > 4` stills, or every still when `n ≤ 4`. The check SHALL run on the downloaded stills before any cropping, face detection or storage. Only door openings go on to face detection, storage and analysis.
 
 #### Scenario: Fridge light visible
 - **WHEN** zones are `0.0,0.0,0.5,1.0;0.5,0.0,0.5,1.0`, the threshold is 0.02, and one 200×100 still is grey `(128,128,128)` except a `(40,90,200)` block covering 10% of the left zone
@@ -20,6 +20,14 @@ A still's *score* is the value of its best zone, the one furthest past (or close
 #### Scenario: Setup result used for the device
 - **WHEN** setup for the event's device stored zone `0.6,0.0,0.4,1.0` with `color` above 0.3, `DOOR_ZONES` is `0.0,0.0,0.4,1.0`, and only the right 40% of a still is colorful (a color value of 1.0 in the stored zone)
 - **THEN** the event counts as a door opening, and the `door_event_recorded` log line has `zones_source = "setup"`
+
+#### Scenario: Short closed run stays inside the opening
+- **WHEN** 25 stills one second apart are downloaded, stills 6–10 and 15–20 are open, and stills 11–14 are closed (4 s from still 11 to still 15)
+- **THEN** there is one opening whose open span is stills 6–21
+
+#### Scenario: Long closed run splits the opening
+- **WHEN** 30 stills one second apart are downloaded, stills 3–6 and 20–24 are open, and stills 7–19 are closed (13 s from still 7 to still 20)
+- **THEN** there are two openings, with open spans stills 3–7 and stills 20–25
 
 #### Scenario: Setup threshold applied
 - **WHEN** setup stored `color` above 0.3 for a zone and the best still has a color value of 0.2 there

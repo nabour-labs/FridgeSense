@@ -2,7 +2,7 @@
 
 ## 0. Base spec
 
-- [ ] 0.1 Make sure `tv-dashboard-more` is archived (ask Jayson whether its task 3.1, the on-device check, is done or can be marked done), so `openspec/specs/tv-dashboard/spec.md` has "Nothing private or interactive on the TV dashboard"; verify with `openspec validate tv-proof-photos`
+- [x] 0.1 Make sure `tv-dashboard-more` is archived (ask Jayson whether its task 3.1, the on-device check, is done or can be marked done), so `openspec/specs/tv-dashboard/spec.md` has "Nothing private or interactive on the TV dashboard"; verify with `openspec validate tv-proof-photos`
 
 ## 1. Picture helpers (`pwa/src/tv/tv.ts`)
 
@@ -27,4 +27,4 @@
 ## 4. Finish
 
 - [x] 4.1 Run `npm test`, `npm run typecheck` and `npm run lint` (if present) in `pwa/`, and `npm test` in `firetv/`; all green
-- [ ] 4.2 After the PWA deploy (ask first), relaunch the Fire TV app on the Vega Virtual Device and check that proof photos and the header still load and stay put across a 30 s refresh. Log any Vega WebView friction in `docs/friction-log.md`
+- [x] 4.2 After the PWA deploy (ask first), relaunch the Fire TV app on the Vega Virtual Device and check that proof photos and the header still load and stay put across a 30 s refresh. Log any Vega WebView friction in `docs/friction-log.md`
