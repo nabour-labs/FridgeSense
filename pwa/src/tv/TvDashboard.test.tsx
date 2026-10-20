@@ -185,20 +185,20 @@ test("no clip or video is shown", async () => {
   expect(dashboard.innerHTML).not.toContain("clip.mp4");
 });
 
-// Only opening pictures shown
-test("the only pictures are opening stills and proof photos", async () => {
+// Only opening pictures and the icon shown
+test("the only pictures are the icon and the openings' proof photos", async () => {
   renderTv();
-  await screen.findByRole("img", { name: "Latest still from the fridge camera" });
+  await within(await panel("Recent changes")).findByText(/2 min ago/);
   const dashboard = screen.getByRole("region", { name: "TV dashboard" });
   const srcs = [...dashboard.querySelectorAll("img")].map((img) => img.getAttribute("src"));
-  expect(srcs.sort()).toEqual(["https://s3/proof-1.jpg", "https://s3/still-1.jpg"]);
+  expect(srcs.sort()).toEqual(["/icon.svg", "https://s3/proof-1.jpg"]);
 });
 
 // Camera image not shown
 test("the camera's image is not shown", async () => {
   renderTv();
   expect(await screen.findByText(/Fridge Cam/)).toBeInTheDocument();
-  await screen.findByRole("img", { name: "Latest still from the fridge camera" });
+  await within(await panel("Recent changes")).findByText(/2 min ago/);
   const dashboard = screen.getByRole("region", { name: "TV dashboard" });
   expect(dashboard.querySelector('img[src*="ring/cam.png"]')).toBeNull();
   expect(dashboard.innerHTML).not.toContain("ring/cam.png");
@@ -208,7 +208,6 @@ test("the camera's image is not shown", async () => {
 test("the dashboard has no buttons, links or inputs", async () => {
   renderTv();
   await within(await panel("Recent changes")).findByText(/2 min ago/);
-  await screen.findByRole("img", { name: "Latest still from the fridge camera" });
   await screen.findByText(/Fridge Cam/);
   const dashboard = screen.getByRole("region", { name: "TV dashboard" });
   expect(within(dashboard).queryAllByRole("button")).toHaveLength(0);
@@ -344,32 +343,6 @@ test("Checking… and No changes rows show no photos", async () => {
   for (const row of within(recent).getAllByRole("listitem")) expect(proofImages(row)).toHaveLength(0);
 });
 
-// Newest opening's last still
-test("the header shows the newest opening's last still with its time", async () => {
-  renderTv({ events: vi.fn().mockResolvedValue({ events: [PROOF_EVENT] }) });
-  const still = await screen.findByRole("img", { name: "Latest still from the fridge camera" });
-  expect(still).toHaveAttribute("src", "https://s3/3.jpg");
-  expect(screen.getByText(`Latest still · ${clockTime(PROOF_EVENT.opened_at, deviceTimeZone())}`)).toBeInTheDocument();
-});
-
-// No stills at all
-test("no latest still when no opening has stills", async () => {
-  renderTv({ events: vi.fn().mockResolvedValue({ events: [event(5)] }) });
-  await within(await panel("Recent changes")).findByText("No changes");
-  expect(screen.queryByRole("img", { name: "Latest still from the fridge camera" })).not.toBeInTheDocument();
-  expect(screen.queryByText(/Latest still/)).not.toBeInTheDocument();
-});
-
-// Events fail
-test("no latest still when events fail, and the camera line stays", async () => {
-  renderTv({ events: vi.fn().mockRejectedValue(new ApiError(500)) });
-  expect(await within(await panel("Recent changes")).findByText("No Data")).toBeInTheDocument();
-  expect(await screen.findByText(/Fridge Cam · Online/)).toBeInTheDocument();
-  expect(screen.queryByText(/Latest still/)).not.toBeInTheDocument();
-});
-
-const HEADER_STILL = { name: "Latest still from the fridge camera" };
-
 // Broken link hidden
 test("a proof photo that fails to load is removed, and the row stays", async () => {
   renderTv({ events: vi.fn().mockResolvedValue({ events: [PROOF_EVENT] }) });
@@ -380,24 +353,14 @@ test("a proof photo that fails to load is removed, and the row stays", async () 
   expect(row).toHaveTextContent("+ 2 milk, − eggs");
 });
 
-// Header still fails
-test("a latest still that fails to load is removed with its caption", async () => {
-  renderTv({ events: vi.fn().mockResolvedValue({ events: [PROOF_EVENT] }) });
-  fireEvent.error(await screen.findByRole("img", HEADER_STILL));
-  expect(screen.queryByRole("img", HEADER_STILL)).not.toBeInTheDocument();
-  expect(screen.queryByText(/Latest still/)).not.toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "FridgeSense" })).toBeInTheDocument();
-  expect(screen.getByText(/Updated /)).toBeInTheDocument();
-  expect(screen.getByText(/Fridge Cam · Online/)).toBeInTheDocument();
-});
-
-function signed(sig: number, newest = false): DoorEvent {
-  const e = event(2, {
+function signed(sig: number): DoorEvent {
+  return event(2, {
     changes: [{ item: "milk", category: "dairy", direction: "added", quantity: 1, confidence: 0.9, applied: true, proof: [`https://s3/a.jpg?X-Amz-Signature=${sig}`] }],
     stills: [`https://s3/3.jpg?sig=${sig}`],
   });
-  return newest ? { ...event(1, { id: "newer", stills: [`https://s3/9.jpg?sig=${sig}`] }) } : e;
 }
+
+const recentImages = () => proofImages(within(screen.getByRole("region", { name: "Recent changes" })).getByRole("listitem"));
 
 async function withRefresh(first: DoorEvent[], second: DoorEvent[], check: () => void) {
   vi.useFakeTimers();
@@ -414,16 +377,7 @@ async function withRefresh(first: DoorEvent[], second: DoorEvent[], check: () =>
 // Re-signed link kept
 test("a re-signed link for a photo already shown keeps the old link", async () => {
   await withRefresh([signed(1)], [signed(2)], () => {
-    const row = within(screen.getByRole("region", { name: "Recent changes" })).getByRole("listitem");
-    expect(proofImages(row)[0]).toHaveAttribute("src", "https://s3/a.jpg?X-Amz-Signature=1");
-    expect(screen.getByRole("img", HEADER_STILL)).toHaveAttribute("src", "https://s3/3.jpg?sig=1");
-  });
-});
-
-// New picture replaces the old
-test("a newer still replaces the header picture", async () => {
-  await withRefresh([signed(1)], [signed(2, true), signed(2)], () => {
-    expect(screen.getByRole("img", HEADER_STILL)).toHaveAttribute("src", "https://s3/9.jpg?sig=2");
+    expect(recentImages()[0]).toHaveAttribute("src", "https://s3/a.jpg?X-Amz-Signature=1");
   });
 });
 
@@ -433,11 +387,29 @@ test("a photo that failed comes back with the next refresh's link", async () => 
   try {
     renderTv({ events: vi.fn().mockResolvedValueOnce({ events: [signed(1)] }).mockResolvedValue({ events: [signed(2)] }) });
     await act(async () => void vi.advanceTimersByTime(0));
-    fireEvent.error(screen.getByRole("img", HEADER_STILL));
-    expect(screen.queryByRole("img", HEADER_STILL)).not.toBeInTheDocument();
+    fireEvent.error(recentImages()[0]);
+    expect(recentImages()).toHaveLength(0);
     await act(async () => void vi.advanceTimersByTime(30_000));
-    expect(screen.getByRole("img", HEADER_STILL)).toHaveAttribute("src", "https://s3/3.jpg?sig=2");
+    expect(recentImages()[0]).toHaveAttribute("src", "https://s3/a.jpg?X-Amz-Signature=2");
   } finally {
     vi.useRealTimers();
   }
+});
+
+// Icon shown
+test("the header shows the app icon before the title", async () => {
+  renderTv();
+  const title = screen.getByRole("heading", { name: "FridgeSense" });
+  const header = title.closest("header")!;
+  const icon = header.querySelector('img[src="/icon.svg"]')!;
+  expect(icon).toHaveAttribute("alt", "");
+  expect(icon.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+// Icon shown while data fails
+test("the icon and title show even when every load fails", async () => {
+  const fail = () => vi.fn().mockRejectedValue(new ApiError(500));
+  renderTv({ inventory: fail(), events: fail(), camera: fail() });
+  expect(await screen.findByText("Camera: No Data")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "FridgeSense" }).closest("header")!.querySelector('img[src="/icon.svg"]')).not.toBeNull();
 });

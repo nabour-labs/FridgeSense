@@ -74,15 +74,6 @@ export function recentRows(events: DoorEvent[], now: number, timeZone: string, n
   return rows.slice(0, n);
 }
 
-/** The newest opening's last still, captioned "Latest still · 8:42 pm"; null when no opening has stills. */
-export function latestStill(events: DoorEvent[], timeZone: string): { src: string; caption: string } | null {
-  const newest = [...events]
-    .filter((e) => e.stills.length > 0)
-    .sort((a, b) => Date.parse(b.opened_at) - Date.parse(a.opened_at))[0];
-  if (!newest) return null;
-  return { src: newest.stills.at(-1)!, caption: `Latest still · ${clockTime(newest.opened_at, timeZone)}` };
-}
-
 /** A still's link without its query string: the same picture across re-signed links. */
 export function stillBase(src: string): string {
   return src.split("?")[0];

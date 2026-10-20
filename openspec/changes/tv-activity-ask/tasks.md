@@ -6,8 +6,8 @@
 
 ## 1. Header: remove the latest still, add the icon
 
-- [ ] 1.1 Write failing tests in `TvDashboard.test.tsx` for "Icon shown" and "Icon shown while data fails". Delete the latest-still tests in `TvDashboard.test.tsx` and `tv.test.ts`, along with the removed requirement ("Newest opening's last still", "Newest opening has no stills", "No stills at all", "Events fail" for the still, "Header still fails", "New picture replaces the old"). Run `npm test` in `pwa/`: the new tests fail because there is no icon
-- [ ] 1.2 Remove `LatestStill`, `StillFigure` and `latestStill()`, and add the `/icon.svg` image before the title. Verify: `npm test` in `pwa/` is green
+- [x] 1.1 Write failing tests in `TvDashboard.test.tsx` for "Icon shown" and "Icon shown while data fails". Delete the latest-still tests in `TvDashboard.test.tsx` and `tv.test.ts`, along with the removed requirement ("Newest opening's last still", "Newest opening has no stills", "No stills at all", "Events fail" for the still, "Header still fails", "New picture replaces the old"). Run `npm test` in `pwa/`: the new tests fail because there is no icon
+- [x] 1.2 Remove `LatestStill`, `StillFigure` and `latestStill()`, and add the `/icon.svg` image before the title. Verify: `npm test` in `pwa/` is green
 
 ## 2. Shared voice code
 

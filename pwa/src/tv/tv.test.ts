@@ -1,5 +1,5 @@
 import type { CameraInfo, Change, DoorEvent, Item } from "../api/types";
-import { cameraLine, clockTime, fridgeRows, heatCells, latestStill, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
+import { cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const TZ = "America/Toronto";
 const NOW = new Date("2026-10-20T18:00:00Z"); // 14:00 in Toronto
@@ -355,30 +355,6 @@ test("checking, no-change and collapsed rows have no proofs", () => {
     ["checking", 1, []],
     ["none", 2, []],
   ]);
-});
-
-// Newest opening's last still
-test("the latest still is the newest opening's last still, captioned with its local time", () => {
-  const events = [
-    event("2026-10-20T16:00:00Z", { stills: ["https://s3/old.jpg"] }),
-    event("2026-10-20T17:42:00Z", { stills: ["https://s3/1.jpg", "https://s3/2.jpg", "https://s3/3.jpg"] }),
-  ];
-  expect(latestStill(events, TZ)).toEqual({ src: "https://s3/3.jpg", caption: "Latest still · 1:42 pm" });
-});
-
-// Newest opening has no stills
-test("openings without stills are skipped for the latest still", () => {
-  const events = [
-    event("2026-10-20T17:42:00Z", { stills: [] }),
-    event("2026-10-20T17:10:00Z", { stills: ["https://s3/x.jpg"] }),
-  ];
-  expect(latestStill(events, TZ)).toEqual({ src: "https://s3/x.jpg", caption: "Latest still · 1:10 pm" });
-});
-
-// No stills at all
-test("there is no latest still when no opening has stills", () => {
-  expect(latestStill([event("2026-10-20T17:42:00Z")], TZ)).toBeNull();
-  expect(latestStill([], TZ)).toBeNull();
 });
 
 // Re-signed link kept (the key it is kept by)

@@ -4,7 +4,7 @@ import type { DoorEvent } from "../api/types";
 import { titleCase } from "../format";
 import { deviceTimeZone } from "../stats";
 import { useLoad } from "../useLoad";
-import { cameraLine, clockTime, fridgeRows, heatCells, latestStill, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
+import { cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const INVENTORY_MS = 10_000;
 const EVENTS_MS = 30_000;
@@ -16,7 +16,7 @@ const EVENT_DAYS = 28;
 /**
  * The kitchen TV: the camera's status, what is in the fridge, the latest door openings and when
  * the door gets opened, read-only and sized for 1920×1080 across a room. The only pictures are
- * the openings' stills and proof photos; nothing to select, no pointer, no key handling, so Back
+ * the app icon and the openings' proof photos; nothing to select, no pointer, no key handling, so Back
  * reaches the Fire TV app.
  */
 export function TvDashboard() {
@@ -43,13 +43,15 @@ export function TvDashboard() {
     >
       <header className="flex items-center justify-between gap-[2vw]">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">FridgeSense</h1>
+          <div className="flex items-center gap-4">
+            <img src="/icon.svg" alt="" className="h-12 w-12 rounded-xl" />
+            <h1 className="text-4xl font-bold tracking-tight">FridgeSense</h1>
+          </div>
           <p className="text-2xl text-slate-300">
             {camera.data ? cameraLine(camera.data) : camera.failed ? "Camera: No Data" : "\u00a0"}
           </p>
         </div>
         <div className="flex items-center gap-6">
-          {events.data && <LatestStill events={events.data} />}
           {updated && <p className="text-2xl tabular-nums text-slate-400">Updated {updated}</p>}
         </div>
       </header>
@@ -152,22 +154,6 @@ function Recent({ events }: { events: DoorEvent[] }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function LatestStill({ events }: { events: DoorEvent[] }) {
-  const still = latestStill(events, deviceTimeZone());
-  return still && <StillFigure key={stillBase(still.src)} {...still} />;
-}
-
-function StillFigure({ src, caption }: { src: string; caption: string }) {
-  const photo = useStillSrc(src);
-  if (!photo) return null;
-  return (
-    <figure className="flex items-center gap-4">
-      <figcaption className="text-xl tabular-nums text-slate-400">{caption}</figcaption>
-      <img {...photo} alt="Latest still from the fridge camera" decoding="async" className={`${PHOTO} h-28 aspect-video rounded-xl`} />
-    </figure>
   );
 }
 
