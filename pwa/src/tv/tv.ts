@@ -7,6 +7,7 @@ import { byWeekdayHour, durationStats, heatLevel, lastDays, perDay, todayCount, 
 export const MAX_ITEMS = 12;
 export const MAX_OPENINGS = 5;
 export const MAX_OUT = 6;
+export const MAX_PROOFS = 3;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -46,6 +47,8 @@ export interface RecentRow {
   labels: string[];
   /** Openings in this row: above 1 when back-to-back no-change openings are collapsed. */
   count: number;
+  /** The first proof link of each change that has one, in label order, at most MAX_PROOFS. */
+  proofs: string[];
 }
 
 /**
@@ -56,7 +59,8 @@ export function recentRows(events: DoorEvent[], now: number, timeZone: string, n
   const rows: RecentRow[] = [];
   const week = lastDays(events, new Date(now), timeZone, 7);
   for (const e of [...week].sort((a, b) => Date.parse(b.opened_at) - Date.parse(a.opened_at))) {
-    const labels = e.changes.filter((c) => !c.rejected).map(changeLabel);
+    const kept = e.changes.filter((c) => !c.rejected);
+    const labels = kept.map(changeLabel);
     const state = e.status === "analyzing" ? "checking" : labels.length ? "changes" : "none";
     const last = rows.at(-1);
     if (state === "none" && last?.state === "none") {
@@ -64,9 +68,24 @@ export function recentRows(events: DoorEvent[], now: number, timeZone: string, n
       continue;
     }
     const when = `${ago(e.opened_at, now)} · ${clockTime(e.opened_at, timeZone)} · ${Math.round(e.duration_s)} s`;
-    rows.push({ id: e.id, when, state, labels, count: 1 });
+    const proofs = state === "changes" ? kept.flatMap((c) => c.proof?.slice(0, 1) ?? []).slice(0, MAX_PROOFS) : [];
+    rows.push({ id: e.id, when, state, labels, count: 1, proofs });
   }
   return rows.slice(0, n);
+}
+
+/** The newest opening's last still, captioned "Latest still · 8:42 pm"; null when no opening has stills. */
+export function latestStill(events: DoorEvent[], timeZone: string): { src: string; caption: string } | null {
+  const newest = [...events]
+    .filter((e) => e.stills.length > 0)
+    .sort((a, b) => Date.parse(b.opened_at) - Date.parse(a.opened_at))[0];
+  if (!newest) return null;
+  return { src: newest.stills.at(-1)!, caption: `Latest still · ${clockTime(newest.opened_at, timeZone)}` };
+}
+
+/** A still's link without its query string: the same picture across re-signed links. */
+export function stillBase(src: string): string {
+  return src.split("?")[0];
 }
 
 /** "Out: milk, eggs" for items at quantity 0, at most max names; null when nothing is out. */

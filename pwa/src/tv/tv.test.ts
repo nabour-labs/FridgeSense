@@ -1,5 +1,5 @@
 import type { CameraInfo, Change, DoorEvent, Item } from "../api/types";
-import { cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, tvIcon } from "./tv";
+import { cameraLine, clockTime, fridgeRows, heatCells, latestStill, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const TZ = "America/Toronto";
 const NOW = new Date("2026-10-20T18:00:00Z"); // 14:00 in Toronto
@@ -100,7 +100,7 @@ test("an opening's changes are labelled, without rejected ones", () => {
     TZ,
   );
   expect(rows).toEqual([
-    { id: "2026-10-20T17:58:00Z", when: "2 min ago · 1:58 pm · 20 s", state: "changes", labels: ["+ 2 milk", "− eggs"], count: 1 },
+    { id: "2026-10-20T17:58:00Z", when: "2 min ago · 1:58 pm · 20 s", state: "changes", labels: ["+ 2 milk", "− eggs"], count: 1, proofs: [] },
   ]);
 });
 
@@ -303,4 +303,87 @@ test("peppers get a chili on the TV", () => {
 
 test("other icons are unchanged on the TV", () => {
   expect(tvIcon("milk", "dairy")).toBe("🥛");
+});
+
+// Proof under the labels
+test("a row's proofs are each change's first proof link, in label order", () => {
+  const e = event("2026-10-20T17:58:00Z", {
+    changes: [
+      change("milk", "added", 2, { proof: ["https://s3/a.jpg", "https://s3/b.jpg"] }),
+      change("eggs", "removed", 1, { proof: ["https://s3/c.jpg"] }),
+    ],
+  });
+  expect(recentRows([e], NOW.getTime(), TZ)[0].proofs).toEqual(["https://s3/a.jpg", "https://s3/c.jpg"]);
+});
+
+// At most three photos
+test("a row has at most 3 proofs, from its first changes", () => {
+  const changes = ["a", "b", "c", "d", "e"].map((n) => change(n, "added", 1, { proof: [`https://s3/${n}.jpg`] }));
+  const rows = recentRows([event("2026-10-20T17:58:00Z", { changes })], NOW.getTime(), TZ);
+  expect(rows[0].proofs).toEqual(["https://s3/a.jpg", "https://s3/b.jpg", "https://s3/c.jpg"]);
+});
+
+// Change without proof
+test("a change without proof adds no photo", () => {
+  const e = event("2026-10-20T17:58:00Z", {
+    changes: [change("milk", "added", 1), change("eggs", "removed", 1, { proof: ["https://s3/c.jpg"] })],
+  });
+  expect(recentRows([e], NOW.getTime(), TZ)[0].proofs).toEqual(["https://s3/c.jpg"]);
+});
+
+// Rejected change has no photo
+test("a rejected change's proof is left out", () => {
+  const e = event("2026-10-20T17:58:00Z", {
+    changes: [change("milk", "added", 1), change("apple", "added", 1, { rejected: true, proof: ["https://s3/r.jpg"] })],
+  });
+  expect(recentRows([e], NOW.getTime(), TZ)[0].proofs).toEqual([]);
+});
+
+// No photos without changes
+test("checking, no-change and collapsed rows have no proofs", () => {
+  const stills = ["https://s3/1.jpg"];
+  const rows = recentRows(
+    [
+      event("2026-10-20T17:58:00Z", { status: "analyzing", stills }),
+      event("2026-10-20T17:50:00Z", { stills }),
+      event("2026-10-20T17:40:00Z", { stills }),
+    ],
+    NOW.getTime(),
+    TZ,
+  );
+  expect(rows.map((r) => [r.state, r.count, r.proofs])).toEqual([
+    ["checking", 1, []],
+    ["none", 2, []],
+  ]);
+});
+
+// Newest opening's last still
+test("the latest still is the newest opening's last still, captioned with its local time", () => {
+  const events = [
+    event("2026-10-20T16:00:00Z", { stills: ["https://s3/old.jpg"] }),
+    event("2026-10-20T17:42:00Z", { stills: ["https://s3/1.jpg", "https://s3/2.jpg", "https://s3/3.jpg"] }),
+  ];
+  expect(latestStill(events, TZ)).toEqual({ src: "https://s3/3.jpg", caption: "Latest still · 1:42 pm" });
+});
+
+// Newest opening has no stills
+test("openings without stills are skipped for the latest still", () => {
+  const events = [
+    event("2026-10-20T17:42:00Z", { stills: [] }),
+    event("2026-10-20T17:10:00Z", { stills: ["https://s3/x.jpg"] }),
+  ];
+  expect(latestStill(events, TZ)).toEqual({ src: "https://s3/x.jpg", caption: "Latest still · 1:10 pm" });
+});
+
+// No stills at all
+test("there is no latest still when no opening has stills", () => {
+  expect(latestStill([event("2026-10-20T17:42:00Z")], TZ)).toBeNull();
+  expect(latestStill([], TZ)).toBeNull();
+});
+
+// Re-signed link kept (the key it is kept by)
+test("a still's base is its link without the query string", () => {
+  expect(stillBase("https://s3/a.jpg?X-Amz-Signature=1")).toBe("https://s3/a.jpg");
+  expect(stillBase("https://s3/a.jpg")).toBe("https://s3/a.jpg");
+  expect(stillBase("/mock/still-1.svg")).toBe("/mock/still-1.svg");
 });
