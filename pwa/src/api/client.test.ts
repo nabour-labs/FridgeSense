@@ -208,17 +208,17 @@ test.each([
   ["doorCalibration", (api: ApiClient) => api.doorCalibration(), "GET", "/api/door-calibration", undefined],
   [
     "addDoorZone",
-    (api: ApiClient) => api.addDoorZone("Freezer drawer", BOX),
+    (api: ApiClient) => api.addDoorZone("Freezer drawer", BOX, "live"),
     "POST",
     "/api/door-calibration/zones",
-    { name: "Freezer drawer", box: BOX, source: "clip" },
+    { name: "Freezer drawer", box: BOX, source: "live" },
   ],
   [
     "updateDoorZone",
-    (api: ApiClient) => api.updateDoorZone("Wk/1", { name: "Doors", box: BOX }),
+    (api: ApiClient) => api.updateDoorZone("Wk/1", { name: "Doors", box: BOX, source: "live" }),
     "PATCH",
     "/api/door-calibration/zones/Wk%2F1",
-    { name: "Doors", box: BOX, source: "clip" },
+    { name: "Doors", box: BOX, source: "live" },
   ],
   [
     "updateDoorZone (rename only)",
@@ -236,7 +236,7 @@ test.each([
   ],
   [
     "addDoorReference",
-    (api: ApiClient) => api.addDoorReference("/9j/SNAP", "Wk/1", "open"),
+    (api: ApiClient) => api.addDoorReference("/9j/SNAP", "Wk/1", "open", "clip"),
     "POST",
     "/api/door-calibration/references",
     { image: "/9j/SNAP", zone_id: "Wk/1", status: "open", source: "clip" },

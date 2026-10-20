@@ -1,9 +1,9 @@
-import { Camera, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Camera, Clapperboard, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { CameraOffline, NoVideo } from "../camera/liveSnapshot";
 import { RecentClipPicker } from "../camera/RecentClipPicker";
 import { ApiError } from "../api/client";
-import type { DoorFeature, DoorReference, DoorSetup, DoorStatus, DoorZone, Snapshot } from "../api/types";
+import type { Box, DoorFeature, DoorReference, DoorSetup, DoorStatus, DoorZone, PictureSource, Snapshot } from "../api/types";
 import { canEdit, useApp } from "../AppContext";
 import { ImageMarkup } from "../components/ImageMarkup";
 import { NoData } from "../components/NoData";
@@ -32,10 +32,18 @@ const percent = (v: number) => `${(v * 100).toFixed(1)}%`;
 /** A camera shift as a percent of the frame, without a trailing ".0": "1.6%", "0%". */
 const shift = (v: number) => `${Number((v * 100).toFixed(1))}%`;
 
-function ReplaceNote() {
+/** Live pictures are framed unlike the recorded clips the door check scores. */
+function LiveNote() {
   return (
-    <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-300">Replace with a clip frame</span>
+    <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-300">
+      Live picture: may not line up with clips
+    </span>
   );
+}
+
+/** Whether two boxes match, allowing for rounding on the way through the drawing. */
+function sameBox(a: Box, b: Box): boolean {
+  return (["x", "y", "width", "height"] as const).every((k) => Math.abs(a[k] - b[k]) < 1e-3);
 }
 
 /** What a zone still needs before setup can run, or null when it has both. */
@@ -125,9 +133,7 @@ export function DoorDetection() {
   }
 
   const { zones, references: refs } = data;
-  // Pictures from the live view are framed unlike the recorded clips: setup refuses them.
-  const live = zones.some((z) => z.source === "live") || refs.some((r) => r.source === "live");
-  const ready = zones.length > 0 && zones.every((z) => needs(z) === null) && !live;
+  const ready = zones.length > 0 && zones.every((z) => needs(z) === null);
   const scoreOf = (r: DoorReference) => (tried ? (tried[r.id] ?? null) : r.score);
   // References are numbered in the order they are shown: zone by zone.
   const shown = zones.flatMap((z) => refs.filter((r) => r.zone_id === z.id));
@@ -151,7 +157,7 @@ export function DoorDetection() {
           {zones.map((z) => (
             <li key={z.id} className={`${CARD} flex items-center gap-2 py-1 pl-4 pr-1`}>
               <span className="flex-1 truncate text-sm font-semibold">{z.name}</span>
-              {z.source === "live" && <ReplaceNote />}
+              {z.source === "live" && <LiveNote />}
               {editable && (
                 <>
                   <button
@@ -225,7 +231,7 @@ export function DoorDetection() {
                         <span className="flex-1 text-sm font-medium tabular-nums text-slate-600 dark:text-slate-300">
                           {score === null ? "–" : percent(score)}
                         </span>
-                        {r.source === "live" && <ReplaceNote />}
+                        {r.source === "live" && <LiveNote />}
                         {editable && (
                           <button
                             type="button"
@@ -298,17 +304,10 @@ export function DoorDetection() {
         )}
         {editable && (
           <>
-            {live ? (
+            {zones.length > 0 && !ready && (
               <p className="px-1 text-sm text-slate-500 dark:text-slate-400">
-                Replace the zones and references marked 'Replace with a clip frame' first.
+                Each zone needs at least one open and one closed reference.
               </p>
-            ) : (
-              zones.length > 0 &&
-              !ready && (
-                <p className="px-1 text-sm text-slate-500 dark:text-slate-400">
-                  Each zone needs at least one open and one closed reference.
-                </p>
-              )
             )}
             <button type="button" onClick={run} disabled={running || !ready} className={PRIMARY}>
               {running ? "Running setup…" : "Run setup"}
@@ -361,16 +360,17 @@ function ZoneReferences({ zone, children }: { zone: DoorZone; children: ReactNod
 }
 
 /**
- * The picture a door sheet is drawn on: a frame of a recent recorded clip, so zones and
- * references are framed exactly like the clips the door check scores. The recent-clip picker
- * opens with the sheet; cancelling it before any frame closes the sheet (`onCancel`). With
- * Mock video on, the frame comes from the mock clip picker through `cameraSnapshot` instead.
+ * The picture a door sheet is drawn on, as in Fridge area: a live snapshot when the sheet opens
+ * ("New snapshot" takes another), or a frame from a recent clip ("Recent clip"). `source` says
+ * which one is shown. With Mock video on, `cameraSnapshot` returns a mock clip frame, so it counts
+ * as a clip.
  */
-function useClipFrame(onSnap: () => void, onCancel: () => void) {
+function useDoorPicture(onSnap: () => void) {
   const { api, report } = useApp();
   const { mockVideo } = useDebug();
   const [snap, setSnap] = useState<Snapshot | null>(null);
-  const [picking, setPicking] = useState(!mockVideo);
+  const [source, setSource] = useState<PictureSource>("live");
+  const [picking, setPicking] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const onSnapRef = useRef(onSnap);
@@ -384,6 +384,7 @@ function useClipFrame(onSnap: () => void, onCancel: () => void) {
     setError(null);
     try {
       setSnap(await api.cameraSnapshot(controller.signal));
+      setSource(mockVideo ? "clip" : "live");
       onSnapRef.current();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setError(NO_FOOTAGE);
@@ -393,60 +394,64 @@ function useClipFrame(onSnap: () => void, onCancel: () => void) {
     } finally {
       setSnapping(false);
     }
-  }, [api, report]);
+  }, [api, report, mockVideo]);
 
   useEffect(() => {
-    if (mockVideo) void takeSnapshot();
+    void takeSnapshot();
     return () => cancel.current?.abort();
-  }, [mockVideo, takeSnapshot]);
+  }, [takeSnapshot]);
 
-  const another = mockVideo ? takeSnapshot : () => setPicking(true);
+  const fromClip = () => setPicking(true);
   const picker = picking ? (
     <RecentClipPicker
       api={api}
       report={report}
       onPick={(frame) => {
+        cancel.current?.abort();
         setPicking(false);
         setError(null);
         setSnap(frame);
+        setSource("clip");
         onSnapRef.current();
       }}
-      onCancel={() => {
-        setPicking(false);
-        if (!snap) onCancel();
-      }}
+      onCancel={() => setPicking(false)}
     />
   ) : null;
 
-  return { snap, snapping, error, setError, another, picker };
+  return { snap, source, snapping, error, setError, takeSnapshot, fromClip, picker };
 }
 
+const LINK = "inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-700 disabled:opacity-50 dark:text-brand-300";
+const PILL =
+  "inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-brand-50 px-4 text-sm font-semibold text-brand-700 disabled:opacity-50 dark:bg-brand-950 dark:text-brand-300";
+
 function SnapshotView({
-  snapshot,
+  picture,
   hint,
   children,
 }: {
-  snapshot: ReturnType<typeof useClipFrame>;
+  picture: ReturnType<typeof useDoorPicture>;
   hint: string;
   children: (snap: Snapshot) => ReactNode;
 }) {
-  const { snap, snapping, error, another } = snapshot;
+  const { snap, snapping, error, takeSnapshot, fromClip } = picture;
   return (
     <>
       {snap ? (
         <>
           {children(snap)}
-          <div className="flex items-center justify-between gap-3 px-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1">
             <p className="text-xs text-slate-500 dark:text-slate-400">{hint}</p>
-            <button
-              type="button"
-              onClick={another}
-              disabled={snapping}
-              className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-700 disabled:opacity-50 dark:text-brand-300"
-            >
-              <RefreshCw aria-hidden className="size-3.5" />
-              Another frame
-            </button>
+            <div className="flex gap-3">
+              <button type="button" onClick={takeSnapshot} disabled={snapping} className={LINK}>
+                <RefreshCw aria-hidden className="size-3.5" />
+                New snapshot
+              </button>
+              <button type="button" onClick={fromClip} className={LINK}>
+                <Clapperboard aria-hidden className="size-3.5" />
+                Recent clip
+              </button>
+            </div>
           </div>
         </>
       ) : (
@@ -455,19 +460,19 @@ function SnapshotView({
         )
       )}
       {error && (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
             {error}
           </p>
           {!snap && (
-            <button
-              type="button"
-              onClick={another}
-              disabled={snapping}
-              className="h-9 shrink-0 rounded-full bg-brand-50 px-4 text-sm font-semibold text-brand-700 disabled:opacity-50 dark:bg-brand-950 dark:text-brand-300"
-            >
-              Try again
-            </button>
+            <div className="flex gap-2">
+              <button type="button" onClick={takeSnapshot} disabled={snapping} className={PILL}>
+                Try again
+              </button>
+              <button type="button" onClick={fromClip} className={PILL}>
+                Recent clip
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -507,8 +512,8 @@ function ZoneSheet({
   const [shapes, setShapes] = useState<Shape[]>(initial);
   const [name, setName] = useState(zone?.name ?? "");
   const [busy, setBusy] = useState(false);
-  const snapshot = useClipFrame(() => setShapes(initial), onClose);
-  const { snap, setError } = snapshot;
+  const picture = useDoorPicture(() => setShapes(initial));
+  const { snap, source, setError } = picture;
   const trimmed = name.trim();
   const valid = snap !== null && shapes.length === 1 && trimmed.length > 0;
 
@@ -518,8 +523,14 @@ function ZoneSheet({
     setBusy(true);
     setError(null);
     const box = shapeToBox(shapes[0]);
+    // A rename alone keeps the zone's box and the source of the picture it was drawn on.
+    const redrawn = !zone || !sameBox(box, zone.box);
     try {
-      onSaved(zone ? await api.updateDoorZone(zone.id, { name: trimmed, box }) : await api.addDoorZone(trimmed, box));
+      onSaved(
+        zone
+          ? await api.updateDoorZone(zone.id, redrawn ? { name: trimmed, box, source } : { name: trimmed })
+          : await api.addDoorZone(trimmed, box, source),
+      );
     } catch (err) {
       if (err instanceof ApiError && [400, 404, 409].includes(err.status)) setError(err.message);
       else report(err);
@@ -531,7 +542,7 @@ function ZoneSheet({
   return (
     <Sheet title={zone ? `Edit ${zone.name}` : "Add a door zone"} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <SnapshotView snapshot={snapshot} hint="Draw around the door or drawer, open and closed.">
+        <SnapshotView picture={picture} hint="Draw around the door or drawer, open and closed.">
           {(s) => (
             <ImageMarkup
               src={`data:image/jpeg;base64,${s.image}`}
@@ -558,7 +569,7 @@ function ZoneSheet({
           Save
         </button>
       </form>
-      {snapshot.picker}
+      {picture.picker}
     </Sheet>
   );
 }
@@ -576,8 +587,8 @@ function AddDoorReference({
   const [zoneId, setZoneId] = useState<string | null>(zones.length === 1 ? zones[0].id : null);
   const [status, setStatus] = useState<DoorStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const snapshot = useClipFrame(() => {}, onClose);
-  const { snap, setError } = snapshot;
+  const picture = useDoorPicture(() => {});
+  const { snap, source, setError } = picture;
   const zone = zones.find((z) => z.id === zoneId) ?? null;
   const valid = snap !== null && zone !== null && status !== null;
 
@@ -587,7 +598,7 @@ function AddDoorReference({
     setBusy(true);
     setError(null);
     try {
-      onAdded(await api.addDoorReference(snap.image, zone.id, status));
+      onAdded(await api.addDoorReference(snap.image, zone.id, status, source));
     } catch (err) {
       if (err instanceof ApiError && (err.status === 400 || err.status === 409)) setError(err.message);
       else report(err);
@@ -600,7 +611,7 @@ function AddDoorReference({
     <Sheet title="Add a door reference" onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <SnapshotView
-          snapshot={snapshot}
+          picture={picture}
           hint={zone ? `${zone.name}'s box is shown on the snapshot.` : "Pick the zone this snapshot is for."}
         >
           {(s) => (
@@ -638,7 +649,7 @@ function AddDoorReference({
           Save
         </button>
       </form>
-      {snapshot.picker}
+      {picture.picker}
     </Sheet>
   );
 }

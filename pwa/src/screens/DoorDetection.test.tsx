@@ -170,20 +170,26 @@ test("with no zones it asks for one first and nothing else can be done", async (
 
 async function openAddZone(api: Api) {
   await userEvent.click(await screen.findByRole("button", { name: "Add zone" }));
+  const img = await within(dialog()).findByRole("img", { name: "Snapshot to box the zone on" });
+  expect(api.cameraSnapshot).toHaveBeenCalledTimes(1);
+  return img;
+}
+
+/** In the open door sheet, tap "Recent clip" and use the newest clip's first frame. */
+async function useRecentClip(api: Api) {
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Recent clip" }));
   await pickFrame(api);
-  expect(api.cameraSnapshot).not.toHaveBeenCalled();
-  return within(dialog()).findByRole("img", { name: "Snapshot to box the zone on" });
 }
 
 // Add a door zone
 test("adding a zone boxes it on a snapshot and names it", async () => {
   const added = setupOf([], null, [zoneOf("z2", "Freezer drawer", 0, 0, DRAWER_BOX)]);
   const { api } = renderTab(NO_ZONES, { api: { addDoorZone: vi.fn().mockResolvedValue(added) } });
-  expect(await openAddZone(api)).toHaveAttribute("src", "data:image/jpeg;base64,/9j/FRAME");
+  expect(await openAddZone(api)).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
   drag([38, 65], [58, 90]);
   await userEvent.type(within(dialog()).getByLabelText("Name"), "Freezer drawer");
   await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
-  expect(api.addDoorZone).toHaveBeenCalledWith("Freezer drawer", DRAWER_BOX);
+  expect(api.addDoorZone).toHaveBeenCalledWith("Freezer drawer", DRAWER_BOX, "live");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(within(await zonesRegion()).getByText("Freezer drawer")).toBeInTheDocument();
 });
@@ -211,7 +217,7 @@ test("drawing again replaces the zone box", async () => {
   expect(within(dialog()).getAllByTestId("markup-shape")).toHaveLength(1);
   await userEvent.type(within(dialog()).getByLabelText("Name"), "Doors");
   await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
-  expect(api.addDoorZone).toHaveBeenCalledWith("Doors", { x: 0.6, y: 0.6, width: 0.3, height: 0.3 });
+  expect(api.addDoorZone).toHaveBeenCalledWith("Doors", { x: 0.6, y: 0.6, width: 0.3, height: 0.3 }, "live");
 });
 
 // Tiny drag ignored
@@ -227,7 +233,6 @@ test("editing a zone renames and redraws it", async () => {
   const edited = setupOf([], null, [zoneOf("z1", "Fridge doors", 0, 0, { x: 0.6, y: 0.6, width: 0.3, height: 0.3 })]);
   const { api } = renderTab(setupOf([]), { api: { updateDoorZone: vi.fn().mockResolvedValue(edited) } });
   await userEvent.click(await screen.findByRole("button", { name: "Edit Doors" }));
-  await pickFrame(api);
   await within(dialog()).findByRole("img", { name: "Snapshot to box the zone on" });
   expect(within(dialog()).getAllByTestId("markup-shape")).toHaveLength(1); // the current box
   const name = within(dialog()).getByLabelText("Name");
@@ -239,6 +244,7 @@ test("editing a zone renames and redraws it", async () => {
   expect(api.updateDoorZone).toHaveBeenCalledWith("z1", {
     name: "Fridge doors",
     box: { x: 0.6, y: 0.6, width: 0.3, height: 0.3 },
+    source: "live",
   });
   expect(within(await zonesRegion()).getByText("Fridge doors")).toBeInTheDocument();
 });
@@ -263,9 +269,9 @@ test("deleting a zone asks first, naming how many references go with it", async 
 
 async function openAddReference(api: Api) {
   await userEvent.click(await screen.findByRole("button", { name: "Add reference" }));
-  await pickFrame(api);
-  expect(api.cameraSnapshot).not.toHaveBeenCalled();
-  return within(dialog()).findByRole("img", { name: "Snapshot of the door zone" });
+  const img = await within(dialog()).findByRole("img", { name: "Snapshot of the door zone" });
+  expect(api.cameraSnapshot).toHaveBeenCalledTimes(1);
+  return img;
 }
 
 // Add a door reference
@@ -274,13 +280,13 @@ test("adding a reference picks its zone, shows the zone's box and labels it", as
   const { api } = renderTab(setupOf([], null, TWO_ZONES), {
     api: { addDoorReference: vi.fn().mockResolvedValue(added) },
   });
-  expect(await openAddReference(api)).toHaveAttribute("src", "data:image/jpeg;base64,/9j/FRAME");
+  expect(await openAddReference(api)).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
   expect(within(dialog()).queryAllByTestId("markup-shape")).toHaveLength(0);
   await userEvent.click(within(dialog()).getByRole("button", { name: "Drawer" }));
   expect(within(dialog()).getAllByTestId("markup-shape")).toHaveLength(1);
   await userEvent.click(within(dialog()).getByRole("button", { name: "Open" }));
   await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
-  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/FRAME", "z2", "open");
+  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/SNAP", "z2", "open", "live");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(await screen.findByText("1 of 24")).toBeInTheDocument();
   expect(within(zoneGroup("Drawer")).getByText("Open")).toBeInTheDocument();
@@ -483,126 +489,183 @@ test("an offline camera warns in the add sheet and offers Try again", async () =
     "The camera is offline. Check that it's plugged in and connected to Wi-Fi.",
   );
   expect(report).not.toHaveBeenCalled();
+  expect(within(dialog()).getByRole("button", { name: "Recent clip" })).toBeEnabled();
   await userEvent.click(within(dialog()).getByRole("button", { name: "Try again" }));
   expect(cameraSnapshot).toHaveBeenCalledTimes(2);
 });
 
-// --- Door setup pictures from recent clips ---
+// Camera offline
+test("with the camera offline a recent clip frame can still be used", async () => {
+  const added = setupOf([doorRef("a", "open")]);
+  const { api } = renderTab(setupOf([]), {
+    api: { cameraSnapshot: vi.fn().mockRejectedValue(new CameraOffline()), addDoorReference: vi.fn().mockResolvedValue(added) },
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "Add reference" }));
+  await within(dialog()).findByRole("alert");
+  await useRecentClip(api);
+  expect(await within(dialog()).findByRole("img", { name: "Snapshot of the door zone" })).toHaveAttribute(
+    "src",
+    "data:image/jpeg;base64,/9j/FRAME",
+  );
+  expect(within(dialog()).queryByRole("alert")).not.toBeInTheDocument();
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Open" }));
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
+  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/FRAME", "z1", "open", "clip");
+});
 
-// Reference from a recent clip
-test("a closed reference from a recent clip never takes a live frame", async () => {
+// --- Door setup pictures from live or a recent clip ---
+
+// Reference from a live snapshot; Open/close detection takes a live frame
+test("a closed reference from a live snapshot is sent as live", async () => {
   const added = setupOf([doorRef("a", "closed")]);
   const { api } = renderTab(setupOf([]), { api: { addDoorReference: vi.fn().mockResolvedValue(added) } });
   await openAddReference(api);
-  expect(api.cameraFrame).toHaveBeenCalledWith(btoa("raw"));
+  expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument();
   await userEvent.click(within(dialog()).getByRole("button", { name: "Closed" }));
   await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
-  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/FRAME", "z1", "closed");
-  expect(api.cameraSnapshot).not.toHaveBeenCalled();
+  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/SNAP", "z1", "closed", "live");
+  expect(api.cameraFrame).not.toHaveBeenCalled();
 });
 
-// Zone drawn on a clip frame
-test("a zone is drawn on a frame from a recent clip", async () => {
+// Reference from a recent clip
+test("an open reference from a recent clip is sent as clip", async () => {
+  const added = setupOf([doorRef("a", "open")]);
+  const { api } = renderTab(setupOf([]), { api: { addDoorReference: vi.fn().mockResolvedValue(added) } });
+  await openAddReference(api);
+  await useRecentClip(api);
+  expect(api.cameraFrame).toHaveBeenCalledWith(btoa("raw"));
+  expect(await within(dialog()).findByRole("img", { name: "Snapshot of the door zone" })).toHaveAttribute(
+    "src",
+    "data:image/jpeg;base64,/9j/FRAME",
+  );
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Open" }));
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
+  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/FRAME", "z1", "open", "clip");
+});
+
+// Back to live after a clip frame
+test("New snapshot after a clip frame goes back to live", async () => {
+  const cameraSnapshot = vi.fn().mockResolvedValueOnce(SNAPSHOT).mockResolvedValueOnce({ ...SNAPSHOT, image: "/9j/LIVE2" });
+  const added = setupOf([doorRef("a", "open")]);
+  const { api } = renderTab(setupOf([]), { api: { cameraSnapshot, addDoorReference: vi.fn().mockResolvedValue(added) } });
+  await openAddReference(api);
+  await useRecentClip(api);
+  await userEvent.click(within(dialog()).getByRole("button", { name: "New snapshot" }));
+  await waitFor(() =>
+    expect(within(dialog()).getByRole("img", { name: "Snapshot of the door zone" })).toHaveAttribute(
+      "src",
+      "data:image/jpeg;base64,/9j/LIVE2",
+    ),
+  );
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Open" }));
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
+  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/LIVE2", "z1", "open", "live");
+});
+
+// Zone drawn on a live snapshot
+test("a zone drawn on the live snapshot is sent as live", async () => {
   const { api } = renderTab(NO_ZONES, { api: { addDoorZone: vi.fn().mockResolvedValue(setupOf([])) } });
   await openAddZone(api);
   drag([38, 32], [59, 62]);
   await userEvent.type(within(dialog()).getByLabelText("Name"), "Doors");
   await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
-  expect(api.addDoorZone).toHaveBeenCalledWith("Doors", BOX);
+  expect(api.addDoorZone).toHaveBeenCalledWith("Doors", BOX, "live");
 });
 
-// Another frame
-test("Another frame opens the picker again and replaces the shown frame", async () => {
-  const cameraFrame = vi.fn().mockResolvedValueOnce(FRAME).mockResolvedValueOnce({ ...FRAME, image: "/9j/SECOND" });
-  const { api } = renderTab(setupOf([]), { api: { cameraFrame } });
-  await openAddReference(api);
-  expect(screen.queryByRole("button", { name: "New snapshot" })).not.toBeInTheDocument();
-  await userEvent.click(within(dialog()).getByRole("button", { name: "Another frame" }));
-  await pickFrame(api);
-  await waitFor(() => expect(cameraFrame).toHaveBeenCalledTimes(2));
-  expect(await within(dialog()).findByRole("img", { name: "Snapshot of the door zone" })).toHaveAttribute(
-    "src",
-    "data:image/jpeg;base64,/9j/SECOND",
-  );
+// Zone redrawn on a clip frame
+test("a zone redrawn on a recent clip frame is sent as clip", async () => {
+  const { api } = renderTab(setupOf([]), { api: { updateDoorZone: vi.fn().mockResolvedValue(setupOf([])) } });
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Doors" }));
+  await within(dialog()).findByRole("img", { name: "Snapshot to box the zone on" });
+  await useRecentClip(api);
+  drag([60, 60], [90, 90]);
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
+  expect(api.updateDoorZone).toHaveBeenCalledWith("z1", {
+    name: "Doors",
+    box: { x: 0.6, y: 0.6, width: 0.3, height: 0.3 },
+    source: "clip",
+  });
 });
 
-test("cancelling Another frame keeps the shown frame", async () => {
+// Rename keeps the source
+test("renaming a zone without redrawing sends only the name", async () => {
+  const { api } = renderTab(setupOf([]), { api: { updateDoorZone: vi.fn().mockResolvedValue(setupOf([])) } });
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Doors" }));
+  await within(dialog()).findByRole("img", { name: "Snapshot to box the zone on" });
+  const name = within(dialog()).getByLabelText("Name");
+  await userEvent.clear(name);
+  await userEvent.type(name, "Fridge doors");
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
+  expect(api.updateDoorZone).toHaveBeenCalledWith("z1", { name: "Fridge doors" });
+});
+
+// Picker cancelled
+test("cancelling the recent-clip picker keeps the sheet and its live snapshot", async () => {
   const { api } = renderTab(setupOf([]));
   await openAddReference(api);
-  await userEvent.click(within(dialog()).getByRole("button", { name: "Another frame" }));
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Recent clip" }));
   await userEvent.click(within(await picker()).getByRole("button", { name: "Cancel" }));
-  expect(await screen.findByRole("img", { name: "Snapshot of the door zone" })).toHaveAttribute(
-    "src",
-    "data:image/jpeg;base64,/9j/FRAME",
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument(),
   );
+  expect(within(dialog()).getByRole("img", { name: "Snapshot of the door zone" })).toHaveAttribute(
+    "src",
+    "data:image/jpeg;base64,/9j/SNAP",
+  );
+  expect(api.cameraFrame).not.toHaveBeenCalled();
+  expect(api.addDoorReference).not.toHaveBeenCalled();
 });
 
 // No recent clips
 test("with no recent clips the picker says so and Use this frame is disabled", async () => {
-  renderTab(setupOf([]), { api: { events: vi.fn().mockResolvedValue({ events: [] }) } });
-  await userEvent.click(await screen.findByRole("button", { name: "Add reference" }));
+  const { api } = renderTab(setupOf([]), { api: { events: vi.fn().mockResolvedValue({ events: [] }) } });
+  await openAddReference(api);
+  await userEvent.click(within(dialog()).getByRole("button", { name: "Recent clip" }));
   const sheet = await picker();
   expect(await within(sheet).findByText("No door openings with a clip in the last 7 days.")).toBeInTheDocument();
   expect(within(sheet).getByRole("button", { name: "Use this frame" })).toBeDisabled();
 });
 
-// Picker cancelled
-test("cancelling the picker closes the add-reference sheet without a request", async () => {
-  const { api } = renderTab(setupOf([]));
-  await userEvent.click(await screen.findByRole("button", { name: "Add reference" }));
-  await userEvent.click(within(await picker()).getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(api.cameraFrame).not.toHaveBeenCalled();
-  expect(api.addDoorReference).not.toHaveBeenCalled();
-});
-
 // Mock video on
-test("with Mock video on the reference frame comes from the mock clip picker", async () => {
+test("with Mock video on the snapshot is a mock clip frame and is sent as clip", async () => {
   const added = setupOf([doorRef("a", "open")]);
   const { api } = renderTab(setupOf([]), {
     mockVideo: true,
     api: { addDoorReference: vi.fn().mockResolvedValue(added) },
   });
-  await userEvent.click(await screen.findByRole("button", { name: "Add reference" }));
-  expect(await within(dialog()).findByRole("img", { name: "Snapshot of the door zone" })).toHaveAttribute(
-    "src",
-    "data:image/jpeg;base64,/9j/SNAP",
-  );
-  expect(screen.queryByRole("dialog", { name: "Snapshot from a recent clip" })).not.toBeInTheDocument();
+  expect(await openAddReference(api)).toHaveAttribute("src", "data:image/jpeg;base64,/9j/SNAP");
   await userEvent.click(within(dialog()).getByRole("button", { name: "Open" }));
   await userEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
-  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/SNAP", "z1", "open");
+  expect(api.addDoorReference).toHaveBeenCalledWith("/9j/SNAP", "z1", "open", "clip");
 });
 
-// --- Live-picture zones and references marked for replacement ---
+// --- Live-picture zones and references noted ---
 
-const REPLACE_HINT = "Replace the zones and references marked 'Replace with a clip frame' first.";
+const LIVE_NOTE = "Live picture: may not line up with clips";
 
-// Old references marked
-test("only the live reference is marked and Run setup is disabled with the hint", async () => {
+// Live reference noted
+test("only the live reference is noted and Run setup stays enabled", async () => {
   renderTab(setupOf([doorRef("a", "open"), { ...doorRef("b", "closed"), source: "live" }]));
   await refsRegion();
   const items = within(zoneGroup("Doors")).getAllByRole("listitem").filter((li) => li.querySelector("img"));
-  expect(within(items[0]).queryByText("Replace with a clip frame")).not.toBeInTheDocument();
-  expect(within(items[1]).getByText("Replace with a clip frame")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Run setup" })).toBeDisabled();
-  expect(screen.getByText(REPLACE_HINT)).toBeInTheDocument();
+  expect(within(items[0]).queryByText(LIVE_NOTE)).not.toBeInTheDocument();
+  expect(within(items[1]).getByText(LIVE_NOTE)).toBeInTheDocument();
+  expect(screen.queryByText("Replace with a clip frame")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Run setup" })).toBeEnabled();
 });
 
-// Old zone marked
-test("a live zone is marked and Run setup is disabled", async () => {
+// Live zone noted
+test("a live zone is noted and Run setup stays enabled", async () => {
   renderTab(setupOf([doorRef("a", "open"), doorRef("b", "closed")], null, [{ ...zoneOf("z1", "Doors"), source: "live" }]));
   const zones = await zonesRegion();
-  expect(within(zones).getByText("Replace with a clip frame")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Run setup" })).toBeDisabled();
-  expect(screen.getByText(REPLACE_HINT)).toBeInTheDocument();
+  expect(within(zones).getByText(LIVE_NOTE)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Run setup" })).toBeEnabled();
 });
 
 // All from clips
-test("with every zone and reference from clips nothing is marked and Run setup is enabled", async () => {
+test("with every zone and reference from clips nothing is noted", async () => {
   renderTab(setupOf([doorRef("a", "open"), doorRef("b", "closed")]));
   await refsRegion();
-  expect(screen.queryByText("Replace with a clip frame")).not.toBeInTheDocument();
-  expect(screen.queryByText(REPLACE_HINT)).not.toBeInTheDocument();
+  expect(screen.queryByText(LIVE_NOTE)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Run setup" })).toBeEnabled();
 });
