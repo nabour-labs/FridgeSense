@@ -136,10 +136,10 @@ def test_not_a_jpeg_or_too_large(owner, image):
 
 # Seventh reference
 def test_seventh_reference(owner):
-    for n in range(6):
+    for n in range(30):
         assert add(owner, f"item {n}")[0] == 200
-    assert add(owner, "one more") == (409, {"error": "at most 6 reference images"})
-    assert len(call("GET", "/api/config", token=owner)[1]["references"]) == 6
+    assert add(owner, "one more") == (409, {"error": "at most 30 reference images"})
+    assert len(call("GET", "/api/config", token=owner)[1]["references"]) == 30
 
 
 # Delete a reference
