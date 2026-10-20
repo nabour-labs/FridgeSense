@@ -99,7 +99,7 @@ Built for the Ring and Alexa+ tracks and the AWS Builder challenge. Everything r
 | Amazon Rekognition | Face detection, so stills are blurred before they are stored |
 | Amazon Polly | Neural voice for Ask answers |
 | AWS Secrets Manager | Ring client secret, webhook key, tokens and passcodes |
-| CloudWatch, SNS, AWS Budgets | Cost logs, alarms for failed runs and token refresh, $20/month budget alert |
+| CloudWatch, SNS, AWS Budgets | Cost logs, alarms for failed runs and token refresh, $60/month budget alert |
 | AWS CDK (TypeScript) | All of the above as code |
 
 **App and tooling:** Python 3.13 (uv, Pydantic, httpx, PyAV, Pillow), [deface](https://github.com/ORB-HD/deface) for clip face blur, PWA in Vite + React + Tailwind + Recharts + vite-plugin-pwa, tests with pytest, moto, respx and Vitest. Specs are written first with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
@@ -145,7 +145,7 @@ Then deploy. Lambda packages are built locally with uv (no Docker):
 set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com
 ```
 
-Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $20/month budget alert (at 80%) and the alarms for failed or timed-out door-event runs and for a rejected Ring token refresh (re-link the Ring account in the Ring app when that one fires). To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
+Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $60/month budget alert (at 80%) and the alarms for failed or timed-out door-event runs and for a rejected Ring token refresh (re-link the Ring account in the Ring app when that one fires). To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
 
 The API is throttled at 10 requests/s (burst 20) per route, and the two passcode checks (`POST /api/session`, `POST /ring/link`) at 1 request/s (burst 3).
 
