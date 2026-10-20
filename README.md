@@ -119,6 +119,18 @@ The demo passcode signs in **read-only** to the live fridge: the current invento
 
 You need an AWS account (us-east-1), a Ring account with a camera and a Ring plan or trial, and a `.env` file at the repo root with `AWS_PROFILE=<your profile>`. Every AWS command below loads that profile first.
 
+### Place the camera
+
+Where the camera sits matters more than the model. Put it across the kitchen from the fridge, high up and facing it straight on:
+
+<p align="center"><img src="docs/camera-placement.svg" width="760" alt="Side and top view: the camera sits on a shelf about 2 m up and about 2 m from the fridge, centered on it and tilted about 30 degrees down, so its view covers the whole fridge, both open doors and the hands in front of it"></p>
+
+- **Centered on the fridge, facing it straight on**, so both doors and the drawers open toward the camera and it sees into the fridge, not just the side of a door.
+- **High up, tilted down about 30°**: a shelf, the top of the opposite cabinets or a wall mount, about 2 m up. From there it looks over people's heads into the shelves.
+- **Far enough back that the whole fridge fits, with both doors open** and the space in front of it where hands carry things in and out. About 2 m works for a standard French-door fridge.
+- **In the Ring app**, turn on **Motion Recording** and check that motion zones and Smart Alerts don't filter out the fridge. Use a privacy mask to hide the rest of the kitchen; FridgeSense crops to the fridge anyway.
+- **Keep it still.** Detection adjusts for small nudges (see [Set up the door check](#6-set-up-the-door-check)), but after a real move you need to add new door references and run setup again.
+
 ### 1. Deploy
 
 The first deploy in an account needs a one-time CDK bootstrap:
