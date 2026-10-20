@@ -107,6 +107,77 @@ def test_clip_link_not_found_then_ready(ring_http, tmp_path):
     assert path.read_bytes() == MP4
 
 
+# Partial content on the link
+@respx.mock
+def test_partial_content_on_the_link(ring_http, tmp_path):
+    post = respx.post(CLIP_URL).mock(return_value=redirect())
+    respx.get(LINK).mock(
+        side_effect=[httpx.Response(206, content=MP4[:100]), httpx.Response(200, content=MP4)]
+    )
+    sleeps = []
+    path = download(ring_http, tmp_path, sleeps=sleeps)
+    assert post.call_count == 2
+    assert sleeps == [3]
+    assert path.read_bytes() == MP4
+
+
+# Partial content on the request
+@respx.mock
+def test_partial_content_on_the_request(ring_http, tmp_path):
+    post = respx.post(CLIP_URL).mock(side_effect=[httpx.Response(206), redirect()])
+    respx.get(LINK).respond(200, content=MP4)
+    path = download(ring_http, tmp_path)
+    assert post.call_count == 2
+    assert path.read_bytes() == MP4
+
+
+def failure(ring_http, tmp_path, **kw) -> ClipUnavailable:
+    with pytest.raises(ClipUnavailable) as e:
+        download(ring_http, tmp_path, **kw)
+    return e.value
+
+
+# Clip only ever partial
+@respx.mock
+def test_clip_only_ever_partial(ring_http, tmp_path):
+    post = respx.post(CLIP_URL).mock(return_value=redirect())
+    headers = {"Content-Range": "bytes 0-1023/52000", "Content-Length": "1024"}
+    respx.get(LINK).mock(
+        side_effect=lambda r: httpx.Response(206, content=b"x" * 1024, headers=headers)
+    )
+    sleeps = []
+    e = failure(ring_http, tmp_path, sleeps=sleeps)
+    assert (e.reason, e.stage) == ("status_206", "link")
+    assert e.details == {"content_range": "bytes 0-1023/52000", "content_length": "1024"}
+    assert post.call_count == 4
+    assert sleeps == [3, 6, 12]
+    assert list(tmp_path.iterdir()) == []
+
+
+# Failure stage logged: the request
+@respx.mock
+def test_failure_stage_request(ring_http, tmp_path):
+    respx.post(CLIP_URL).respond(403, json={"code": "TIME_RANGE_NOT_AUTHORIZED"})
+    e = failure(ring_http, tmp_path)
+    assert (e.reason, e.stage, e.details) == ("status_403", "request", {})
+
+
+# Failure stage logged: the link, without range headers
+@respx.mock
+def test_failure_stage_link_without_headers(ring_http, tmp_path):
+    respx.post(CLIP_URL).mock(return_value=redirect())
+    respx.get(LINK).mock(side_effect=lambda r: not_found())
+    e = failure(ring_http, tmp_path)
+    assert (e.reason, e.stage) == ("status_416", "link")
+    assert "content_range" not in e.details
+
+
+def test_retry_delays():
+    from fridgesense.clip_frames import CLIP_RETRY_DELAYS_S
+
+    assert CLIP_RETRY_DELAYS_S == (3, 6, 12)
+
+
 # Ring refuses the clip
 @respx.mock
 def test_ring_refuses_the_clip(ring_http, tmp_path):
@@ -122,8 +193,8 @@ def test_clip_never_ready(ring_http, tmp_path):
     respx.get(LINK).mock(side_effect=lambda r: not_found())
     sleeps = []
     assert reason_of(ring_http, tmp_path, sleeps=sleeps) == "status_416"
-    assert post.call_count == 3
-    assert sleeps == [3, 6]
+    assert post.call_count == 4
+    assert sleeps == [3, 6, 12]
     assert list(tmp_path.iterdir()) == []
 
 
@@ -132,7 +203,7 @@ def test_clip_never_ready(ring_http, tmp_path):
 def test_clip_request_never_ready(ring_http, tmp_path):
     post = respx.post(CLIP_URL).respond(425, json={"code": "RECORDING_NOT_READY"})
     assert reason_of(ring_http, tmp_path) == "status_425"
-    assert post.call_count == 3
+    assert post.call_count == 4
 
 
 # Network error

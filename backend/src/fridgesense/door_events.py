@@ -992,7 +992,10 @@ def _fetch_stills(
                 ring, http, check, state, frame_interval_ms, sleep, clip_dir, keep=kept
             )
         except ClipUnavailable as e:
-            log_event("clip_unavailable", logging.WARNING, device_id=device_id, reason=e.reason)
+            where = {"stage": e.stage, **e.details} if e.stage else {}
+            log_event(
+                "clip_unavailable", logging.WARNING, device_id=device_id, reason=e.reason, **where
+            )
     if clip is not None:
         downloaded, clip_values = clip
     else:
