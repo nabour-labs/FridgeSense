@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-20 · Ring Partner API · Clip download sometimes answers 206, which the docs don't mention
+
+- **Task:** download each motion's clip for the door check and the analysis video.
+- **Steps:** `POST /v1/devices/{id}/media/video/download` with `{"timestamp": <start_ms>, "duration": <end_ms − start_ms>}`, then `GET` on the 303 `Location`, about 8–10 s after the motion event ended.
+- **Expected:** a 303 and then a 200 MP4, or 416/425 while the footage isn't ready (the codes we had seen and retry).
+- **Actual:** for both openings on 2026-10-20 (09:33 and 09:42 UTC), and 3 times on Oct 17–19 (5 of about 120 motions), the pipeline logged `{"event": "clip_unavailable", "device_id": "ava1.ring.device.JEBP…", "reason": "status_206"}`. Our log didn't record whether the POST or the link answered 206. Both openings fell back to 4 stills, so Nova missed an item and the app had no clip to show.
+- **Severity:** Medium
+- **Workaround:** treat 206 like 416/425 (repeat the whole request after 3, 6 and 12 s), and log the `stage` (`request`/`link`) and the link's `Content-Range`/`Content-Length` so the next one tells us more.
+- **Suggestion:** document every status the download endpoints can return. If 206 means only part of the range is recorded yet, say so, and answer 425 `RECORDING_NOT_READY` instead until all of it is there.
+
 ### 2026-10-19 · Fire TV (Vega SDK) · `vega build` makes an app with no JavaScript, and nothing says so
 
 - **Task:** build the `vegaWebview` template app and run it on the Vega Virtual Device.

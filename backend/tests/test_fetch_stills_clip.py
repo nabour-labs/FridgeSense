@@ -255,6 +255,7 @@ def test_ring_refuses_the_clip(aws, ring_http, caplog, tmp_path):
     respx.post(CLIP_URL).respond(403, json={"code": "TIME_RANGE_NOT_AUTHORIZED"})
     line = fallback_run(ring_http, caplog, tmp_path)
     assert line["reason"] == "status_403"
+    assert line["stage"] == "request"
     assert line["device_id"] == STATE["device_id"]
 
 
@@ -264,16 +265,31 @@ def test_clip_never_ready(aws, ring_http, caplog, tmp_path):
     clip = respx.post(CLIP_URL).respond(303, headers={"Location": CLIP_LINK})
     respx.get(CLIP_LINK).respond(416, json={"errors": [{"code": "MEDIA_NOT_FOUND"}]})
     sleeps = []
-    assert fallback_run(ring_http, caplog, tmp_path, sleeps)["reason"] == "status_416"
-    assert clip.call_count == 3
-    assert sleeps[:2] == [3, 6]
+    line = fallback_run(ring_http, caplog, tmp_path, sleeps)
+    assert (line["reason"], line["stage"]) == ("status_416", "link")
+    assert clip.call_count == 4
+    assert sleeps[:3] == [3, 6, 12]
+
+
+# Clip only ever partial: the link's range headers are logged, never the link
+@respx.mock
+def test_clip_only_ever_partial(aws, ring_http, caplog, tmp_path):
+    respx.post(CLIP_URL).respond(303, headers={"Location": CLIP_LINK})
+    headers = {"Content-Range": "bytes 0-1023/52000", "Content-Length": "1024"}
+    respx.get(CLIP_LINK).respond(206, content=b"x" * 1024, headers=headers)
+    line = fallback_run(ring_http, caplog, tmp_path)
+    assert (line["reason"], line["stage"]) == ("status_206", "link")
+    assert line["content_range"] == "bytes 0-1023/52000"
+    assert line["content_length"] == "1024"
+    assert CLIP_LINK not in json.dumps(line)
 
 
 # Clip request never ready
 @respx.mock
 def test_clip_request_never_ready(aws, ring_http, caplog, tmp_path):
     respx.post(CLIP_URL).respond(425, json={"code": "RECORDING_NOT_READY"})
-    assert fallback_run(ring_http, caplog, tmp_path)["reason"] == "status_425"
+    line = fallback_run(ring_http, caplog, tmp_path)
+    assert (line["reason"], line["stage"]) == ("status_425", "request")
 
 
 # Unreadable clip (and its temporary file removed)
