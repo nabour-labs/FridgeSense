@@ -28,11 +28,11 @@ The HTTP API's default stage SHALL limit every route to a steady rate of 10 requ
 - **THEN** the `$default` stage depends on the `POST /api/session` and `POST /ring/link` routes, so CloudFormation creates them first
 
 ### Requirement: Monthly cost budget alert
-The stack SHALL create a monthly cost budget of 20 USD that emails the alert address when actual spend passes 80% of it.
+The stack SHALL create a monthly cost budget of 60 USD that emails the alert address when actual spend passes 80% of it.
 
 #### Scenario: Budget at 80 percent
 - **WHEN** the stack is synthesized with `alertEmail = "owner@example.test"`
-- **THEN** an `AWS::Budgets::Budget` has `BudgetType = "COST"`, `TimeUnit = "MONTHLY"`, `BudgetLimit = {"Amount": 20, "Unit": "USD"}`, and one notification `{"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 80, "ThresholdType": "PERCENTAGE"}` with an `EMAIL` subscriber `owner@example.test`
+- **THEN** an `AWS::Budgets::Budget` has `BudgetType = "COST"`, `TimeUnit = "MONTHLY"`, `BudgetLimit = {"Amount": 60, "Unit": "USD"}`, and one notification `{"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 80, "ThresholdType": "PERCENTAGE"}` with an `EMAIL` subscriber `owner@example.test`
 
 ### Requirement: Failed door-event alarm
 The stack SHALL create a CloudWatch alarm that goes into alarm when the `fridgesense-door-events` state machine has at least one failed execution in a 5-minute period, and SHALL email the alert address through an SNS topic when it does.

@@ -310,7 +310,7 @@ export class FridgeSenseStack extends Stack {
         budgetName: "fridgesense-monthly",
         budgetType: "COST",
         timeUnit: "MONTHLY",
-        budgetLimit: { amount: 20, unit: "USD" },
+        budgetLimit: { amount: 60, unit: "USD" },
       },
       notificationsWithSubscribers: [
         {
