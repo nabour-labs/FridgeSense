@@ -91,7 +91,7 @@ function MicButton({ listening, onPress }: { listening: boolean; onPress: () => 
       aria-pressed={listening}
       autoFocus
       onClick={onPress}
-      className={`grid size-20 place-items-center rounded-full outline-none ring-brand-300 focus-visible:ring-4 ${
+      className={`grid size-20 place-items-center rounded-full outline-none ring-brand-200 ring-offset-4 ring-offset-slate-950 focus:ring-4 ${
         listening ? "bg-warm-600 text-white" : "bg-brand-500 text-slate-950"
       }`}
     >
@@ -254,8 +254,8 @@ function Activity({ events }: { events: DoorEvent[] }) {
   const rows = activityRows(events, Date.now(), deviceTimeZone());
   if (rows.length === 0) return <p className="text-3xl text-slate-400">No door openings this week</p>;
   return (
-    // Two columns, filled top to bottom; rows that don't fit are cut off by the panel.
-    <ol className="columns-2 gap-[2vw]">
+    // Two columns, filled top to bottom; a row that doesn't fit whole moves to a third column, off the panel.
+    <ol className="h-full columns-2 gap-[2vw] [column-fill:auto]">
       {rows.map((r) => (
         <li key={r.id} className="mb-6 break-inside-avoid space-y-2">
           <p className="text-xl font-semibold tabular-nums text-slate-400">{r.when}</p>

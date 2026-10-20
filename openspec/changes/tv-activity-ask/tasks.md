@@ -24,7 +24,7 @@
 
 - [x] 4.1 Write failing component tests with a fake `window.SpeechRecognition` and a fake `api.ask`. Cover "No speech recognition", "Mic has focus", "Listening shown", "Spoken question answered" (with `HTMLMediaElement.prototype.play` stubbed), "No audio in the answer" (with `speechSynthesis` stubbed), "Stopped while listening", "Nothing heard", "Ask fails", "Banner goes away" (fake timers), "Answer on the Activity page", plus "Only the mic button" and "Only the listed endpoints". Run them and see them fail
 - [x] 4.2 Implement `useVoiceQuestion` and the mic button and answer banner in the header, using `voice.ts`. Verify: `npm test` in `pwa/` is green
-- [ ] 4.3 Check the layout in the browser preview at 1920×1080 with the mock API: the overview and Activity pages, the banner, and the mic focus ring. Attach a screenshot to the task report
+- [x] 4.3 Check the layout in the browser preview at 1920×1080 with the mock API: the overview and Activity pages, the banner, and the mic focus ring. Attach a screenshot to the task report
 
 ## 5. Fire TV launcher icon
 

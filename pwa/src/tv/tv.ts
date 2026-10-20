@@ -88,7 +88,7 @@ export interface ActivityRow {
   labels: string[];
   /** The opening's first MAX_STILLS stills. */
   stills: string[];
-  /** As RecentRow.proofs. */
+  /** As RecentRow.proofs, without any that is already one of `stills`. */
   proofs: string[];
 }
 
@@ -103,14 +103,10 @@ export function activityRows(events: DoorEvent[], now: number, timeZone: string)
       const state = e.status === "analyzing" ? "checking" : labels.length ? "changes" : "none";
       const parts = [localDay(e.opened_at, now, timeZone), clockTime(e.opened_at, timeZone)];
       if (Number.isFinite(e.duration_s)) parts.push(`${Math.round(e.duration_s)} s`);
-      return {
-        id: e.id,
-        when: parts.join(" · "),
-        state,
-        labels,
-        stills: e.stills.slice(0, MAX_STILLS),
-        proofs: state === "changes" ? proofLinks(kept) : [],
-      };
+      const stills = e.stills.slice(0, MAX_STILLS);
+      const shown = new Set(stills.map(stillBase));
+      const proofs = state === "changes" ? proofLinks(kept).filter((p) => !shown.has(stillBase(p))) : [];
+      return { id: e.id, when: parts.join(" · "), state, labels, stills, proofs };
     });
 }
 

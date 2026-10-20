@@ -392,6 +392,18 @@ describe("activityRows", () => {
     expect(rows([event("2026-10-17T15:00:00Z")])[0].when).toBe("Sat · 11:00 am · 20 s");
   });
 
+  // Proof that is also a still shown once
+  test("a proof photo that is one of the stills shown is left out", () => {
+    const [row] = rows([
+      event("2026-10-20T17:00:00Z", {
+        stills: ["https://s3/1.jpg?sig=a", "https://s3/2.jpg?sig=a"],
+        changes: [change("milk", "added", 1, { proof: ["https://s3/2.jpg?sig=b"] })],
+      }),
+    ]);
+    expect(row.stills).toEqual(["https://s3/1.jpg?sig=a", "https://s3/2.jpg?sig=a"]);
+    expect(row.proofs).toEqual([]);
+  });
+
   // At most four stills
   test("at most the first four stills are kept", () => {
     const stills = [1, 2, 3, 4, 5, 6].map((i) => `https://s3/${i}.jpg`);

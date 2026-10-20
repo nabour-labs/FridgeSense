@@ -37,11 +37,15 @@ The TV dashboard SHALL have two pages: "Overview" (the In the fridge, Recent cha
 - **THEN** no further `inventory`, `events` or `camera` request is made beyond the regular refreshes
 
 ### Requirement: Activity page
-The Activity page SHALL show the loaded door openings from the last 7 days, newest first, as many as fit, one row each. A row SHALL show "<Today|Yesterday|weekday> · <local clock time> · <duration in seconds> s" (duration left out when unknown); then the change labels joined by ", " (as on Recent changes), "Checking…" while the opening is still being analyzed, or "No changes"; then up to 4 of the opening's `stills` (the first 4 links, `alt` ""), and the opening's proof photos (one per change that has a `proof` link, its first link, rejected changes skipped, at most 3, `alt` ""). An opening with no stills and no proof SHALL show no pictures. With no openings in the last 7 days it SHALL read "No door openings this week". If `GET /api/events` fails before any openings have loaded it SHALL read "No Data".
+The Activity page SHALL show the loaded door openings from the last 7 days, newest first, as many as fit, one row each. A row SHALL show "<Today|Yesterday|weekday> · <local clock time> · <duration in seconds> s" (duration left out when unknown); then the change labels joined by ", " (as on Recent changes), "Checking…" while the opening is still being analyzed, or "No changes"; then up to 4 of the opening's `stills` (the first 4 links, `alt` ""), and the opening's proof photos (one per change that has a `proof` link, its first link, rejected changes skipped, at most 3, `alt` ""), leaving out a proof photo that is the same picture (same address without its query string) as one of the stills shown. An opening with no stills and no proof SHALL show no pictures. With no openings in the last 7 days it SHALL read "No door openings this week". If `GET /api/events` fails before any openings have loaded it SHALL read "No Data".
 
 #### Scenario: Opening with changes, stills and proof
 - **WHEN** today at 10:36 am an opening of 18 s added a bowl with `proof` ["https://s3/p.jpg"] and has `stills` ["https://s3/1.jpg", "https://s3/2.jpg"]
 - **THEN** its row reads "Today · 10:36 am · 18 s" and "+ bowl", and shows `img` elements with `src` "https://s3/1.jpg", "https://s3/2.jpg" and "https://s3/p.jpg"
+
+#### Scenario: Proof that is also a still shown once
+- **WHEN** an opening has `stills` ["https://s3/1.jpg?sig=a", "https://s3/2.jpg?sig=a"] and its one change has `proof` ["https://s3/2.jpg?sig=b"]
+- **THEN** its row shows two `img` elements, "https://s3/1.jpg?sig=a" and "https://s3/2.jpg?sig=a"
 
 #### Scenario: At most four stills
 - **WHEN** an opening has 6 `stills`
