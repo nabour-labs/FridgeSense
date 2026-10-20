@@ -28,8 +28,8 @@
 
 ## 5. Fire TV launcher icon
 
-- [ ] 5.1 Write a failing Jest test in `firetv/test/` for "Manifest declares the icon" and "Same icon as the PWA". Run `npm test` in `firetv/` and see it fail
-- [ ] 5.2 Copy `pwa/public/icon-512.png` into the `firetv/` package and declare it in `manifest.toml` `[package]`. Find the key and path form the Vega validator accepts by running `npm run build:release`, and log friction if the docs or validator are unclear. Verify: `npm test` in `firetv/` is green and the build output has no "Icon is not defined in the manifest" ("Build has no icon warning")
+- [x] 5.1 Write a failing Jest test in `firetv/test/` for "Manifest declares the icon" and "Same icon as the PWA". Run `npm test` in `firetv/` and see it fail
+- [x] 5.2 Copy `pwa/public/icon-512.png` into the `firetv/` package and declare it in `manifest.toml` `[package]`. Find the key and path form the Vega validator accepts by running `npm run build:release`, and log friction if the docs or validator are unclear. Verify: `npm test` in `firetv/` is green and the build output has no "Icon is not defined in the manifest" ("Build has no icon warning")
 
 ## 6. Deploy and on-device check
 

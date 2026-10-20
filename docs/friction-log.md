@@ -23,6 +23,16 @@ Each entry uses this template. Put the newest entry first.
 
 ## Entries
 
+### 2026-10-20 · Fire TV (Vega SDK) · Manifest icon format not shown in the build warning or SDK samples
+
+- **Task:** give the Fire TV app a launcher icon (the same one as the PWA).
+- **Steps:** `npm run build:release` in `firetv/` (Vega SDK 0.24.12112) printed `manifest.toml:3:1 info: [package.icon] Icon is not defined in the manifest. System default will be used.` and `help: Define icon to help users recognize your application`. Searched the installed SDK, `node_modules/@amazon-devices/*` and the generated template for an example `icon = ...` entry.
+- **Expected:** the warning or a template comment to show the value format and where the file goes.
+- **Actual:** no example anywhere locally. The format only turned up in the validator's own strings: "Icon names must follow '@image/<icon_file_name>' format". `icon = "@image/icon.png"` with the file at `assets/image/icon.png` then built with 0 errors, and the file is packed into the `.vpkg`.
+- **Severity:** Low
+- **Workaround:** `[package] icon = "@image/icon.png"` plus `assets/image/icon.png`.
+- **Suggestion:** put the expected format and folder in the `help:` line, and add a commented-out `icon` line to the project templates' `manifest.toml`.
+
 ### 2026-10-20 · Fire TV (Vega SDK) · WebView draws the remote's pointer even with CSS `cursor: none`
 
 - **Task:** show the read-only kitchen dashboard full screen on the Vega Virtual Device without the remote's pointer covering it.
