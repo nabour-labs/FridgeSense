@@ -145,6 +145,24 @@
         "FRIDGESENSE_MOCK": "1"
       },
       "port": 5180
+    },
+    {
+      "name": "pwa-mock-tv-activity",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        ".claude/worktrees/tv-activity-ask/pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5181",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "1"
+      },
+      "port": 5181
     }
   ]
 }
