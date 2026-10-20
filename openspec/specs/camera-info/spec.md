@@ -96,9 +96,9 @@ The Config "Camera" tab SHALL show the camera's product image and name, an "Onli
 - **WHEN** `GET /api/camera` answers 409 `{"error": "no camera linked"}`
 - **THEN** the tab shows "No camera is linked yet." and no "Something went wrong" notice
 
-#### Scenario: Only the blur switch is editable
+#### Scenario: Only the two switches are editable
 - **WHEN** the owner opens the Camera tab
-- **THEN** the "Blur faces" switch is the only enabled control that changes data
+- **THEN** the "FridgeSense" and "Blur faces" switches are the only enabled controls that change data
 
 ### Requirement: Online history on the Camera tab
 The Camera tab SHALL show the uptime as "<percent>% online" over the last 30 days, a bar of the window with online and offline spans in different colors, and the list of changes newest first, each with "Online" or "Offline" and its local date and time. With no history it SHALL show "No status changes recorded yet."
