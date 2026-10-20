@@ -2,6 +2,34 @@
 
 ## ADDED Requirements
 
+### Requirement: Nothing private on the TV dashboard
+The TV dashboard SHALL show no clips, video, live view, reference images, camera snapshots or the camera's product image; the only pictures it SHALL show are door-opening stills and proof photos from `GET /api/events`. It SHALL have no buttons, links or inputs. It SHALL request only `GET /api/inventory`, `GET /api/events` and `GET /api/camera`, and SHALL NOT handle the Back (Escape) key, so the Fire TV app can close on Back.
+
+#### Scenario: No clips or video
+- **WHEN** an opening in the list has a `clip` link
+- **THEN** the TV dashboard contains no `video` element and nothing pointing at the clip
+
+#### Scenario: Only opening pictures shown
+- **WHEN** the TV dashboard is shown with openings that have `stills` and change `proof` links
+- **THEN** every `img` `src` on the dashboard is one of those links
+
+#### Scenario: Camera image not shown
+- **WHEN** `GET /api/camera` returns an `image_url`
+- **THEN** the TV dashboard contains no `img` element pointing at it
+
+#### Scenario: No controls
+- **WHEN** the TV dashboard is shown with items, openings with photos and camera details
+- **THEN** it contains no button, link or input
+
+#### Scenario: Only three endpoints
+- **WHEN** the TV dashboard has loaded and refreshed once
+- **THEN** the only API calls made are `inventory`, `events` and `camera`, and `POST /api/camera/snapshot` is never requested
+
+#### Scenario: Back is left to the TV app
+- **WHEN** the Escape key is pressed on the TV dashboard
+- **THEN** the event is not default-prevented and the hash stays `#tv`
+
+
 ### Requirement: Proof photos in Recent changes
 A Recent changes row whose opening has changes SHALL show, under its labels, one photo per change that has a `proof` link (its first link), in the order of the labels, at most 3. Rejected changes SHALL add no photo. A row showing "Checking…" or "No changes" SHALL show no photos. A photo SHALL have an empty `alt`, since the labels already name the change.
 
@@ -63,31 +91,8 @@ A photo on the TV dashboard (proof or latest still) that fails to load SHALL be 
 - **WHEN** the latest still is "https://s3/3.jpg?sig=1" and a refresh brings a newer opening whose last still is "https://s3/9.jpg?sig=2"
 - **THEN** the header `img` `src` is "https://s3/9.jpg?sig=2"
 
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Nothing private or interactive on the TV dashboard
-The TV dashboard SHALL show no clips, video, live view, reference images, camera snapshots or the camera's product image; the only pictures it SHALL show are door-opening stills and proof photos from `GET /api/events`. It SHALL have no buttons, links or inputs. It SHALL request only `GET /api/inventory`, `GET /api/events` and `GET /api/camera`, and SHALL NOT handle the Back (Escape) key, so the Fire TV app can close on Back.
-
-#### Scenario: No clips or video
-- **WHEN** an opening in the list has a `clip` link
-- **THEN** the TV dashboard contains no `video` element and nothing pointing at the clip
-
-#### Scenario: Only opening pictures shown
-- **WHEN** the TV dashboard is shown with openings that have `stills` and change `proof` links
-- **THEN** every `img` `src` on the dashboard is one of those links
-
-#### Scenario: Camera image not shown
-- **WHEN** `GET /api/camera` returns an `image_url`
-- **THEN** the TV dashboard contains no `img` element pointing at it
-
-#### Scenario: No controls
-- **WHEN** the TV dashboard is shown with items, openings with photos and camera details
-- **THEN** it contains no button, link or input
-
-#### Scenario: Only three endpoints
-- **WHEN** the TV dashboard has loaded and refreshed once
-- **THEN** the only API calls made are `inventory`, `events` and `camera`, and `POST /api/camera/snapshot` is never requested
-
-#### Scenario: Back is left to the TV app
-- **WHEN** the Escape key is pressed on the TV dashboard
-- **THEN** the event is not default-prevented and the hash stays `#tv`
+**Reason**: Its "Stills not shown" scenario no longer holds: the TV now shows door-opening stills and proof photos. It is replaced by "Nothing private on the TV dashboard", since a MODIFIED block can't drop a scenario.
+**Migration**: See "Nothing private on the TV dashboard" in this change: it keeps every other rule.

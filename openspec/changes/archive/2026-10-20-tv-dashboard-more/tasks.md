@@ -27,3 +27,4 @@
 ## 4. Finish
 
 - [x] 4.1 Run `npm test` and `npm run typecheck` in `pwa/`, and `npm test` in `firetv/`, all green
+  - Done 2026-10-20 from Jayson's Vega Virtual Device screenshot: 🧂, camera line and heatmap show; the remote's pointer still shows over the panels (friction-log entry added).
