@@ -2,6 +2,7 @@ import { Mic, Send, Square } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useApp } from "../AppContext";
 import type { AskResult } from "../api/types";
+import { finalTranscript, newRecognizer, playAnswer, recognizerClass, type Recognizer } from "../voice";
 
 const EXAMPLES = [
   "Do I have milk?",
@@ -17,34 +18,6 @@ interface Exchange {
   answer: string;
   /** The MCP tools the assistant checked, for assistant answers. */
   tools?: string[];
-}
-
-function speak(text: string) {
-  if (typeof speechSynthesis === "undefined") return;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-}
-
-type RecognizedResult = ArrayLike<{ transcript: string }> & { isFinal: boolean };
-
-// The Web Speech API's recognizer, as far as this screen uses it (not in every TS DOM lib).
-interface Recognizer {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  onresult: ((e: { resultIndex: number; results: ArrayLike<RecognizedResult> }) => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort?(): void;
-}
-
-type RecognizerClass = new () => Recognizer;
-
-function recognizerClass(): RecognizerClass | undefined {
-  const w = window as unknown as Record<string, RecognizerClass | undefined>;
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
 const NOT_HEARD = "Didn't catch that. Try again or type your question.";
@@ -84,19 +57,6 @@ export function Ask() {
     [],
   );
 
-  /** Play the answer's voice audio; speech synthesis reads it when there is none or it won't play. */
-  function say(answer: string, audio: string | null) {
-    const el = voice.current;
-    if (!audio || !el) return speak(answer);
-    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
-    el.src = `data:audio/mpeg;base64,${audio}`;
-    try {
-      Promise.resolve(el.play()).catch(() => speak(answer));
-    } catch {
-      speak(answer);
-    }
-  }
-
   function listen() {
     if (!Recognition) return;
     if (recognizer.current) {
@@ -106,16 +66,10 @@ export function Ask() {
       current.stop();
       return;
     }
-    const rec = new Recognition();
-    rec.lang = "en-US";
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
+    const rec = newRecognizer(Recognition);
     let heard: string | null = null;
     rec.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const result = e.results[i];
-        if (result.isFinal && heard === null) heard = result[0].transcript.trim() || null;
-      }
+      if (heard === null) heard = finalTranscript(e);
     };
     rec.onerror = () => {
       heard = null;
@@ -146,7 +100,7 @@ export function Ask() {
       const { answer } = result;
       setHistory((h) => [{ id: nextId++, question: q, answer, tools: toolsOf(result) }, ...h]);
       setDraft("");
-      say(answer, result.audio);
+      playAnswer(voice.current, answer, result.audio);
     } catch (err) {
       report(err);
     } finally {

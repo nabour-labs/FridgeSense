@@ -11,7 +11,7 @@
 
 ## 2. Shared voice code
 
-- [ ] 2.1 Move `Recognizer`, `recognizerClass`, `speak` and the answer-playing logic from `screens/Ask.tsx` into `pwa/src/voice.ts` (refactor, no behaviour change). Verify: `npx vitest run src/screens/Ask.test.tsx` is green before and after, with no test edited
+- [x] 2.1 Move `Recognizer`, `recognizerClass`, `speak` and the answer-playing logic from `screens/Ask.tsx` into `pwa/src/voice.ts` (refactor, no behaviour change). Verify: `npx vitest run src/screens/Ask.test.tsx` is green before and after, with no test edited
 
 ## 3. Two pages and the Activity page
 
