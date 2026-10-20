@@ -55,7 +55,7 @@ The frame route SHALL follow the existing auth rules for write routes: it needs 
 - **THEN** the response is 401
 
 ### Requirement: Snapshot from a live frame
-When the owner is signed in, a setup screen asks for a camera snapshot ("Camera snapshot" in Reference images, the set-area sheet and "New snapshot" in Fridge area) and "Mock video" is off, the app SHALL open a live view (`POST /api/camera/live`), wait until at least 10 video frames have been decoded, draw the current frame as a JPEG at most 960 px wide, end the live session (`DELETE /api/camera/live/{session_id}`), and send the frame to `POST /api/camera/frame`. The screen SHALL show only the image that route returns. The Open/close detection sheets never take a live frame: they take their picture from a recent clip (see the `inventory-app` requirement "Door setup pictures from recent clips").
+When the owner is signed in, a setup screen asks for a camera snapshot ("Camera snapshot" in Reference images, the set-area sheet and "New snapshot" in Fridge area, and the zone and add-reference sheets and their "New snapshot" in Open/close detection) and "Mock video" is off, the app SHALL open a live view (`POST /api/camera/live`), wait until at least 10 video frames have been decoded, draw the current frame as a JPEG at most 960 px wide, end the live session (`DELETE /api/camera/live/{session_id}`), and send the frame to `POST /api/camera/frame`. The screen SHALL show only the image that route returns.
 
 #### Scenario: Snapshot taken from the live view
 - **WHEN** the owner taps "Camera snapshot", the live view connects and plays 10 frames of 1920×1080 video, and the frame route answers 200
@@ -72,6 +72,10 @@ When the owner is signed in, a setup screen asks for a camera snapshot ("Camera 
 #### Scenario: Blurring fails
 - **WHEN** the frame route answers 502
 - **THEN** the screen shows the same message it shows today when `POST /api/camera/snapshot` answers 502 (for Reference images, "The camera can't be reached right now."), no image is shown, and `POST /api/camera/snapshot` is not requested
+
+#### Scenario: Open/close detection takes a live frame
+- **WHEN** "Mock video" is off and the owner taps "Add reference" in Open/close detection
+- **THEN** the sheet asks `cameraSnapshot` for a live frame and shows the returned image
 
 ### Requirement: Fall back to the Ring still
 If the live view cannot give a frame, the app SHALL request `POST /api/camera/snapshot` once instead and handle its answer as before (including 409 "No recent footage. Walk past the camera, then try again."). The live view cannot give a frame when the browser has no WebRTC, `POST /api/camera/live` fails, or the connection fails. Any live session already opened SHALL be ended. If the live view connects but fewer than 10 frames are decoded within 15 s, the camera is not sending video: the app SHALL NOT fall back, and the screen SHALL show "The camera isn't sending video. Check that it's plugged in." with "Try again".

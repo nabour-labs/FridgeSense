@@ -238,21 +238,6 @@ The snapshot route and the door-calibration write routes SHALL follow the existi
 - **WHEN** zone Z has `source = "clip"` and the owner sends `PATCH` with a new box and no `source`
 - **THEN** Z's `source` becomes `"live"`
 
-### Requirement: Setup needs zones and references from clips
-`POST /api/door-calibration/run` SHALL fail when any zone or any reference has `source = "live"`. It answers 422 with the `references` as in other setup failures, and the stored setup result stays unchanged. For a zone the error is `"zone <name> was drawn on a live picture. Redraw it on a frame from a recent clip."`. For a reference it is `"reference <n> is not from a recorded clip. Replace it with a frame from a recent clip."`, with `n` its 1-based position in `references`. Zones are checked first.
-
-#### Scenario: Live reference refused
-- **WHEN** zone "Doors" has `source = "clip"`, and its references are an open one from a clip and, listed second, a closed one with `source = "live"`
-- **THEN** the response is 422 `{"error": "reference 2 is not from a recorded clip. Replace it with a frame from a recent clip.", "references": [...]}` and the stored setup is unchanged
-
-#### Scenario: Live zone refused
-- **WHEN** zone "Doors" has `source = "live"` and all its references are from clips
-- **THEN** the response is 422 with `error = "zone Doors was drawn on a live picture. Redraw it on a frame from a recent clip."`
-
-#### Scenario: Everything from clips
-- **WHEN** every zone and reference has `source = "clip"` and each zone has an open and a closed reference that separate
-- **THEN** setup runs as before and answers 200
-
 ### Requirement: Fridge light measured strictly in setup
 Wherever setup, reference scores and self-tuning measure the `blue` feature, a pixel SHALL count as blue-lit only when `max(R,G,B) − min(R,G,B) > 100`, `max(R,G,B) > 120` and `B − max(R,G) > 60`, the same rule the door check uses. This replaces the `blue` thresholds given in "Run setup". The `color`, `brightness` and `change` features are unchanged.
 
@@ -282,3 +267,14 @@ When choosing a zone's feature, setup SHALL use `blue` whenever `blue` separates
 #### Scenario: Re-tune keeps blue
 - **WHEN** the owner's references plus the event samples separate a zone on `blue` by 0.03 and on `brightness` by 0.2
 - **THEN** the tuned rule for that zone uses `blue`
+
+### Requirement: Setup accepts live pictures
+`POST /api/door-calibration/run` SHALL run with zones and references of either `source`, `"clip"` or `"live"`. The other setup failures stay as they are.
+
+#### Scenario: Live zone and references set up
+- **WHEN** zone "Doors" has `source = "live"`, it has an open and a closed reference with `source = "live"`, and they separate
+- **THEN** the response is 200 with a setup zone for "Doors", and the stored setup is replaced
+
+#### Scenario: Mixed sources
+- **WHEN** zone "Doors" has `source = "clip"`, its open reference has `source = "live"`, its closed reference has `source = "clip"`, and they separate
+- **THEN** the response is 200
