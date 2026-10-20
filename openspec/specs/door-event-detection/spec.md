@@ -312,11 +312,11 @@ While face blurring is on, every image or clip that a door event links or an API
 - **THEN** the video is kept for the retry, and it is deleted by the run that finishes the step or expires with the `transient=true` lifecycle rule within 1 day
 
 #### Scenario: Door check runs on downloaded stills
-- **WHEN** a downloaded still passes the door check and contains a face
+- **WHEN** face blurring is on and a downloaded still passes the door check and contains a face
 - **THEN** the event counts as a door opening, face detection is called only after the door check, and the only stored event still is the blurred one
 
 #### Scenario: No debug stills when tracing is off
-- **WHEN** `DEBUG_TRACES=false` and a downloaded still contains a face
+- **WHEN** face blurring is on, `DEBUG_TRACES=false` and a downloaded still contains a face
 - **THEN** no unblurred copy of it is stored anywhere except the transient analysis video
 
 ### Requirement: Stills cropped to the visible area
