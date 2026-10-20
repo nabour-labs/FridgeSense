@@ -33,7 +33,7 @@
 
 ## 6. Deploy and on-device check
 
-- [ ] 6.1 Run every suite and the linters green: `uv run pytest` in `backend/` and `clipblur/`; `npm test` in `pwa/`, `firetv/` and `infra/`; `npm run lint` in `pwa/` and `firetv/`. Report each command and its result
+- [x] 6.1 Run every suite and the linters green: `uv run pytest` in `backend/` and `clipblur/`; `npm test` in `pwa/`, `firetv/` and `infra/`; `npm run lint` in `firetv/` and `npx tsc --noEmit` in `pwa/` (the PWA has no lint script). Report each command and its result
 - [ ] 6.2 After Jayson OKs the PWA deploy, rebuild and sideload the Fire TV app on the Vega Virtual Device and check:
   - the launcher icon;
   - the title icon;
