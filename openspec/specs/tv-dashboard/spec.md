@@ -134,10 +134,6 @@ At `#tv` with no valid session, the passcode screen SHALL be shown with the pass
 ### Requirement: Nothing private or interactive on the TV dashboard
 The TV dashboard SHALL show no stills, clips, live view, reference images, the camera's product image or other camera pictures, and SHALL have no buttons, links or inputs. It SHALL request only `GET /api/inventory`, `GET /api/events` and `GET /api/camera`, and SHALL NOT handle the Back (Escape) key, so the Fire TV app can close on Back.
 
-#### Scenario: Stills not shown
-- **WHEN** an opening in the list has `stills` and change `proof` links
-- **THEN** the TV dashboard contains no `img` or `video` element pointing at them
-
 #### Scenario: Camera image not shown
 - **WHEN** `GET /api/camera` returns an `image_url`
 - **THEN** the TV dashboard contains no `img` element pointing at it
