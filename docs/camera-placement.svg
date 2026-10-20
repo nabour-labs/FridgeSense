@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 460" width="900" height="460" role="img" aria-labelledby="t d">
+  <title id="t">Where to put the camera</title>
+  <desc id="d">Side view and top view of a kitchen. The camera sits on a shelf on the opposite wall, about 2 m from the fridge and about 2 m up, centered on the fridge, facing it straight on and tilted about 30 degrees down. Its view covers the whole fridge front, both open doors and the space in front where hands carry items in and out.</desc>
+  <style>
+    svg { --bg: #ffffff; --ink: #1f2937; --muted: #6b7280; --line: #9ca3af; --fridge: #e5e7eb; --fridge-edge: #6b7280; --cab: #f3f4f6; --accent: #2563eb; --hand: #f59e0b; }
+    @media (prefers-color-scheme: dark) {
+      svg { --bg: #0d1117; --ink: #e6edf3; --muted: #9da7b3; --line: #6e7681; --fridge: #30363d; --fridge-edge: #8b949e; --cab: #21262d; --accent: #58a6ff; --hand: #f2b84b; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); }
+    .title { font-size: 18px; font-weight: 600; }
+    .label { font-size: 13px; }
+    .small { font-size: 12px; fill: var(--muted); }
+    .dim { font-size: 13px; font-weight: 600; }
+    .bg { fill: var(--bg); }
+    .wall { stroke: var(--line); stroke-width: 2; fill: none; }
+    .fridge { fill: var(--fridge); stroke: var(--fridge-edge); stroke-width: 2; }
+    .cab { fill: var(--cab); stroke: var(--line); stroke-width: 1.5; }
+    .seam { stroke: var(--fridge-edge); stroke-width: 1.5; fill: none; }
+    .fov { fill: var(--accent); fill-opacity: 0.14; stroke: var(--accent); stroke-width: 1.5; stroke-opacity: 0.7; }
+    .axis { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 5; fill: none; }
+    .cam { fill: var(--ink); }
+    .lens { fill: var(--accent); }
+    .hands { fill: var(--hand); fill-opacity: 0.22; stroke: var(--hand); stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .door { stroke: var(--fridge-edge); stroke-width: 3; stroke-linecap: round; }
+    .swing { stroke: var(--fridge-edge); stroke-width: 1.2; stroke-dasharray: 3 4; fill: none; }
+    .dimline { stroke: var(--ink); stroke-width: 1.2; fill: none; }
+    .divider { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 6; }
+  </style>
+
+  <rect class="bg" width="900" height="460" rx="12"/>
+  <line class="divider" x1="450" y1="24" x2="450" y2="436"/>
+
+  <!-- ===== Side view ===== -->
+  <text class="title" x="24" y="40">Side view</text>
+
+  <!-- walls and floor -->
+  <line class="wall" x1="60" y1="70" x2="60" y2="380"/>
+  <line class="wall" x1="400" y1="70" x2="400" y2="380"/>
+  <line class="wall" x1="20" y1="380" x2="420" y2="380"/>
+
+  <!-- camera shelf -->
+  <line class="wall" x1="60" y1="132" x2="112" y2="132"/>
+
+  <!-- field of view: top edge just above the fridge, bottom edge hits the floor in front of it -->
+  <polygon class="fov" points="100,121 330,152 330,380 296,380"/>
+  <line class="axis" x1="100" y1="121" x2="330" y2="266"/>
+  <text class="label" x="150" y="200" transform="rotate(32 150 200)">aim ~30° down</text>
+
+  <!-- cabinet and fridge -->
+  <rect class="cab" x="326" y="112" width="74" height="52"/>
+  <rect class="fridge" x="330" y="168" width="68" height="212" rx="4"/>
+  <line class="seam" x1="330" y1="300" x2="398" y2="300"/>
+  <text class="label" x="364" y="240" text-anchor="middle">Fridge</text>
+
+  <!-- where hands carry items in and out -->
+  <rect class="hands" x="270" y="210" width="58" height="120" rx="6"/>
+  <text class="small" x="299" y="350" text-anchor="middle">hands</text>
+  <text class="small" x="299" y="365" text-anchor="middle">in / out</text>
+
+  <!-- camera, tilted down -->
+  <g transform="translate(90 121) rotate(32)">
+    <rect class="cam" x="-14" y="-10" width="28" height="20" rx="5"/>
+    <circle class="lens" cx="14" cy="0" r="5"/>
+  </g>
+  <text class="label" x="124" y="92">Camera on a shelf</text>
+  <text class="small" x="124" y="108">or wall mount</text>
+
+  <!-- height dimension -->
+  <line class="dimline" x1="38" y1="132" x2="38" y2="380"/>
+  <line class="dimline" x1="32" y1="132" x2="44" y2="132"/>
+  <line class="dimline" x1="32" y1="380" x2="44" y2="380"/>
+  <text class="dim" x="30" y="256" text-anchor="middle" transform="rotate(-90 30 256)">≈ 2 m up</text>
+
+  <!-- distance dimension -->
+  <line class="dimline" x1="90" y1="408" x2="330" y2="408"/>
+  <line class="dimline" x1="90" y1="402" x2="90" y2="414"/>
+  <line class="dimline" x1="330" y1="402" x2="330" y2="414"/>
+  <text class="dim" x="210" y="430" text-anchor="middle">≈ 2 m from the fridge door</text>
+
+  <!-- ===== Top view ===== -->
+  <text class="title" x="474" y="40">Top view</text>
+
+  <!-- back wall -->
+  <line class="wall" x1="490" y1="70" x2="880" y2="70"/>
+
+  <!-- field of view: wide enough for both doors swung open -->
+  <polygon class="fov" points="680,370 545,72 815,72"/>
+  <line class="axis" x1="680" y1="370" x2="680" y2="142"/>
+
+  <!-- fridge, French doors and drawer -->
+  <rect class="fridge" x="615" y="72" width="130" height="68" rx="4"/>
+  <text class="label" x="680" y="111" text-anchor="middle">Fridge</text>
+
+  <!-- doors open -->
+  <line class="door" x1="615" y1="140" x2="615" y2="205"/>
+  <line class="door" x1="745" y1="140" x2="745" y2="205"/>
+  <path class="swing" d="M680 140 A65 65 0 0 1 615 205"/>
+  <path class="swing" d="M680 140 A65 65 0 0 0 745 205"/>
+  <text class="small" x="604" y="214" text-anchor="end">doors open</text>
+
+  <!-- hands zone -->
+  <rect class="hands" x="625" y="150" width="110" height="52" rx="6"/>
+  <text class="small" x="604" y="180" text-anchor="end">hands in / out</text>
+
+  <!-- camera facing the fridge -->
+  <g transform="translate(680 382) rotate(-90)">
+    <rect class="cam" x="-14" y="-10" width="28" height="20" rx="5"/>
+    <circle class="lens" cx="14" cy="0" r="5"/>
+  </g>
+  <text class="label" x="680" y="418" text-anchor="middle">Camera centered on the fridge,</text>
+  <text class="label" x="680" y="434" text-anchor="middle">facing it straight on</text>
+
+  <!-- distance dimension -->
+  <line class="dimline" x1="840" y1="140" x2="840" y2="382"/>
+  <line class="dimline" x1="834" y1="140" x2="846" y2="140"/>
+  <line class="dimline" x1="834" y1="382" x2="846" y2="382"/>
+  <text class="dim" x="852" y="266" transform="rotate(90 852 266)" text-anchor="middle">≈ 2 m</text>
+
+  <text class="small" x="500" y="300">Whole fridge, both open</text>
+  <text class="small" x="500" y="315">doors and the hands</text>
+  <text class="small" x="500" y="330">in the frame</text>
+</svg>
