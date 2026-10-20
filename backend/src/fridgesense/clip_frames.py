@@ -17,25 +17,37 @@ from fridgesense.ring import RingAuthError, RingClient
 
 FRAME_INTERVAL_MS = 500
 MAX_CLIP_BYTES = 300_000_000
-CLIP_RETRY_DELAYS_S = (3, 6)
-NOT_READY = {416, 425}  # RECORDING_NOT_READY / MEDIA_NOT_FOUND, from the request or the link
+CLIP_RETRY_DELAYS_S = (3, 6, 12)
+# RECORDING_NOT_READY / MEDIA_NOT_FOUND, or 206 (only part of the footage), from the request
+# or the link
+NOT_READY = {206, 416, 425}
 CHUNK_BYTES = 1 << 20
 
 
 class ClipUnavailable(Exception):
     """The clip can't be used; `reason` says why (status_<code>, download_failed, too_large,
-    decode_failed, no_frames, cut_failed)."""
+    decode_failed, no_frames, cut_failed). For status_<code>, `stage` says which call answered
+    ("request" or "link") and `details` holds the link's range headers, if any."""
 
-    def __init__(self, reason: str):
+    def __init__(self, reason: str, stage: str | None = None, details: dict | None = None):
         super().__init__(reason)
         self.reason = reason
+        self.stage = stage
+        self.details = details or {}
 
 
-def _save(http: httpx.Client, link: str, directory: Path | None, max_bytes: int) -> Path | int:
-    """Stream the pre-signed link (no Ring token) to a temp file; the HTTP status if not 200."""
+RANGE_HEADERS = {"content_range": "content-range", "content_length": "content-length"}
+
+
+def _save(
+    http: httpx.Client, link: str, directory: Path | None, max_bytes: int
+) -> Path | tuple[int, dict]:
+    """Stream the pre-signed link (no Ring token) to a temp file; if not 200, the HTTP status
+    and the response's range headers (never the link itself)."""
     with http.stream("GET", link, timeout=60.0) as resp:
         if resp.status_code != 200:
-            return resp.status_code
+            headers = {k: resp.headers[h] for k, h in RANGE_HEADERS.items() if h in resp.headers}
+            return resp.status_code, headers
         if int(resp.headers.get("content-length") or 0) > max_bytes:
             raise ClipUnavailable("too_large")
         fd, name = tempfile.mkstemp(suffix=".mp4", dir=directory)
@@ -68,7 +80,8 @@ def download_clip(
     """The event clip as a temp MP4 file; the caller deletes it. Raises ClipUnavailable.
 
     Ring answers 303 at once; missing footage shows up as 416/425 from the request or the
-    link, so both are retried together after each delay in `delays`.
+    link (and 206 when only part of the footage is there), so these are retried together after
+    each delay in `delays`.
     """
     body = {"timestamp": start_ms, "duration": duration_ms}
     for attempt in range(len(delays) + 1):
@@ -78,13 +91,13 @@ def download_clip(
                 saved = _save(http, resp.headers["location"], directory, max_bytes)
                 if isinstance(saved, Path):
                     return saved
-                status = saved
+                (status, details), stage = saved, "link"
             else:
-                status = resp.status_code
+                status, stage, details = resp.status_code, "request", {}
         except (httpx.HTTPError, RingAuthError, OAuthRejected, OAuthUnavailable):
             raise ClipUnavailable("download_failed") from None
         if status not in NOT_READY or attempt == len(delays):
-            raise ClipUnavailable(f"status_{status}")
+            raise ClipUnavailable(f"status_{status}", stage, details)
         sleep(delays[attempt])
     raise ClipUnavailable("download_failed")  # unreachable: the loop always returns or raises
 
