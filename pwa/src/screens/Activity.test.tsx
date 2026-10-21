@@ -38,6 +38,14 @@ function renderActivity(
   return api;
 }
 
+/** Hands `pages` only the page requests; the opening day lookup (limit 1) finds nothing, so the screen stays on today. */
+function pagesOnly(pages: ReturnType<typeof vi.fn>) {
+  const page = pages as (from: Date, to: Date, limit: number, cursor?: string) => Promise<unknown>;
+  return vi.fn((from: Date, to: Date, limit: number, cursor?: string) =>
+    limit === 1 ? Promise.resolve({ events: [], next: null }) : page(from, to, limit, cursor),
+  );
+}
+
 function midnight(daysFromToday = 0) {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -179,6 +187,40 @@ test("Activity shows today, 10 at a time, and can't pick a later day", async () 
   expect(api.eventsOn).toHaveBeenCalledWith(midnight(), midnight(1), 10, undefined);
 });
 
+// Last day with openings by default
+test("with no openings today, Activity opens on the last day that has one", async () => {
+  const threeDaysAgo = new Date(opened);
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+  const old = event({ id: "ev3", opened_at: threeDaysAgo.toISOString() });
+  const eventsOn = vi.fn(async (from: Date) => ({
+    events: from.getTime() === midnight().getTime() ? [] : [old],
+    next: null,
+  }));
+  renderActivity([], { eventsOn });
+  await screen.findByRole("article");
+  expect(screen.getByLabelText("Day")).toHaveValue(dateValue(midnight(-3)));
+  expect(eventsOn).toHaveBeenCalledWith(midnight(-30), midnight(1), 1);
+  expect(eventsOn).toHaveBeenLastCalledWith(midnight(-3), midnight(-2), 10, undefined);
+});
+
+// No openings in the last 31 days
+test("with no openings in the last 31 days, Activity stays on today", async () => {
+  const api = renderActivity([]);
+  expect(await screen.findByText("No door openings on this day.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Day")).toHaveValue(dateValue(midnight()));
+  expect(api.eventsOn).toHaveBeenCalledWith(midnight(-30), midnight(1), 1);
+});
+
+test("when the lookup fails, Activity stays on today", async () => {
+  const eventsOn = vi.fn(async (_from: Date, _to: Date, limit: number) => {
+    if (limit === 1) throw new ApiError(500, "boom");
+    return { events: [], next: null };
+  });
+  renderActivity([], { eventsOn });
+  expect(await screen.findByText("No door openings on this day.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Day")).toHaveValue(dateValue(midnight()));
+});
+
 // Pick a day
 test("picking yesterday asks for yesterday's openings from page 1", async () => {
   const api = renderActivity([event()]);
@@ -221,7 +263,7 @@ test("a single page disables Older and Newer", async () => {
 // Delete an opening
 test("the owner deletes a door opening after confirming", async () => {
   const eventsOn = vi.fn().mockResolvedValueOnce({ events: [event()], next: null }).mockResolvedValue({ events: [], next: null });
-  const api = renderActivity([], { eventsOn });
+  const api = renderActivity([], { eventsOn: pagesOnly(eventsOn) });
   const card = await screen.findByRole("article");
   await userEvent.click(within(card).getByRole("button", { name: "Delete door opening at 18:02" }));
   const dialog = screen.getByRole("dialog", { name: "Delete this door opening?" });
@@ -266,7 +308,7 @@ test("door openings stay listed when a later poll fails", async () => {
     signedIn();
     location.hash = "#activity";
     const events = vi.fn().mockResolvedValueOnce({ events: [event()], next: null }).mockRejectedValue(new ApiError(500));
-    render(<App api={fakeApi({ eventsOn: events })} />);
+    render(<App api={fakeApi({ eventsOn: pagesOnly(events) })} />);
     expect(await screen.findByRole("article")).toBeInTheDocument();
     await act(() => vi.advanceTimersByTimeAsync(10_000));
     expect(events).toHaveBeenCalledTimes(2);
@@ -294,7 +336,7 @@ describe("still links across polls", () => {
   function renderPolls(events: ReturnType<typeof vi.fn>) {
     signedIn();
     location.hash = "#activity";
-    render(<App api={fakeApi({ eventsOn: events })} />);
+    render(<App api={fakeApi({ eventsOn: pagesOnly(events) })} />);
   }
 
   // Poll with fresh links

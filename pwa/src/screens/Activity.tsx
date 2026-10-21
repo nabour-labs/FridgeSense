@@ -12,6 +12,8 @@ import { useLoad } from "../useLoad";
 /** Presigned still and clip links last 15 min; reuse them for 10 so a poll doesn't reload every image. */
 const STILL_LINKS_REUSED_MS = 10 * 60_000;
 const PAGE_SIZE = 10;
+/** How far back to look for a day with openings when today has none: the API's longest range. */
+const LOOKBACK_DAYS = 31;
 
 type StillLinks = Map<string, { stills: string[]; clip: string | null; proof: (string[] | undefined)[]; at: number }>;
 
@@ -25,9 +27,10 @@ function dateValue(d: Date): string {
 }
 
 export function Activity() {
-  const { role } = useApp();
+  const { api, role } = useApp();
   const stillLinks = useRef<StillLinks>(new Map());
-  const [day, setDay] = useState(() => startOfDay(new Date()));
+  /** Null until the day to open on is known: today, or the last day with an opening when today has none. */
+  const [day, setDay] = useState<Date | null>(null);
   /** The cursor of each page so far; the last one is the page shown. */
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const picker = useRef<HTMLInputElement>(null);
@@ -39,6 +42,15 @@ export function Activity() {
     jumpUp.current = true;
     setCursors(next);
   };
+
+  useEffect(() => {
+    const now = new Date();
+    const fallback = startOfDay(now);
+    api.eventsOn(startOfDay(now, 1 - LOOKBACK_DAYS), startOfDay(now, 1), 1).then(
+      (r) => setDay((d) => d ?? (r.events[0] ? startOfDay(new Date(r.events[0].opened_at)) : fallback)),
+      () => setDay((d) => d ?? fallback),
+    );
+  }, [api]);
 
   const pickDay = (value: string) => {
     const [y, m, d] = value.split("-").map(Number);
@@ -54,7 +66,7 @@ export function Activity() {
           ref={picker}
           type="date"
           aria-label="Day"
-          value={dateValue(day)}
+          value={dateValue(day ?? new Date())}
           max={today}
           onChange={(e) => pickDay(e.target.value)}
           className="h-11 min-w-0 flex-1 scroll-mt-24 rounded-xl border border-slate-300 bg-white px-3 font-semibold outline-none [color-scheme:light] focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-slate-950 dark:[color-scheme:dark]"
@@ -71,19 +83,23 @@ export function Activity() {
         )}
       </div>
       {watching && <LiveStream onClose={() => setWatching(false)} />}
-      <EventPage
-        key={`${dateValue(day)}/${cursors.at(-1) ?? ""}`}
-        day={day}
-        cursor={cursors.at(-1)}
-        page={cursors.length}
-        stillLinks={stillLinks}
-        onOlder={(next) => showPage([...cursors, next])}
-        onNewer={() => showPage(cursors.slice(0, -1))}
-        onShown={() => {
-          if (jumpUp.current) picker.current?.scrollIntoView?.({ block: "nearest" });
-          jumpUp.current = false;
-        }}
-      />
+      {day ? (
+        <EventPage
+          key={`${dateValue(day)}/${cursors.at(-1) ?? ""}`}
+          day={day}
+          cursor={cursors.at(-1)}
+          page={cursors.length}
+          stillLinks={stillLinks}
+          onOlder={(next) => showPage([...cursors, next])}
+          onNewer={() => showPage(cursors.slice(0, -1))}
+          onShown={() => {
+            if (jumpUp.current) picker.current?.scrollIntoView?.({ block: "nearest" });
+            jumpUp.current = false;
+          }}
+        />
+      ) : (
+        <div aria-hidden data-testid="loading" className="h-40 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />
+      )}
     </div>
   );
 }
