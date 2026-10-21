@@ -84,7 +84,7 @@ The Fridge screen SHALL show a summary card with the number of in-stock items, w
 - **THEN** `PUT /api/items/eggs` is sent with `{"quantity": 12}` and the list shows eggs ×12
 
 ### Requirement: Activity screen
-The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs" with an arrow showing the direction, and a marker on unconfirmed changes. When an event has a `clip` link, the card SHALL show that clip instead of its stills: an inline video, muted, with controls, that plays inline and does not autoplay, with the first still as its poster. Otherwise it SHALL show the stills with the first one shown large, and tapping a still SHALL open it full size in a viewer that can step to the previous and next still. The screen SHALL show one day at a time, today by default, 10 openings per page, and SHALL let the owner delete an opening after confirming.
+The Activity screen SHALL list door openings newest first with their local time, how long the door was open, the changes as "+ milk", "− 2 eggs" with an arrow showing the direction, and a marker on unconfirmed changes. When an event has a `clip` link, the card SHALL show that clip instead of its stills: an inline video, muted, with controls, that plays inline and does not autoplay, with the first still as its poster. Otherwise it SHALL show the stills with the first one shown large, and tapping a still SHALL open it full size in a viewer that can step to the previous and next still. The screen SHALL show one day at a time, by default today or, when today has no openings, the most recent day in the last 31 days that has one, 10 openings per page, and SHALL let the owner delete an opening after confirming.
 
 #### Scenario: Door opening shown
 - **WHEN** an event opened at 18:02 local time for 25 s added 1 milk and removed 2 eggs
@@ -131,8 +131,16 @@ The Activity screen SHALL list door openings newest first with their local time,
 - **THEN** the screen says there were no door openings on this day, and the day picker stays shown
 
 #### Scenario: Today by default
-- **WHEN** the Activity screen opens
+- **WHEN** the Activity screen opens and today has door openings
 - **THEN** the day picker shows today's date, cannot be set past today, and the events requested run from local midnight today to local midnight tomorrow, 10 at a time
+
+#### Scenario: Last day with openings by default
+- **WHEN** the Activity screen opens, today has no door openings, and the newest opening in the last 31 days was 3 days ago
+- **THEN** the day picker shows the date 3 days ago and the events requested run from local midnight that day to local midnight the next day, 10 at a time
+
+#### Scenario: No openings in the last 31 days
+- **WHEN** the Activity screen opens and there are no door openings in the last 31 days, or looking them up fails
+- **THEN** the day picker shows today's date
 
 #### Scenario: Pick a day
 - **WHEN** the user picks yesterday
