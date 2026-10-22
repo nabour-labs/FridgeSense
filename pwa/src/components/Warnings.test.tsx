@@ -79,12 +79,13 @@ test("several warnings show one banner each, in order", async () => {
   expect(banners[1]).toHaveTextContent("Open/close detection is not set up");
 });
 
-// Viewer sees no links
-test("a viewer sees the banner text without links", async () => {
-  renderWarnings([SETUP_MISSING, moved(["door_references"])], "viewer");
-  const banners = await screen.findAllByRole("alert");
-  expect(banners[0]).toHaveTextContent("Open/close detection is not set up");
-  expect(screen.queryAllByRole("link")).toHaveLength(0);
+// setup-warnings, Scenario: User sees no banners
+// setup-warnings, Scenario: Viewer sees no banners
+test.each<Role>(["user", "viewer"])("a %s sees no banners and nothing is requested", async (role) => {
+  const { api } = renderWarnings([SETUP_MISSING, moved(["door_references"]), PAUSED, MISMATCH, MASK], role);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(api.warnings).not.toHaveBeenCalled();
 });
 
 // No warnings
@@ -115,13 +116,6 @@ test("paused banner links back to the Camera tab", async () => {
   const [paused] = await screen.findAllByRole("alert");
   expect(paused).toHaveTextContent(PAUSED.message);
   expect(within(paused).getByRole("link", { name: "Resume on Camera tab" })).toHaveAttribute("href", "#config");
-});
-
-test("a viewer sees the paused banner without the link", async () => {
-  renderWarnings([PAUSED], "viewer");
-  const banner = await screen.findByRole("alert");
-  expect(banner).toHaveTextContent(PAUSED.message);
-  expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
 });
 
 // Re-link banner
@@ -155,14 +149,6 @@ test("setup mismatch links to Update door references", async () => {
   );
 });
 
-// Viewer sees no link
-test("a viewer sees the mismatch message with no link", async () => {
-  renderWarnings([MISMATCH], "viewer");
-  const banner = await screen.findByRole("alert");
-  expect(banner).toHaveTextContent(MISMATCH.message);
-  expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
-});
-
 const MASK: SetupWarning = {
   code: "privacy_mask_changed",
   message:
@@ -178,14 +164,6 @@ test("privacy mask changed links to Update door zones", async () => {
   const banner = await screen.findByRole("alert");
   expect(banner).toHaveTextContent("The camera's privacy mask changed and now covers part of Chiller");
   expect(within(banner).getByRole("link", { name: "Update door zones" })).toHaveAttribute("href", "#config/doors");
-});
-
-// Viewer sees no link
-test("a viewer sees the privacy mask banner with no link", async () => {
-  renderWarnings([MASK], "viewer");
-  const banner = await screen.findByRole("alert");
-  expect(banner).toHaveTextContent(MASK.message);
-  expect(within(banner).queryByRole("link")).not.toBeInTheDocument();
 });
 
 // No camera-moved banner for a mask change

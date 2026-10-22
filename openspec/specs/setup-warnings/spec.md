@@ -132,7 +132,7 @@ When the account's first discovered camera is paused, `GET /api/warnings` SHALL 
 
 #### Scenario: Banner link
 - **WHEN** an owner opens the Fridge screen and `GET /api/warnings` lists `monitoring_paused`
-- **THEN** the banner shows its message and a "Resume on Camera tab" link to `#config`; a viewer sees the message without the link
+- **THEN** the banner shows its message and a "Resume on Camera tab" link to `#config`
 
 ### Requirement: Door setup mismatch warning
 When the device's `suspect_streak` is 3 or more, `GET /api/warnings` SHALL list `{"code": "door_setup_mismatch", "message": "Open/close detection doesn't match the camera's recordings, so the fridge light is used instead. Replace the door references with frames from recent clips and run setup again."}`. It SHALL come after every other warning. When the streak cannot be read, the warning SHALL be left out and the response SHALL still be 200.
@@ -156,3 +156,18 @@ When the device's `suspect_streak` is 3 or more, `GET /api/warnings` SHALL list 
 #### Scenario: Streak unreadable
 - **WHEN** reading the streak raises a table error
 - **THEN** the response is 200 without `door_setup_mismatch`
+
+### Requirement: Banners shown to the owner only
+The app SHALL show setup-warning banners only to a session with role `owner`. For `user` and `viewer` sessions the app SHALL show no warning banner on any screen and SHALL NOT call `GET /api/warnings`. The API itself is unchanged.
+
+#### Scenario: Owner sees banners
+- **WHEN** an owner opens the Fridge screen and `GET /api/warnings` lists `camera_moved`
+- **THEN** the banner shows its message and its fix links
+
+#### Scenario: User sees no banners
+- **WHEN** a session with role `user` opens the Fridge or Config screen while a warning is active
+- **THEN** no warning banner is shown and `GET /api/warnings` is not called
+
+#### Scenario: Viewer sees no banners
+- **WHEN** a session with role `viewer` opens the Fridge or Config screen while a warning is active
+- **THEN** no warning banner is shown and `GET /api/warnings` is not called
