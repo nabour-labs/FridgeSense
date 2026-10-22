@@ -122,7 +122,7 @@ Friction log: 3 CDK entries plus 1 shared with API Gateway.
 | **Amazon Polly** (neural, Joanna) | Reads Ask answers aloud | Natural voice, simple API, browser voice as a fallback | Nothing blocking |
 | **Amazon EventBridge** | Token refresh every 3 h; MCP Lambda warm-up every 5 min | Simple schedule rules | Nothing blocking |
 | **Amazon CloudWatch** | Structured JSON logs (`nova_cost`, `face_detect_cost`, `ask_agent`), alarm on failed runs | `aws logs tail --filter-pattern` is enough for cost tracking | Third-party loggers (httpx, Mangum) log URLs at INFO by default (see MCP SDK) |
-| **Amazon SNS** and **AWS Budgets** | Email on failed door-event runs and at 80% of a $20/month budget | Easy guardrails when paying out of pocket | The SNS email must be confirmed by hand after the first deploy |
+| **Amazon SNS** and **AWS Budgets** | Email on failed door-event runs and at 80% of a $60/month budget | Easy guardrails when paying out of pocket | The SNS email must be confirmed by hand after the first deploy |
 | **AWS SDK for Python** (boto3) | Every AWS call | Botocore Stubber and moto let us test without AWS | `retries={"max_attempts": 1}` means two attempts; the key naming is easy to get wrong |
 
 **Would we build with them again?** Yes. The whole backend is serverless, costs a few dollars a month at one household's traffic, and every privacy rule (face blur, 7-day expiry, crop) maps onto a managed feature.

@@ -102,11 +102,11 @@ def test_clear_instructions(table):
 
 # Seventh reference
 def test_seventh_reference_refused(table):
-    for n in range(6):
+    for n in range(30):
         add(table, A, f"item {n}", now_ms=n)
     with pytest.raises(cfg.TooMany):
         add(table, A, "one more", now_ms=99)
-    assert [r.annotation for r in cfg.load(table, A).references] == [f"item {n}" for n in range(6)]
+    assert [r.annotation for r in cfg.load(table, A).references] == [f"item {n}" for n in range(30)]
 
 
 # Delete a reference / Unknown reference

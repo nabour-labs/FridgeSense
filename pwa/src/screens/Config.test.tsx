@@ -100,16 +100,16 @@ test("the annotation field takes 300 characters and Save sends all of them", asy
 });
 
 // Limit reached
-test("with 6 references the count reads 6 of 6 and Add is disabled", async () => {
-  const six = Array.from({ length: 6 }, (_, n) => ref(`r${n}`, `item ${n}`));
-  renderConfig({ instructions: "", references: six });
-  expect(await screen.findByText("6 of 6")).toBeInTheDocument();
+test("with 30 references the count reads 30 of 30 and Add is disabled", async () => {
+  const thirty = Array.from({ length: 30 }, (_, n) => ref(`r${n}`, `item ${n}`));
+  renderConfig({ instructions: "", references: thirty });
+  expect(await screen.findByText("30 of 30")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
 });
 
-test("the count shows how many of 6 are used", async () => {
+test("the count shows how many of 30 are used", async () => {
   renderConfig({ instructions: "", references: [MILK] });
-  expect(await screen.findByText("1 of 6")).toBeInTheDocument();
+  expect(await screen.findByText("1 of 30")).toBeInTheDocument();
 });
 
 // Delete a reference
@@ -125,7 +125,7 @@ test("deleting a reference asks first, then removes it", async () => {
   await userEvent.click(del);
   expect(confirm).toHaveBeenCalledTimes(2);
   expect(api.deleteReference).toHaveBeenCalledWith("r1");
-  expect(await screen.findByText("0 of 6")).toBeInTheDocument();
+  expect(await screen.findByText("0 of 30")).toBeInTheDocument();
   expect(screen.queryByText("milk bag")).not.toBeInTheDocument();
   confirm.mockRestore();
 });
@@ -133,7 +133,7 @@ test("deleting a reference asks first, then removes it", async () => {
 // Upload refused
 test.each([
   [400, "image must be a JPEG of at most 200 KB"],
-  [409, "at most 6 reference images"],
+  [409, "at most 30 reference images"],
 ])("a %i from the API shows its message and keeps the list", async (status, message) => {
   renderConfig(
     { instructions: "", references: [MILK] },

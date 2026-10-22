@@ -81,13 +81,13 @@ describe("API throttling", () => {
 
 describe("cost and failure alerts", () => {
   // Budget at 80 percent
-  it("emails at 80% of a $20 monthly cost budget", () => {
+  it("emails at 80% of a $60 monthly cost budget", () => {
     template.resourceCountIs("AWS::Budgets::Budget", 1);
     template.hasResourceProperties("AWS::Budgets::Budget", {
       Budget: {
         BudgetType: "COST",
         TimeUnit: "MONTHLY",
-        BudgetLimit: { Amount: 20, Unit: "USD" },
+        BudgetLimit: { Amount: 60, Unit: "USD" },
       },
       NotificationsWithSubscribers: [
         {

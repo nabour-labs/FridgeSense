@@ -1,5 +1,5 @@
 import type { CameraInfo, Change, DoorEvent, Item } from "../api/types";
-import { cameraLine, clockTime, fridgeRows, heatCells, latestStill, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
+import { activityRows, cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const TZ = "America/Toronto";
 const NOW = new Date("2026-10-20T18:00:00Z"); // 14:00 in Toronto
@@ -357,33 +357,108 @@ test("checking, no-change and collapsed rows have no proofs", () => {
   ]);
 });
 
-// Newest opening's last still
-test("the latest still is the newest opening's last still, captioned with its local time", () => {
-  const events = [
-    event("2026-10-20T16:00:00Z", { stills: ["https://s3/old.jpg"] }),
-    event("2026-10-20T17:42:00Z", { stills: ["https://s3/1.jpg", "https://s3/2.jpg", "https://s3/3.jpg"] }),
-  ];
-  expect(latestStill(events, TZ)).toEqual({ src: "https://s3/3.jpg", caption: "Latest still · 1:42 pm" });
-});
-
-// Newest opening has no stills
-test("openings without stills are skipped for the latest still", () => {
-  const events = [
-    event("2026-10-20T17:42:00Z", { stills: [] }),
-    event("2026-10-20T17:10:00Z", { stills: ["https://s3/x.jpg"] }),
-  ];
-  expect(latestStill(events, TZ)).toEqual({ src: "https://s3/x.jpg", caption: "Latest still · 1:10 pm" });
-});
-
-// No stills at all
-test("there is no latest still when no opening has stills", () => {
-  expect(latestStill([event("2026-10-20T17:42:00Z")], TZ)).toBeNull();
-  expect(latestStill([], TZ)).toBeNull();
-});
-
 // Re-signed link kept (the key it is kept by)
 test("a still's base is its link without the query string", () => {
   expect(stillBase("https://s3/a.jpg?X-Amz-Signature=1")).toBe("https://s3/a.jpg");
   expect(stillBase("https://s3/a.jpg")).toBe("https://s3/a.jpg");
   expect(stillBase("/mock/still-1.svg")).toBe("/mock/still-1.svg");
+});
+
+describe("activityRows", () => {
+  const rows = (events: DoorEvent[]) => activityRows(events, NOW.getTime(), TZ);
+
+  // Opening with changes, stills and proof
+  test("a row has the day, clock time, seconds, labels, stills and proof photos", () => {
+    const [row] = rows([
+      event("2026-10-20T14:36:00Z", {
+        duration_s: 18,
+        changes: [change("bowl", "added", 1, { proof: ["https://s3/p.jpg", "https://s3/q.jpg"] })],
+        stills: ["https://s3/1.jpg", "https://s3/2.jpg"],
+      }),
+    ]);
+    expect(row).toEqual({
+      id: "2026-10-20T14:36:00Z",
+      when: "Today · 10:36 am · 18 s",
+      state: "changes",
+      labels: ["+ bowl"],
+      stills: ["https://s3/1.jpg", "https://s3/2.jpg"],
+      proofs: ["https://s3/p.jpg"],
+    });
+  });
+
+  test("the day reads Yesterday, then the weekday, in the given time zone", () => {
+    // 02:00 UTC on the 20th is 10 pm on the 19th in Toronto.
+    expect(rows([event("2026-10-20T02:00:00Z")])[0].when).toBe("Yesterday · 10:00 pm · 20 s");
+    expect(rows([event("2026-10-17T15:00:00Z")])[0].when).toBe("Sat · 11:00 am · 20 s");
+  });
+
+  // Proof that is also a still shown once
+  test("a proof photo that is one of the stills shown is left out", () => {
+    const [row] = rows([
+      event("2026-10-20T17:00:00Z", {
+        stills: ["https://s3/1.jpg?sig=a", "https://s3/2.jpg?sig=a"],
+        changes: [change("milk", "added", 1, { proof: ["https://s3/2.jpg?sig=b"] })],
+      }),
+    ]);
+    expect(row.stills).toEqual(["https://s3/1.jpg?sig=a", "https://s3/2.jpg?sig=a"]);
+    expect(row.proofs).toEqual([]);
+  });
+
+  // At most four stills
+  test("at most the first four stills are kept", () => {
+    const stills = [1, 2, 3, 4, 5, 6].map((i) => `https://s3/${i}.jpg`);
+    expect(rows([event("2026-10-20T17:00:00Z", { stills })])[0].stills).toEqual(stills.slice(0, 4));
+  });
+
+  test("proof photos skip rejected changes and stop at three", () => {
+    const proof = (i: number) => ({ proof: [`https://s3/p${i}.jpg`] });
+    const [row] = rows([
+      event("2026-10-20T17:00:00Z", {
+        changes: [
+          change("a", "added", 1, { ...proof(1), rejected: true, applied: false }),
+          change("b", "added", 1, proof(2)),
+          change("c", "added", 1),
+          change("d", "added", 1, proof(4)),
+          change("e", "added", 1, proof(5)),
+          change("f", "added", 1, proof(6)),
+        ],
+      }),
+    ]);
+    expect(row.proofs).toEqual(["https://s3/p2.jpg", "https://s3/p4.jpg", "https://s3/p5.jpg"]);
+  });
+
+  // Every opening has its own row
+  test("openings without changes each get their own row, newest first", () => {
+    const r = rows([event("2026-10-20T15:00:00Z"), event("2026-10-20T17:00:00Z"), event("2026-10-20T16:00:00Z")]);
+    expect(r.map((x) => [x.id, x.state])).toEqual([
+      ["2026-10-20T17:00:00Z", "none"],
+      ["2026-10-20T16:00:00Z", "none"],
+      ["2026-10-20T15:00:00Z", "none"],
+    ]);
+  });
+
+  // Still being analyzed
+  test("an opening being analyzed is checking, keeps its stills and has no proof photos", () => {
+    const [row] = rows([
+      event("2026-10-20T17:00:00Z", {
+        status: "analyzing",
+        stills: ["https://s3/1.jpg"],
+        changes: [change("milk", "added", 1, { proof: ["https://s3/p.jpg"] })],
+      }),
+    ]);
+    expect(row.state).toBe("checking");
+    expect(row.stills).toEqual(["https://s3/1.jpg"]);
+    expect(row.proofs).toEqual([]);
+  });
+
+  // Older than a week left out
+  test("openings older than 7 days are left out", () => {
+    expect(rows([event("2026-10-11T17:00:00Z"), event("2026-10-20T17:00:00Z")]).map((r) => r.id)).toEqual(["2026-10-20T17:00:00Z"]);
+  });
+
+  // Nothing this week
+  test("no openings this week gives no rows", () => {
+    expect(rows([event("2026-10-11T17:00:00Z")])).toEqual([]);
+    expect(rows([])).toEqual([]);
+  });
 });

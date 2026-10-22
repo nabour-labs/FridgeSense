@@ -149,11 +149,11 @@ test.each([
 });
 
 test("ApiError carries the server's error text", async () => {
-  const api = new ApiClient(() => "t", respond(409, { error: "at most 6 reference images" }));
+  const api = new ApiClient(() => "t", respond(409, { error: "at most 30 reference images" }));
   const err = await api.addReference("x", "y").catch((e) => e);
   expect(err).toBeInstanceOf(ApiError);
   expect(err.status).toBe(409);
-  expect(err.message).toBe("at most 6 reference images");
+  expect(err.message).toBe("at most 30 reference images");
 });
 
 test("ApiError falls back to the status when the body has no error text", async () => {

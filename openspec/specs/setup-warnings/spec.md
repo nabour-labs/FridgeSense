@@ -50,3 +50,124 @@ When the stored Ring account has `link_status = "needs_relink"`, `GET /api/warni
 #### Scenario: Alignment unreadable
 - **WHEN** reading the alignment item raises an error
 - **THEN** `GET /api/warnings` answers 200 without `privacy_mask_changed` and with the other warnings
+
+### Requirement: Read setup warnings
+`GET /api/warnings` SHALL return 200 `{"warnings": [...], "checked_at": "<ISO 8601 UTC>"}` for the account's first discovered device. Each warning is `{"code", "message"}` plus any fields its requirement adds. Warnings are listed in this order: `motion_detection_off`, `door_setup_missing`, `camera_moved`. Owner and viewer tokens SHALL both be accepted.
+
+#### Scenario: All set up
+- **WHEN** Ring reports motion detection on, setup has run, and the camera is not moved
+- **THEN** the response is 200 with `warnings = []`
+
+#### Scenario: Several warnings in order
+- **WHEN** motion detection is off and setup never ran
+- **THEN** `warnings` lists `motion_detection_off` then `door_setup_missing`
+
+#### Scenario: No token
+- **WHEN** `GET /api/warnings` is called without a token
+- **THEN** the response is 401 `{"error": "sign in"}`
+
+#### Scenario: No camera yet
+- **WHEN** the account has no discovered device
+- **THEN** the response is 200 with `warnings = []`
+
+### Requirement: Motion detection off warning
+When Ring's device details report `motion_detection` as off, the list SHALL include `{"code": "motion_detection_off", "message": "Motion detection is off on the camera, so no door openings are recorded. Turn it on in the Ring app."}`. When Ring cannot be reached, or does not report the setting, this warning SHALL be left out and the response SHALL still be 200.
+
+#### Scenario: Motion detection off
+- **WHEN** Ring's device response has `configurations.motion_detection.enabled = "off"`
+- **THEN** the list includes the `motion_detection_off` warning with that message
+
+#### Scenario: Ring unreachable
+- **WHEN** the Ring device call times out or answers 500
+- **THEN** the response is 200 without `motion_detection_off`, and the other warnings are still checked
+
+### Requirement: Door setup missing warning
+When the device has no setup result, the list SHALL include `{"code": "door_setup_missing", "message": "Open/close detection is not set up, so the default zones are used and openings may be missed."}`.
+
+#### Scenario: Setup never run
+- **WHEN** door references exist but setup never ran successfully
+- **THEN** the list includes `door_setup_missing`
+
+#### Scenario: Setup run
+- **WHEN** setup has run successfully
+- **THEN** `door_setup_missing` is not listed
+
+### Requirement: Camera moved warning
+The list SHALL include `{"code": "camera_moved", "message": "The camera has moved or changed angle. Update the references so detection stays accurate.", "since": "<last_moved_at>", "update": [...]}` whenever `update` is not empty. `update` holds `"door_references"` while the alignment reads moved, and `"fridge_area"` while a fridge area exists that was saved before the alignment's `last_moved_at`. A setup run removes `"door_references"`. Saving the fridge area again removes `"fridge_area"`.
+
+#### Scenario: Both need updating
+- **WHEN** the camera moved at 10:00 and the fridge area was saved the day before
+- **THEN** the warning has `since` = 10:00 and `update = ["door_references", "fridge_area"]`
+
+#### Scenario: Fridge area already updated
+- **WHEN** the camera moved at 10:00 and the fridge area was saved at 10:30
+- **THEN** `update = ["door_references"]`
+
+#### Scenario: No fridge area
+- **WHEN** the camera moved and no fridge area was ever saved
+- **THEN** `update = ["door_references"]`
+
+#### Scenario: Setup run but fridge area not updated
+- **WHEN** the camera moved at 10:00, the fridge area is from the day before, and the owner runs setup successfully at 10:15
+- **THEN** the warning is still listed with `update = ["fridge_area"]`
+
+#### Scenario: Both updated
+- **WHEN** after the move the owner runs setup and saves the fridge area again
+- **THEN** `camera_moved` is not listed
+
+### Requirement: Monitoring paused warning
+When the account's first discovered camera is paused, `GET /api/warnings` SHALL list `{"code": "monitoring_paused", "message": "FridgeSense is paused, so door openings are not recorded.", "since": "<ISO 8601 UTC>"}` before every other warning. The other warnings SHALL still be checked. In the app, the banner's fix link for this warning SHALL read "Resume on Camera tab" and go to `#config`.
+
+#### Scenario: Paused
+- **WHEN** the camera was paused at `2026-10-18T14:05:00.000Z`
+- **THEN** `warnings[0]` is `{"code": "monitoring_paused", "message": "FridgeSense is paused, so door openings are not recorded.", "since": "2026-10-18T14:05:00.000Z"}`
+
+#### Scenario: Paused with other problems
+- **WHEN** the camera is paused and door setup never ran
+- **THEN** `warnings` lists `monitoring_paused` then `door_setup_missing`
+
+#### Scenario: Active
+- **WHEN** the camera is active
+- **THEN** no `monitoring_paused` warning is listed
+
+#### Scenario: Banner link
+- **WHEN** an owner opens the Fridge screen and `GET /api/warnings` lists `monitoring_paused`
+- **THEN** the banner shows its message and a "Resume on Camera tab" link to `#config`
+
+### Requirement: Door setup mismatch warning
+When the device's `suspect_streak` is 3 or more, `GET /api/warnings` SHALL list `{"code": "door_setup_mismatch", "message": "Open/close detection doesn't match the camera's recordings, so the fridge light is used instead. Replace the door references with frames from recent clips and run setup again."}`. It SHALL come after every other warning. When the streak cannot be read, the warning SHALL be left out and the response SHALL still be 200.
+
+#### Scenario: Three suspect events
+- **WHEN** the device's `suspect_streak` is 3
+- **THEN** `warnings` includes `door_setup_mismatch` with that message
+
+#### Scenario: Two suspect events
+- **WHEN** the device's `suspect_streak` is 2
+- **THEN** `door_setup_mismatch` is not listed
+
+#### Scenario: Listed last
+- **WHEN** setup never ran and the `suspect_streak` is 4
+- **THEN** `warnings` lists `door_setup_missing` before `door_setup_mismatch`
+
+#### Scenario: Cleared by setup
+- **WHEN** the streak was 3 and the owner runs setup successfully
+- **THEN** `door_setup_mismatch` is no longer listed
+
+#### Scenario: Streak unreadable
+- **WHEN** reading the streak raises a table error
+- **THEN** the response is 200 without `door_setup_mismatch`
+
+### Requirement: Banners shown to the owner only
+The app SHALL show setup-warning banners only to a session with role `owner`. For `user` and `viewer` sessions the app SHALL show no warning banner on any screen and SHALL NOT call `GET /api/warnings`. The API itself is unchanged.
+
+#### Scenario: Owner sees banners
+- **WHEN** an owner opens the Fridge screen and `GET /api/warnings` lists `camera_moved`
+- **THEN** the banner shows its message and its fix links
+
+#### Scenario: User sees no banners
+- **WHEN** a session with role `user` opens the Fridge or Config screen while a warning is active
+- **THEN** no warning banner is shown and `GET /api/warnings` is not called
+
+#### Scenario: Viewer sees no banners
+- **WHEN** a session with role `viewer` opens the Fridge or Config screen while a warning is active
+- **THEN** no warning banner is shown and `GET /api/warnings` is not called

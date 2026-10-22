@@ -13,7 +13,7 @@ import type { Shape } from "../shapes";
 import { useLoad } from "../useLoad";
 import { CARD, HEADING, INPUT, PRIMARY } from "./configStyles";
 
-const MAX_REFERENCES = 6;
+const MAX_REFERENCES = 30;
 const MAX_ANNOTATION = 300;
 const MAX_INSTRUCTIONS = 1000;
 /** The owner's reference images and custom instructions for the analysis. */

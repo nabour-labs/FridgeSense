@@ -4,37 +4,165 @@
     {
       "name": "pwa-mock",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5173", "--strictPort"],
-      "env": { "FRIDGESENSE_MOCK": "1" },
+      "runtimeArgs": [
+        "--prefix",
+        "pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "1"
+      },
       "port": 5173
     },
     {
       "name": "pwa-nocamera",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5174", "--strictPort"],
-      "env": { "FRIDGESENSE_MOCK": "nocamera" },
+      "runtimeArgs": [
+        "--prefix",
+        "pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "nocamera"
+      },
       "port": 5174
     },
     {
       "name": "pwa-mock-user",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5176", "--strictPort"],
-      "env": { "FRIDGESENSE_MOCK": "user" },
+      "runtimeArgs": [
+        "--prefix",
+        "pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5176",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "user"
+      },
       "port": 5176
     },
     {
       "name": "pwa-mock-alt",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5175", "--strictPort"],
-      "env": { "FRIDGESENSE_MOCK": "1" },
+      "runtimeArgs": [
+        "--prefix",
+        "pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "1"
+      },
       "port": 5175
     },
     {
       "name": "pwa-mock-warnings",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "pwa", "run", "dev", "--", "--port", "5177", "--strictPort"],
-      "env": { "FRIDGESENSE_MOCK": "1", "FRIDGESENSE_MOCK_WARNINGS": "1" },
+      "runtimeArgs": [
+        "--prefix",
+        "pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5177",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "1",
+        "FRIDGESENSE_MOCK_WARNINGS": "1"
+      },
       "port": 5177
+    },
+    {
+      "name": "pwa-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5178",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_URL": "https://d1wh1n5au8p2h1.cloudfront.net"
+      },
+      "port": 5178
+    },
+    {
+      "name": "pwa-mock-tv-more",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        ".claude/worktrees/tv-dashboard-more/pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5179",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "1"
+      },
+      "port": 5179
+    },
+    {
+      "name": "pwa-mock-tv-proof",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        ".claude/worktrees/tv-proof-photos/pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5180",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "1"
+      },
+      "port": 5180
+    },
+    {
+      "name": "pwa-mock-tv-activity",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        ".claude/worktrees/tv-activity-ask/pwa",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5181",
+        "--strictPort"
+      ],
+      "env": {
+        "FRIDGESENSE_MOCK": "1"
+      },
+      "port": 5181
     }
   ]
 }

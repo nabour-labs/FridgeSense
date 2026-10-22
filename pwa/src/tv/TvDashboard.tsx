@@ -1,10 +1,12 @@
+import { Mic, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useApp } from "../AppContext";
 import type { DoorEvent } from "../api/types";
 import { titleCase } from "../format";
 import { deviceTimeZone } from "../stats";
 import { useLoad } from "../useLoad";
-import { cameraLine, clockTime, fridgeRows, heatCells, latestStill, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
+import { useVoiceQuestion, type VoiceState } from "./useVoiceQuestion";
+import { activityRows, cameraLine, clockTime, fridgeRows, heatCells, opensSummary, outOfStock, recentRows, stillBase, tvIcon } from "./tv";
 
 const INVENTORY_MS = 10_000;
 const EVENTS_MS = 30_000;
@@ -16,8 +18,9 @@ const EVENT_DAYS = 28;
 /**
  * The kitchen TV: the camera's status, what is in the fridge, the latest door openings and when
  * the door gets opened, read-only and sized for 1920×1080 across a room. The only pictures are
- * the openings' stills and proof photos; nothing to select, no pointer, no key handling, so Back
- * reaches the Fire TV app.
+ * the app icon and the openings' stills and proof photos. Right and Left switch between the overview
+ * and the Activity page, and the mic button asks a spoken question; no pointer, and Back reaches the
+ * Fire TV app.
  */
 export function TvDashboard() {
   const { api } = useApp();
@@ -34,6 +37,8 @@ export function TvDashboard() {
     CAMERA_MS,
   );
   const updated = useUpdatedAt(inventory.data, events.data);
+  const page = usePage();
+  const voice = useVoiceQuestion(api);
   return (
     <section
       aria-label="TV dashboard"
@@ -43,26 +48,116 @@ export function TvDashboard() {
     >
       <header className="flex items-center justify-between gap-[2vw]">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">FridgeSense</h1>
+          <div className="flex items-center gap-4">
+            <img src="/icon.svg" alt="" className="h-12 w-12 rounded-xl" />
+            <h1 className="text-4xl font-bold tracking-tight">FridgeSense</h1>
+          </div>
           <p className="text-2xl text-slate-300">
             {camera.data ? cameraLine(camera.data) : camera.failed ? "Camera: No Data" : "\u00a0"}
           </p>
         </div>
         <div className="flex items-center gap-6">
-          {events.data && <LatestStill events={events.data} />}
           {updated && <p className="text-2xl tabular-nums text-slate-400">Updated {updated}</p>}
+          {voice.available && <MicButton listening={voice.state.kind === "listening"} onPress={voice.press} />}
         </div>
       </header>
-      <div className="grid min-h-0 flex-1 grid-cols-[1.4fr_1fr_1fr] gap-[2vw]">
-        <Panel title="In the fridge">
-          {inventory.data ? <Fridge items={inventory.data.items} /> : <Status failed={inventory.failed} />}
-        </Panel>
-        <Panel title="Recent changes">
-          {events.data ? <Recent events={events.data} /> : <Status failed={events.failed} />}
-        </Panel>
-        <Panel title="Opens">{events.data ? <Opens events={events.data} /> : <Status failed={events.failed} />}</Panel>
-      </div>
+      <AnswerBanner state={voice.state} />
+      {page === "Overview" ? (
+        <div className="grid min-h-0 flex-1 grid-cols-[1.4fr_1fr_1fr] gap-[2vw]">
+          <Panel title="In the fridge">
+            {inventory.data ? <Fridge items={inventory.data.items} /> : <Status failed={inventory.failed} />}
+          </Panel>
+          <Panel title="Recent changes">
+            {events.data ? <Recent events={events.data} /> : <Status failed={events.failed} />}
+          </Panel>
+          <Panel title="Opens">{events.data ? <Opens events={events.data} /> : <Status failed={events.failed} />}</Panel>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <Panel title="Activity">{events.data ? <Activity events={events.data} /> : <Status failed={events.failed} />}</Panel>
+        </div>
+      )}
+      <PageDots page={page} />
     </section>
+  );
+}
+
+/** The one control: the remote's select presses it, since it has focus from the start. */
+function MicButton({ listening, onPress }: { listening: boolean; onPress: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Ask a question"
+      aria-pressed={listening}
+      autoFocus
+      onClick={onPress}
+      className={`grid size-20 place-items-center rounded-full outline-none ring-brand-200 ring-offset-4 ring-offset-slate-950 focus:ring-4 ${
+        listening ? "bg-warm-600 text-white" : "bg-brand-500 text-slate-950"
+      }`}
+    >
+      {listening ? <Square aria-hidden className="size-9" /> : <Mic aria-hidden className="size-10" />}
+    </button>
+  );
+}
+
+/** The question and its answer (or what is going on), under the header on either page. */
+function AnswerBanner({ state }: { state: VoiceState }) {
+  const question = state.kind === "thinking" || state.kind === "answered" ? state.question : state.kind === "error" ? state.question : undefined;
+  const text =
+    state.kind === "listening"
+      ? "Listening…"
+      : state.kind === "thinking"
+        ? "Thinking…"
+        : state.kind === "answered"
+          ? state.answer
+          : state.kind === "error"
+            ? state.message
+            : null;
+  return (
+    <div role="status" aria-label="Answer" aria-live="polite">
+      {text && (
+        <div className="space-y-1 rounded-3xl bg-brand-950 px-[1.5vw] py-4 ring-1 ring-brand-800">
+          {question && <p className="text-2xl text-brand-200">{question}</p>}
+          <p className="text-3xl font-semibold">{text}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PAGES = ["Overview", "Activity"] as const;
+type Page = (typeof PAGES)[number];
+
+/**
+ * The page on screen: the remote's Right and Left move between the two pages. Only those two keys
+ * are taken (default-prevented); everything else, Back (Escape) included, is left to the TV app.
+ */
+function usePage(): Page {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      setIndex((i) => Math.min(PAGES.length - 1, Math.max(0, i + step)));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return PAGES[index];
+}
+
+/** Which page is on screen, as text: there is nothing to select. */
+function PageDots({ page }: { page: Page }) {
+  return (
+    <nav aria-label="Pages" className="flex justify-center gap-6 text-xl">
+      {PAGES.map((p) => (
+        <span key={p} className={`flex items-center gap-2 ${p === page ? "font-semibold text-slate-100" : "text-slate-500"}`}>
+          <span aria-hidden>{p === page ? "●" : "○"}</span>
+          <span aria-current={p === page ? "page" : undefined}>{p}</span>
+        </span>
+      ))}
+    </nav>
   );
 }
 
@@ -155,19 +250,28 @@ function Recent({ events }: { events: DoorEvent[] }) {
   );
 }
 
-function LatestStill({ events }: { events: DoorEvent[] }) {
-  const still = latestStill(events, deviceTimeZone());
-  return still && <StillFigure key={stillBase(still.src)} {...still} />;
-}
-
-function StillFigure({ src, caption }: { src: string; caption: string }) {
-  const photo = useStillSrc(src);
-  if (!photo) return null;
+function Activity({ events }: { events: DoorEvent[] }) {
+  const rows = activityRows(events, Date.now(), deviceTimeZone());
+  if (rows.length === 0) return <p className="text-3xl text-slate-400">No door openings this week</p>;
   return (
-    <figure className="flex items-center gap-4">
-      <figcaption className="text-xl tabular-nums text-slate-400">{caption}</figcaption>
-      <img {...photo} alt="Latest still from the fridge camera" decoding="async" className={`${PHOTO} h-28 aspect-video rounded-xl`} />
-    </figure>
+    // Two columns, filled top to bottom; a row that doesn't fit whole moves to a third column, off the panel.
+    <ol className="h-full columns-2 gap-[2vw] [column-fill:auto]">
+      {rows.map((r) => (
+        <li key={r.id} className="mb-6 break-inside-avoid space-y-2">
+          <p className="text-xl font-semibold tabular-nums text-slate-400">{r.when}</p>
+          <p className="text-3xl font-semibold">
+            {r.state === "checking" ? "Checking…" : r.state === "none" ? "No changes" : r.labels.join(", ")}
+          </p>
+          {r.stills.length + r.proofs.length > 0 && (
+            <div className="flex gap-2">
+              {[...r.stills, ...r.proofs].map((src) => (
+                <Photo key={stillBase(src)} src={src} alt="" className="h-20 aspect-[4/3] rounded-lg" />
+              ))}
+            </div>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }
 

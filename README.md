@@ -36,7 +36,7 @@
 
 - [How it works](#how-it-works)
 - [Tech stack](#tech-stack)
-- [Try it (judges)](#try-it-judges)
+- [Try it](#try-it)
 - [Setup: deploy and link a Ring camera](#setup-deploy-and-link-a-ring-camera)
 - [Features](#features)
 - [Costs](#costs)
@@ -99,14 +99,14 @@ Built for the Ring and Alexa+ tracks and the AWS Builder challenge. Everything r
 | Amazon Rekognition | Face detection, so stills are blurred before they are stored |
 | Amazon Polly | Neural voice for Ask answers |
 | AWS Secrets Manager | Ring client secret, webhook key, tokens and passcodes |
-| CloudWatch, SNS, AWS Budgets | Cost logs, alarms for failed runs and token refresh, $20/month budget alert |
+| CloudWatch, SNS, AWS Budgets | Cost logs, alarms for failed runs and token refresh, $60/month budget alert |
 | AWS CDK (TypeScript) | All of the above as code |
 
 **App and tooling:** Python 3.13 (uv, Pydantic, httpx, PyAV, Pillow), [deface](https://github.com/ORB-HD/deface) for clip face blur, PWA in Vite + React + Tailwind + Recharts + vite-plugin-pwa, tests with pytest, moto, respx and Vitest. Specs are written first with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
 
 Hackathon notes: [product feedback](docs/product-feedback.md) and [friction log](docs/friction-log.md).
 
-## Try it (judges)
+## Try it
 
 > **TODO before submitting:** replace the two placeholders below after `cdk deploy` and after setting the demo passcode (see [Demo access](#demo-access)).
 
@@ -145,7 +145,7 @@ Then deploy. Lambda packages are built locally with uv (no Docker):
 set -a; source .env; set +a; cd infra && npx cdk deploy -c alertEmail=you@example.com
 ```
 
-Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $20/month budget alert (at 80%) and the alarms for failed or timed-out door-event runs and for a rejected Ring token refresh (re-link the Ring account in the Ring app when that one fires). To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
+Every `cdk` command (`synth`, `diff`, `deploy`) needs `-c alertEmail=<address>`: it receives the $60/month budget alert (at 80%) and the alarms for failed or timed-out door-event runs and for a rejected Ring token refresh (re-link the Ring account in the Ring app when that one fires). To skip typing it, put `{"alertEmail": "<address>"}` in `infra/cdk.context.json`, which git ignores. After the first deploy, confirm the SNS subscription from the email AWS sends, or the alarm emails nothing.
 
 The API is throttled at 10 requests/s (burst 20) per route, and the two passcode checks (`POST /api/session`, `POST /ring/link`) at 1 request/s (burst 3).
 
@@ -289,7 +289,7 @@ The DynamoDB table and the `fridgesense/ring-app` secret are kept; delete them i
 
 The gear at the top right opens **Config**. Its **Camera** tab (the default) shows the camera as Ring reports it (online now, codec, aspect ratio, resolutions, night vision and HDR, motion detection, encryption), its online/offline history and uptime over 30 days (from Ring's `device_online`/`device_offline` webhooks, plus any change seen when the tab is opened), and, for the owner after **Check decoder**, how this browser decodes the live video. Its **Reference images** tab guides Nova; its **Open/close detection** tab sets up the door check ([step 6](#6-set-up-the-door-check)); its **Fridge area** tab marks where the fridge is; its **Debug** tab (owner only) shows why each motion was judged the way it was.
 
-- **Reference images:** up to 6 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
+- **Reference images:** up to 30 photos of items from this fridge, each with a short note (for example "milk bag (2 L, white with blue print)" or "granola bar"). Choose a photo or take a snapshot from the fridge camera, then draw boxes or lines on it to point out what matters; the drawing is part of the image Nova sees. The app shrinks each image to 768 px before upload. Nova sees them before the door-opening stills, marked as examples.
 - **Custom instructions:** up to 1,000 characters of extra rules, such as "Count yogurt cups individually." They are added to the Nova prompt.
 - **Fridge area:** tap **Set area**, drag one box around the whole fridge on a camera snapshot, and save. It is stored per camera (`GET`/`PUT /api/fridge-area`) along with the snapshot. Stills and the analysis video are cropped to it, widened by 10% on each side and 5% above and below so hands stay in view.
 
@@ -451,8 +451,6 @@ set -a; source .env; set +a; aws logs tail /fridgesense/clip-blur --since 24h --
 ```
 
 ## Development
-
-The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec) and built test-first. See [CLAUDE.md](CLAUDE.md) for the workflow.
 
 ### Layout
 

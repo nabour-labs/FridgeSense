@@ -85,7 +85,7 @@ The system SHALL request `count = clamp((end_ms − start_ms) // STILL_INTERVAL_
 ### Requirement: Door-open check before any analysis
 The system SHALL decide for each downloaded still whether it is *open*, using rules for zones, each a box of fractions `x, y, width, height` of the downloaded still.
 - **With a setup result** stored for the event's account and device (see the `door-calibration` capability), each zone has its own feature (`blue`, `color`, `brightness` or `change`, measured as setup measures it, against the stored baseline for `change`), direction and threshold. A still is open when, in any zone, the feature's value is at or above the threshold (direction `above`) or at or below it (direction `below`).
-- **Without a setup result**, every zone uses `blue` with direction `above`: the fraction of pixels that are both colorful (`max(R,G,B) − min(R,G,B) > 60` and `max(R,G,B) > 100`) and blue-lit (`B − max(R,G) > 20`), as the fridge's LED-lit interior is. Warm colors such as food held in front of the closed doors do not count. The zones are `DOOR_ZONES`, else the defaults `0.38,0.32,0.21,0.30` (doors) and `0.455,0.60,0.12,0.18` (drawers), and the threshold is `DOOR_THRESHOLD`, else 0.01.
+- **Without a setup result**, every zone uses `blue` with direction `above`: the fraction of pixels that are both strongly colorful (`max(R,G,B) − min(R,G,B) > 100` and `max(R,G,B) > 120`) and strongly blue-lit (`B − max(R,G) > 60`), as the fridge's LED-lit interior is. Warm colors such as food held in front of the closed doors do not count, and neither does the cool tint daylight gives the steel doors. The zones are `DOOR_ZONES`, else the defaults `0.38,0.32,0.21,0.30` (doors) and `0.455,0.60,0.12,0.18` (drawers), and the threshold is `DOOR_THRESHOLD`, else 0.01.
 
 A still's *score* is the value of its best zone, the one furthest past (or closest to) its threshold. The event SHALL count as a door opening only if at least one still is open. A run of closed stills SHALL end an opening when the time from its first closed still to the next open still is 10 s or more; a shorter closed run stays inside the opening. Each opening's *open span* runs from its first open still through the first still after its last open one (or through its last open still if no still follows it). Up to 4 stills SHALL be sent on from each open span, evenly spaced and including its first and last still: positions `round(i · (n − 1) / 3)` for `i = 0 … 3` in a span of `n > 4` stills, or every still when `n ≤ 4`. The check SHALL run on the downloaded stills before any cropping, face detection or storage. Only door openings go on to face detection, storage and analysis.
 
@@ -173,6 +173,14 @@ A still's *score* is the value of its best zone, the one furthest past (or close
 - **WHEN** setup for the device stored a zone with `color` above 0.05 and a still has a `(220,170,40)` block covering 10% of that zone
 - **THEN** that still is open, because the stored rule's feature is `color`
 
+#### Scenario: Cool daylight on closed doors
+- **WHEN** no setup result is stored, zones are `0.0,0.0,1.0,1.0`, and every still is grey `(128,128,128)` except a daylight-tinted steel area `(110,150,200)` covering 30% of the zone
+- **THEN** the score is 0, no still is open, and the event is not a door opening
+
+#### Scenario: Weakly blue pixels do not count
+- **WHEN** no setup result is stored, zones are `0.0,0.0,1.0,1.0`, and a still is grey except a teal `(40,150,200)` block covering 10% of the zone (strongly colorful, but blue leads by only 50)
+- **THEN** that block does not count and the still is not open
+
 ### Requirement: Door event record
 For each door opening, the system SHALL save one door event under the account with the device ID, Ring event ID, `opened_at`, `closed_at` (ISO 8601 UTC), `duration_s`, the still keys, and a `status`. `opened_at` SHALL be the request time of the opening's first open still. `closed_at` SHALL be the request time of the first still after the opening's last open one, or the window end when no still follows it. `duration_s` SHALL be `closed_at − opened_at` in whole seconds, rounded. An event saved with `status = "no_media"` because too few stills were downloaded SHALL take `opened_at` and `closed_at` from the window. A second run for the same Ring event SHALL NOT create a second record or a second analysis.
 
@@ -197,7 +205,7 @@ For each door opening, the system SHALL save one door event under the account wi
 - **THEN** only the first run analyzes it; the second ends with `skipped_duplicate` and makes no analysis call
 
 ### Requirement: Faces blurred before storage
-Before a still is stored, the system SHALL send it (after cropping, if a crop box is configured) to face detection and SHALL blur every face reported, whatever its confidence. Each face box (fractions of the image sent to detection) SHALL be enlarged by 30% about its centre, clipped to the image, and made unrecognizable. With no crop box and no faces, the still SHALL be stored byte for byte as downloaded.
+While face blurring is on (the default, see `face-blur-setting`), before a still is stored the system SHALL send it (after cropping, if a crop box is configured) to face detection and SHALL blur every face reported, whatever its confidence. Each face box (fractions of the image sent to detection) SHALL be enlarged by 30% about its centre, clipped to the image, and made unrecognizable. With no crop box and no faces, the still SHALL be stored byte for byte as downloaded. While face blurring is off, face detection SHALL NOT be called. The still SHALL be stored cropped (if a crop box is configured) and otherwise as downloaded.
 
 #### Scenario: One face found
 - **WHEN** a 320×180 still with a black-and-white checkerboard of 4 px squares is downloaded, and face detection reports one face with `BoundingBox = {"Left": 0.40, "Top": 0.20, "Width": 0.20, "Height": 0.30}` and `Confidence = 99.1`
@@ -223,8 +231,16 @@ Before a still is stored, the system SHALL send it (after cropping, if a crop bo
 - **WHEN** a still is downloaded and face detection reports one face
 - **THEN** the detection request carries the JPEG bytes inline (not an S3 reference): the downloaded bytes with no crop box, or the cropped JPEG with one. The only object written for that still is the blurred JPEG with `ContentType = "image/jpeg"`
 
+#### Scenario: Blurring off, no crop box
+- **WHEN** face blurring is off, no crop box is configured, and a door opening's 4 stills are downloaded
+- **THEN** face detection is never called, each `still-<n>.jpg` is byte for byte the downloaded still, and no `face_detect_cost` line is logged
+
+#### Scenario: Blurring off, with a crop box
+- **WHEN** face blurring is off and a crop box is configured
+- **THEN** each stored still is the cropped JPEG, and face detection is never called
+
 ### Requirement: Fail closed when face detection fails
-If face detection fails for a still (any service error, throttling, timeout, or an image it rejects), the system SHALL drop that still: nothing is stored for it, it does not count toward the stills downloaded, and a `face_detect_failed` warning is logged with the still number and the error code. An unblurred still SHALL never be stored as an event still or sent to analysis. The only unblurred copies are the owner-only debug trace's `debug/raw-<n>.jpg`. They are written only while `DEBUG_TRACES` is on and expire with the bucket's 7-day lifecycle.
+While face blurring is on, if face detection fails for a still (any service error, throttling, timeout, or an image it rejects), the system SHALL drop that still: nothing is stored for it as an event still, it does not count toward the stills downloaded, and a `face_detect_failed` warning is logged with the still number and the error code. While face blurring is on, an unblurred still SHALL never be stored or sent to analysis. The only copy that may be stored is the owner-only debug trace's `debug/raw-<n>.jpg`, a blurred thumbnail at most 160 px on its longest side, written only while `DEBUG_TRACES` is on and expiring with the bucket's 7-day lifecycle.
 
 #### Scenario: Detection fails for one still
 - **WHEN** face detection answers `ThrottlingException` for still 2 and reports no faces for stills 1, 3 and 4
@@ -239,8 +255,8 @@ If face detection fails for a still (any service error, throttling, timeout, or 
 - **THEN** that still is dropped the same way as for any other detection error
 
 #### Scenario: Debug copy is not an event still
-- **WHEN** `DEBUG_TRACES` is on and face detection fails for still 2
-- **THEN** `debug/raw-2.jpg` may exist, but no `still-<n>.jpg` holds still 2's bytes and `still_keys` does not list it
+- **WHEN** face blurring and `DEBUG_TRACES` are on and face detection fails for still 2
+- **THEN** `debug/raw-2.jpg` may exist as a blurred thumbnail at most 160 px on its longest side, no stored object holds still 2's downloaded bytes, and `still_keys` does not list it
 
 ### Requirement: Face detection cost logged per still
 For every successful face-detection call, the system SHALL log a `face_detect_cost` line with `account_id`, `device_id`, `still` (1–4), `faces` (count found) and `usd`. The price per image SHALL default to 0.001 USD and SHALL be overridable through configuration.
@@ -272,34 +288,54 @@ Once a door event has been recorded with `status = "analyzing"`, the workflow ru
 - **WHEN** the mark-failed step finishes
 - **THEN** the run moves to a `Fail` state named `AnalysisFailed` with error `AnalysisFailed`, so the execution's status is `FAILED`
 
-### Requirement: Only blurred stills are analyzed
-The item analysis SHALL use only the stored (blurred and, if configured, cropped) stills. No unblurred still SHALL be sent to the analysis model or stored as an event still. The door check reads the downloaded, uncropped stills in memory. Unblurred copies are kept only as the owner-only debug trace's raw stills.
+### Requirement: Only blurred media is shown
+While face blurring is on, every image or clip that a door event links or an API returns SHALL be blurred, including each change's proof images. The analysis model MAY receive unblurred frames, but only through the transient analysis video. The analysis video SHALL never be linked on a door event, returned or signed by any API, or listed in a trace with a `key`. The analyze step SHALL delete it after the analysis, whether it succeeded or failed. Without an analysis video, the analysis uses only the stored stills. The door check reads the downloaded, uncropped frames in memory.
 
 #### Scenario: Analysis receives blurred bytes
-- **WHEN** a door opening's still 1 had a face blurred and the event goes on to analysis
+- **WHEN** face blurring is on, a door opening has no analysis video, its still 1 had a face blurred, and the event goes on to analysis
 - **THEN** the image bytes for still 1 in the analysis request equal the stored blurred object, not the downloaded bytes or `debug/raw-<n>.jpg`
 
+#### Scenario: Analysis while blurring is off
+- **WHEN** face blurring is off and a door opening with no analysis video goes on to analysis
+- **THEN** the image bytes for each still in the analysis request equal the stored `still-<n>.jpg`
+
+#### Scenario: Analysis video never shown
+- **WHEN** face blurring is on and a door opening has an analysis video
+- **THEN** the door event has no field holding the `analysis.mp4` key, `GET /api/events` and `GET /api/debug/motions/{id}` return no link to it, and the stored stills and `clip.mp4` are blurred as before
+
+#### Scenario: Analysis video deleted after analysis
+- **WHEN** the analyze step finishes, whether the answer was valid, invalid twice, or Bedrock rejected the request
+- **THEN** `analysis.mp4` no longer exists under the event's prefix
+
+#### Scenario: Analysis video deleted when the step is retried
+- **WHEN** the analyze step raises `BedrockRetryable` and the workflow retries it
+- **THEN** the video is kept for the retry, and it is deleted by the run that finishes the step or expires with the `transient=true` lifecycle rule within 1 day
+
 #### Scenario: Door check runs on downloaded stills
-- **WHEN** a downloaded still passes the door check and contains a face
+- **WHEN** face blurring is on and a downloaded still passes the door check and contains a face
 - **THEN** the event counts as a door opening, face detection is called only after the door check, and the only stored event still is the blurred one
 
 #### Scenario: No debug stills when tracing is off
-- **WHEN** `DEBUG_TRACES=false` and a downloaded still contains a face
-- **THEN** no unblurred copy of it is stored anywhere
+- **WHEN** face blurring is on, `DEBUG_TRACES=false` and a downloaded still contains a face
+- **THEN** no unblurred copy of it is stored anywhere except the transient analysis video
 
 ### Requirement: Stills cropped to the visible area
-When `STILL_CROP` is set (fractions `x, y, width, height` of the downloaded still), the system SHALL crop each still of a door opening to that box and re-encode it as JPEG before face detection, so the stored still and the analysis image are the crop. When `STILL_CROP` is unset or empty, stills SHALL NOT be cropped. Stills of events that fail the door check SHALL never be cropped or stored.
+When the device has a fridge area, the system SHALL crop each still of a door opening to the analysis crop box (see "Analysis crop from the fridge area"). Otherwise, when `STILL_CROP` is set (fractions `x, y, width, height` of the downloaded still), it SHALL crop each still to that box. The crop is re-encoded as JPEG before face detection, so the stored still and the analysis image are the crop. With neither, stills SHALL NOT be cropped. Stills of events that fail the door check SHALL never be cropped or stored.
 
 #### Scenario: Crop to the visible strip
-- **WHEN** `STILL_CROP` is `0.30,0.0,0.34,1.0` and a door opening's still is 2560×1440
+- **WHEN** the device has no fridge area, `STILL_CROP` is `0.30,0.0,0.34,1.0` and a door opening's still is 2560×1440
 - **THEN** the image sent to face detection and the stored `still-<n>.jpg` are 870×1440 (±1 px per side), and their pixels match the downloaded still's region starting at x = 768
 
+#### Scenario: Fridge area wins over STILL_CROP
+- **WHEN** the device's fridge area is `x = 0.362, y = 0.329, width = 0.233, height = 0.611`, `STILL_CROP` is `0.30,0.0,0.34,1.0`, and a door opening's still is 2560×1440
+- **THEN** the stored `still-<n>.jpg` is the analysis crop box's region, 716×968 (±2 px per side)
+
 #### Scenario: Analysis sees the cropped still
-- **WHEN** `STILL_CROP` is set and the event goes on to analysis
+- **WHEN** a crop applies and the event goes on to analysis with stills
 - **THEN** each image in the analysis request has the cropped dimensions and equals the stored object
 
 #### Scenario: No crop configured
-- **WHEN** `STILL_CROP` is not set
+- **WHEN** the device has no fridge area and `STILL_CROP` is not set
 - **THEN** the stored still has the downloaded dimensions, and with no faces its bytes are identical to the downloaded bytes
 
 #### Scenario: Door check ignores the crop
@@ -330,8 +366,16 @@ The fetch-stills step SHALL first request the event clip once with `POST /v1/dev
 - **THEN** that request carries no `Authorization` header
 
 #### Scenario: Clip not ready yet
-- **WHEN** Ring answers 425 `RECORDING_NOT_READY` or 416 `MEDIA_NOT_FOUND`, either to the clip request or to the `Location` download after a 303, and then a later attempt returns the MP4
-- **THEN** the whole request (POST, then link) is repeated and the door check runs on the clip's frames, up to 3 attempts in total
+- **WHEN** Ring answers 425 `RECORDING_NOT_READY`, 416 `MEDIA_NOT_FOUND` or 206, either to the clip request or to the `Location` download after a 303, and then a later attempt returns the MP4
+- **THEN** the whole request (POST, then link) is repeated after waits of 3, 6 and 12 s, and the door check runs on the clip's frames, up to 4 attempts in total
+
+#### Scenario: Partial content on the link
+- **WHEN** Ring answers 303 to the clip request, the `Location` download answers 206, and the second attempt's download answers 200 with the MP4
+- **THEN** the clip request is made twice, with one 3 s wait between, and the door check runs on the clip's frames
+
+#### Scenario: Partial content on the request
+- **WHEN** Ring answers the clip request with 206 and the second request with 303 to an MP4
+- **THEN** the clip request is made twice and the door check runs on the clip's frames
 
 #### Scenario: Not a door opening
 - **WHEN** no frame passes the door check
@@ -384,19 +428,23 @@ For each door opening found in the clip, the system SHALL pick up to 4 frames fr
 - **THEN** the clip frame at offset 7000 ms is face-blurred and stored as that still, and analysis still gets 4 stills
 
 ### Requirement: Fall back to still sampling without the clip
-If the clip can't be used, the system SHALL log `clip_unavailable` with the device ID and a `reason`, then run the door check on sampled stills as it does today. The reasons are: `status_<code>` (any other HTTP status from the request or the link, or 425/416 after 3 attempts), `download_failed` (Ring, OAuth or network error), `too_large` (more than 300 MB), `decode_failed` (not a readable video) and `no_frames` (no frame at offset 0). A clip problem SHALL NOT make the step fail or drop a door opening.
+If the clip can't be used, the system SHALL log `clip_unavailable` with the device ID, a `reason` and, for a `status_<code>` reason, the `stage` that answered it (`request` for the clip request, `link` for the `Location` download). For a link answer it SHALL also log `content_range` and `content_length` from the response headers when present. The pre-signed link itself SHALL NOT be logged. Then it SHALL run the door check on sampled stills as it does today. The reasons are: `status_<code>` (any other HTTP status from the request or the link, or 425/416/206 after 4 attempts), `download_failed` (Ring, OAuth or network error), `too_large` (more than 300 MB), `decode_failed` (not a readable video) and `no_frames` (no frame at offset 0). A clip problem SHALL NOT make the step fail or drop a door opening.
 
 #### Scenario: Ring refuses the clip
 - **WHEN** Ring answers the clip request with 403
-- **THEN** `clip_unavailable` is logged with `reason = "status_403"`, and the door check runs on stills as before
+- **THEN** `clip_unavailable` is logged with `reason = "status_403"` and `stage = "request"`, and the door check runs on stills as before
 
 #### Scenario: Clip never ready
-- **WHEN** Ring answers 303 to all 3 clip requests and each `Location` download answers 416 `MEDIA_NOT_FOUND`
-- **THEN** `clip_unavailable` is logged with `reason = "status_416"`, and the door check runs on stills
+- **WHEN** Ring answers 303 to all 4 clip requests and each `Location` download answers 416 `MEDIA_NOT_FOUND`
+- **THEN** `clip_unavailable` is logged with `reason = "status_416"` and `stage = "link"` after waits of 3, 6 and 12 s, and the door check runs on stills
+
+#### Scenario: Clip only ever partial
+- **WHEN** Ring answers 303 to all 4 clip requests and each `Location` download answers 206 with `Content-Range: bytes 0-1023/52000` and `Content-Length: 1024`
+- **THEN** `clip_unavailable` is logged with `reason = "status_206"`, `stage = "link"`, `content_range = "bytes 0-1023/52000"` and `content_length = "1024"`, and the door check runs on stills
 
 #### Scenario: Clip request never ready
-- **WHEN** Ring answers 425 to all 3 clip requests
-- **THEN** `clip_unavailable` is logged with `reason = "status_425"`, and the door check runs on stills
+- **WHEN** Ring answers 425 to all 4 clip requests
+- **THEN** `clip_unavailable` is logged with `reason = "status_425"` and `stage = "request"`, and the door check runs on stills
 
 #### Scenario: Unreadable clip
 - **WHEN** the `Location` download returns bytes that are not a video
@@ -422,15 +470,15 @@ If the clip can't be used, the system SHALL log `clip_unavailable` with the devi
 - **THEN** the step fails with an error naming `DOOR_FRAME_INTERVAL_MS`, and no Ring request is made
 
 ### Requirement: Clips never stored
-The full event clip SHALL only be held in memory or in a temporary file in Lambda `/tmp`. The temporary file SHALL be deleted when the step ends, whether it succeeds or fails. The only clip objects written to S3 SHALL be a door opening's open-span `clip.mp4` and, while face blurring is on, its transient `clip-raw.mp4` (see `clip-face-blur`). Apart from those clips, the stored stills and the debug-trace frames, no frame SHALL be written to S3.
+The full event clip SHALL only be held in memory or in a temporary file in Lambda `/tmp`. The temporary file SHALL be deleted when the step ends, whether it succeeds or fails. The only clip objects written to S3 SHALL be a door opening's open-span `clip.mp4`, while face blurring is on its transient `clip-raw.mp4` (see `clip-face-blur`), and its transient `analysis.mp4` (see "Analysis video built from the open span"). Apart from those clips, the stored stills and the debug-trace frames, no frame SHALL be written to S3.
 
 #### Scenario: Door opening processed
 - **WHEN** a door opening is processed from a clip with debug traces off and face blurring off
-- **THEN** the only S3 objects written are `still-<n>.jpg` and one `clip.mp4`, and `clip.mp4` is shorter than the event clip
+- **THEN** the only S3 objects the fetch step writes are `still-<n>.jpg`, one `clip.mp4` and one `analysis.mp4`, `clip.mp4` is shorter than the event clip, and after the run only `still-<n>.jpg` and `clip.mp4` remain
 
 #### Scenario: Door opening processed with blurring on
 - **WHEN** a door opening is processed from a clip with debug traces off and face blurring on, and the blur step succeeds
-- **THEN** after the run the only S3 objects under the event's prefix are `still-<n>.jpg` and one `clip.mp4`, and no `clip-raw.mp4` remains
+- **THEN** after the run the only S3 objects under the event's prefix are `still-<n>.jpg` and one `clip.mp4`, and no `clip-raw.mp4` or `analysis.mp4` remains
 
 #### Scenario: Temporary file removed on error
 - **WHEN** decoding fails partway through the clip
@@ -594,3 +642,170 @@ After `IsDoorOpening`, the workflow SHALL run Analyze → Save → clip blur onc
 #### Scenario: All openings succeed
 - **WHEN** every opening's Save succeeds
 - **THEN** the run ends in `Done`
+
+### Requirement: Door check follows the camera
+Before scoring an event's frames or stills, the door check SHALL align them with the device's closed anchor and use the resulting rules, as set out in `door-self-calibration`. After the event is claimed, or found not to be a door opening, it SHALL store the event's sample and re-tune. A failure in alignment, sampling or re-tuning SHALL be logged and SHALL NOT change the event's outcome. The event's debug trace SHALL record the shift, the alignment error, and whether tuned rules were used.
+
+#### Scenario: Shifted camera still detects the opening
+- **WHEN** setup was run on frames where the door zone is at `x = 0.38`, and the event clip is the same scene shifted 6 px right at 128×72 with the door opening in frames 4–8
+- **THEN** alignment succeeds with `dx ≈ 0.047`, the shifted zone scores frames 4–8 as open, and the outcome is `door_open`
+
+#### Scenario: Same clip without alignment misses it
+- **WHEN** the same shifted clip is checked with alignment turned off (no anchor stored)
+- **THEN** the outcome is `not_door`
+
+#### Scenario: Alignment error does not drop an opening
+- **WHEN** reading the alignment from the table raises an error
+- **THEN** the event is checked with the unshifted rules, a `door_alignment_unavailable` warning is logged, and the outcome is decided as before
+
+#### Scenario: Re-tune failure after a claimed opening
+- **WHEN** the door event is claimed and storing the sample raises an error
+- **THEN** the outcome is still `door_open` and a `door_sample_failed` warning is logged
+
+#### Scenario: Trace records the shift
+- **WHEN** an event aligns with shift `(0.016, 0)`, error 0.031, and tuned rules are in use
+- **THEN** the door trace has `alignment = {"dx": 0.016, "dy": 0, "error": 0.031, "ok": true}` and `rules = "tuned"`
+
+### Requirement: Runs for a paused camera stop before any download
+When a workflow run reaches the stills step and its account and device are paused (see the `fridge-monitoring` capability), the step SHALL return outcome `paused` without downloading stills or the clip from Ring, without face detection, and without claiming or recording a door event. The run SHALL then end without analysis, so no inventory change, open/close stat or Nova cost is recorded.
+
+#### Scenario: Paused after the run started
+- **WHEN** a run for device D1 started while it was active, and the owner paused D1 before the stills step
+- **THEN** the step returns `outcome: "paused"`, no Ring media request is made, no face detection is called, no `DOOR#` item is written, and the run ends in `NoAnalysis`
+
+#### Scenario: Resumed before the stills step
+- **WHEN** D1 was paused and resumed before the stills step
+- **THEN** the stills step runs the door check as usual
+
+### Requirement: Suspect clip detected
+When the door check runs on an event clip with the device's setup rules (`zones_source` is `"setup"`, or `"tuned"` after self-tuning) and at least 10 frames were checked, the clip SHALL count as *suspect* when its first and last checked frames are both open, or when at least 90% of its checked frames are open. A clip with fewer than 10 checked frames, or checked with the default rules, is never suspect.
+
+#### Scenario: Every frame open
+- **WHEN** setup rules are used and all 41 checked frames of a 20.5 s clip are open
+- **THEN** the clip is suspect and a `door_check_suspect` log line records `frames = 41`, `open_share = 1.0` and `zones_source = "setup"`
+
+#### Scenario: Open at both ends
+- **WHEN** setup rules are used, a clip has 40 frames, and frames 1–3 and 38–40 are open while the rest are closed
+- **THEN** the clip is suspect
+
+#### Scenario: Normal opening
+- **WHEN** setup rules are used and a 54-frame clip is open only at frames 18–26
+- **THEN** the clip is not suspect and no `door_check_suspect` line is logged
+
+#### Scenario: Long opening that starts closed
+- **WHEN** setup rules are used and a 100-frame clip is closed at frames 1–8 and open from frame 9 to frame 100
+- **THEN** the clip is suspect (92% open), and is re-scored as set out in "Suspect clip re-scored with the fridge light"
+
+#### Scenario: Short clip
+- **WHEN** setup rules are used and all 8 checked frames are open
+- **THEN** the clip is not suspect
+
+#### Scenario: Default rules
+- **WHEN** no setup result is stored and every checked frame is open
+- **THEN** the clip is not suspect
+
+#### Scenario: Tuned rules
+- **WHEN** the device's rules were re-tuned (`zones_source = "tuned"`) and all 41 checked frames are open
+- **THEN** the clip is suspect
+
+### Requirement: Suspect clip re-scored with the fridge light
+For a suspect clip, the door check SHALL score the same frames again with one rule per setup zone: that zone's box (after the event's alignment shift) with feature `blue`, direction `above`, and threshold `DOOR_THRESHOLD` (else 0.01). This second result SHALL decide the outcome, the open span, the open and close times and the picked stills. The `motion_not_door` or `door_event_recorded` log line SHALL have `zones_source = "fallback"`, and the run output SHALL have `suspect = true`.
+
+#### Scenario: Fridge light finds the real opening
+- **WHEN** a 54-frame clip is suspect under the setup rules, and with the fridge-light rule only frames 18–26 are open (blue-lit fraction 0.045 to 0.059, the rest 0.0)
+- **THEN** the outcome is `door_open`, `opened_at` is the time of frame 18, `closed_at` is the time of frame 27, the stills are picked from frames 18–27, and the log line has `zones_source = "fallback"`
+
+#### Scenario: Fridge light finds no opening
+- **WHEN** a 41-frame clip is suspect and no frame is open with the fridge-light rule (a person walks past with the doors closed)
+- **THEN** the outcome is `not_door`, no door event is recorded, there is no face detection, S3 write or analysis, and the `motion_not_door` line has `zones_source = "fallback"`
+
+#### Scenario: Not suspect keeps the setup result
+- **WHEN** the clip is not suspect
+- **THEN** the setup rules' result is used unchanged and the run output has no `suspect` field
+
+### Requirement: Suspect events teach nothing
+A suspect event SHALL NOT be recorded as a self-tuning sample and SHALL NOT trigger a re-tune of the door rules, whatever its outcome.
+
+#### Scenario: No sample from a suspect event
+- **WHEN** a suspect event's alignment succeeds
+- **THEN** no `DOORSAMPLE#{device}#…` item is written for it and the setup's tuned rules are unchanged
+
+#### Scenario: Normal event still samples
+- **WHEN** an event that is not suspect aligns successfully
+- **THEN** a sample is recorded as before
+
+### Requirement: Suspect streak per device
+The system SHALL keep, per account and device, the number of suspect events in a row (`suspect_streak`). A suspect event SHALL add 1. An event checked on its clip with setup rules that is not suspect SHALL reset it to 0. A successful setup run SHALL reset it to 0. Events that fall back to stills, or use the default rules, SHALL leave it unchanged.
+
+#### Scenario: Three suspect events in a row
+- **WHEN** three suspect events follow each other for the device
+- **THEN** its `suspect_streak` is 3
+
+#### Scenario: Normal event resets the streak
+- **WHEN** `suspect_streak` is 2 and the next clip checked with setup rules is not suspect
+- **THEN** `suspect_streak` is 0
+
+#### Scenario: Setup run resets the streak
+- **WHEN** `suspect_streak` is 5 and the owner runs setup successfully
+- **THEN** `suspect_streak` is 0
+
+#### Scenario: Streak write fails
+- **WHEN** writing the streak raises a table error
+- **THEN** a `suspect_streak_failed` warning is logged and the event's outcome is unchanged
+
+### Requirement: Analysis crop from the fridge area
+The analysis crop box SHALL be the device's fridge area widened by 10% of its width on each side and by 5% of its height above and below, then clamped to the frame. Without a fridge area, the analysis crop box is the `STILL_CROP` box, or the full frame when that is unset.
+
+#### Scenario: Box from the fridge area
+- **WHEN** the fridge area is `x = 0.362, y = 0.329, width = 0.233, height = 0.611`
+- **THEN** the analysis crop box is `x ≈ 0.3387, y ≈ 0.2985, width ≈ 0.2796, height ≈ 0.6721` (to 4 places)
+
+#### Scenario: Box clamped at the frame edge
+- **WHEN** the fridge area is `x = 0.0, y = 0.5, width = 0.4, height = 0.5`
+- **THEN** the analysis crop box is `x = 0.0, y = 0.475, width = 0.44, height = 0.525`
+
+#### Scenario: No fridge area
+- **WHEN** the device has no fridge area and `STILL_CROP` is `0.30,0.0,0.34,1.0`
+- **THEN** the analysis crop box is `0.30, 0.0, 0.34, 1.0`
+
+### Requirement: Analysis video built from the open span
+For a door opening found in the event clip, the system SHALL build an H.264 MP4 from the decoded frames, starting one frame before the open span (when there is one) and running through the span. Each frame is cropped to the analysis crop box and played at 1 frame per second. Over 40 frames, it keeps every `ceil(n / 40)`-th frame. It is stored as `analysis.mp4` tagged `transient=true` under the stills prefix, unblurred whatever the face-blur setting.
+
+#### Scenario: Short opening
+- **WHEN** the frame interval is 500 ms, the open span is frames 3–12 of the clip, and the fridge area gives a 716×968 crop
+- **THEN** `analysis.mp4` is stored with tag `transient=true`, decodes to 11 frames (frames 2–12) of 716×968 (±2 px), lasts 11 s, and the step output has `analysis_video = {"key": <its key>, "start_ms": <frame 2's time>, "frame_ms": 500, "frames": 11}`
+
+#### Scenario: Long opening thinned
+- **WHEN** the frame interval is 500 ms and the open span plus the frame before it is 231 frames
+- **THEN** the video keeps every 6th frame, starting with the first: 39 frames with `frame_ms = 3000`
+
+#### Scenario: Span starts at the first frame
+- **WHEN** the open span starts at the clip's first frame
+- **THEN** the video starts at that frame and `start_ms` is its time
+
+#### Scenario: Built while face blurring is on
+- **WHEN** face blurring is on and a frame in the span shows a face
+- **THEN** the video frame is not blurred, the stored stills are blurred, and the door event links neither `analysis.mp4` nor its key
+
+#### Scenario: Encoding or upload fails
+- **WHEN** encoding the video raises an error or S3 rejects the upload
+- **THEN** `analysis_video_not_stored` is logged with `reason` `encode_failed` or `upload_failed`, the step output has no `analysis_video`, the stills are stored, and the outcome is still `door_open`
+
+#### Scenario: No video on the fallback path
+- **WHEN** the clip is unavailable and the door check samples stills across the window
+- **THEN** no `analysis.mp4` is written and the step output has no `analysis_video`
+
+#### Scenario: Not a door opening
+- **WHEN** the outcome is `not_door` or `duplicate`
+- **THEN** no `analysis.mp4` remains under the event's prefix
+
+### Requirement: Still times passed to analysis
+For a door opening, the step output SHALL include `still_ms`: the capture time in epoch ms of each stored still, in the same order as `still_keys`.
+
+#### Scenario: Times match the stored stills
+- **WHEN** the stills picked from the open span were taken at offsets 0, 3000, 6000 and 9500 ms from the window start `S`
+- **THEN** the step output has `still_ms = [S, S + 3000, S + 6000, S + 9500]` alongside the four `still_keys`
+
+#### Scenario: Still dropped by face detection
+- **WHEN** 4 stills were picked and face detection failed for the second
+- **THEN** `still_keys` has 3 keys and `still_ms` has the 3 matching times

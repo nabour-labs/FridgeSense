@@ -8,6 +8,7 @@ export const MAX_ITEMS = 12;
 export const MAX_OPENINGS = 5;
 export const MAX_OUT = 6;
 export const MAX_PROOFS = 3;
+export const MAX_STILLS = 4;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -68,19 +69,56 @@ export function recentRows(events: DoorEvent[], now: number, timeZone: string, n
       continue;
     }
     const when = `${ago(e.opened_at, now)} · ${clockTime(e.opened_at, timeZone)} · ${Math.round(e.duration_s)} s`;
-    const proofs = state === "changes" ? kept.flatMap((c) => c.proof?.slice(0, 1) ?? []).slice(0, MAX_PROOFS) : [];
+    const proofs = state === "changes" ? proofLinks(kept) : [];
     rows.push({ id: e.id, when, state, labels, count: 1, proofs });
   }
   return rows.slice(0, n);
 }
 
-/** The newest opening's last still, captioned "Latest still · 8:42 pm"; null when no opening has stills. */
-export function latestStill(events: DoorEvent[], timeZone: string): { src: string; caption: string } | null {
-  const newest = [...events]
-    .filter((e) => e.stills.length > 0)
-    .sort((a, b) => Date.parse(b.opened_at) - Date.parse(a.opened_at))[0];
-  if (!newest) return null;
-  return { src: newest.stills.at(-1)!, caption: `Latest still · ${clockTime(newest.opened_at, timeZone)}` };
+/** The first proof link of each change that has one, in order, at most MAX_PROOFS. */
+function proofLinks(changes: DoorEvent["changes"]): string[] {
+  return changes.flatMap((c) => c.proof?.slice(0, 1) ?? []).slice(0, MAX_PROOFS);
+}
+
+export interface ActivityRow {
+  id: string;
+  /** "Today · 8:42 pm · 12 s" */
+  when: string;
+  state: "checking" | "none" | "changes";
+  labels: string[];
+  /** The opening's first MAX_STILLS stills. */
+  stills: string[];
+  /** As RecentRow.proofs, without any that is already one of `stills`. */
+  proofs: string[];
+}
+
+/** One row per opening of the last 7 days, newest first: unlike recentRows, nothing is collapsed. */
+export function activityRows(events: DoorEvent[], now: number, timeZone: string): ActivityRow[] {
+  const week = lastDays(events, new Date(now), timeZone, 7);
+  return [...week]
+    .sort((a, b) => Date.parse(b.opened_at) - Date.parse(a.opened_at))
+    .map((e) => {
+      const kept = e.changes.filter((c) => !c.rejected);
+      const labels = kept.map(changeLabel);
+      const state = e.status === "analyzing" ? "checking" : labels.length ? "changes" : "none";
+      const parts = [localDay(e.opened_at, now, timeZone), clockTime(e.opened_at, timeZone)];
+      if (Number.isFinite(e.duration_s)) parts.push(`${Math.round(e.duration_s)} s`);
+      const stills = e.stills.slice(0, MAX_STILLS);
+      const shown = new Set(stills.map(stillBase));
+      const proofs = state === "changes" ? proofLinks(kept).filter((p) => !shown.has(stillBase(p))) : [];
+      return { id: e.id, when: parts.join(" · "), state, labels, stills, proofs };
+    });
+}
+
+/** "Today", "Yesterday" or the short weekday ("Sat") of a time, in the given time zone. */
+function localDay(iso: string, now: number, timeZone: string): string {
+  const date = (t: number) => new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(t));
+  const day = date(Date.parse(iso));
+  // Noon UTC on each local date, so the day count is exact across DST changes.
+  const days = Math.round((Date.parse(`${date(now)}T12:00:00Z`) - Date.parse(`${day}T12:00:00Z`)) / 86_400_000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return WEEKDAYS[new Date(`${day}T12:00:00Z`).getUTCDay()];
 }
 
 /** A still's link without its query string: the same picture across re-signed links. */

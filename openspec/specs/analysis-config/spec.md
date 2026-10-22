@@ -32,7 +32,7 @@ The owner's reference images (each with an annotation) and custom instructions t
 - **THEN** the response is 400 `{"error": "instructions must be text of at most 1000 characters"}` and the stored instructions are unchanged
 
 ### Requirement: Add a reference image
-`POST /api/config/references` with `{"annotation": "<text>", "image": "<base64 JPEG>"}` SHALL store the reference for the linked account and return 200 with the full config. The annotation SHALL be 1–300 characters after trimming. The image SHALL decode to JPEG bytes (starting `FF D8 FF`) of at most 200,000 bytes. An account SHALL hold at most 6 references.
+`POST /api/config/references` with `{"annotation": "<text>", "image": "<base64 JPEG>"}` SHALL store the reference for the linked account and return 200 with the full config. The annotation SHALL be 1–300 characters after trimming. The image SHALL decode to JPEG bytes (starting `FF D8 FF`) of at most 200,000 bytes. An account SHALL hold at most 30 references.
 
 #### Scenario: Add a reference
 - **WHEN** the owner sends annotation `milk bag (2 L, white with blue print)` and a valid 60 KB JPEG
@@ -47,8 +47,8 @@ The owner's reference images (each with an annotation) and custom instructions t
 - **THEN** the response is 400 `{"error": "image must be a JPEG of at most 200 KB"}` and nothing is stored
 
 #### Scenario: Seventh reference
-- **WHEN** the account already has 6 references and another valid one is posted
-- **THEN** the response is 409 `{"error": "at most 6 reference images"}` and the account still has the same 6
+- **WHEN** the account already has 30 references and another valid one is posted
+- **THEN** the response is 409 `{"error": "at most 30 reference images"}` and the account still has the same 30
 
 ### Requirement: Delete a reference image
 `DELETE /api/config/references/{id}` SHALL remove that reference from the linked account and return 200 with the full config. An unknown id SHALL return 404.
