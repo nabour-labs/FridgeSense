@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SetupWarning } from "../api/types";
-import { canEdit, useApp } from "../AppContext";
+import { isAdmin, useApp } from "../AppContext";
 
 type Fix = { label: string; href: string };
 
@@ -30,14 +30,16 @@ function fixes(w: SetupWarning): Fix[] {
 
 /**
  * Setup problems that stop door openings being recorded or detected well, each with a link
- * to its fix. Loaded once per visit; a failed request shows nothing, since these are hints.
+ * to its fix. Owner only: other roles can't make the fixes, so they see nothing and nothing is
+ * requested. Loaded once per visit; a failed request shows nothing, since these are hints.
  */
 export function Warnings() {
   const { api, role } = useApp();
-  const editable = canEdit(role);
+  const owner = isAdmin(role);
   const [warnings, setWarnings] = useState<SetupWarning[]>([]);
 
   useEffect(() => {
+    if (!owner) return;
     let live = true;
     api.warnings().then(
       (body) => live && setWarnings(body.warnings),
@@ -46,9 +48,9 @@ export function Warnings() {
     return () => {
       live = false;
     };
-  }, [api]);
+  }, [api, owner]);
 
-  if (warnings.length === 0) return null;
+  if (!owner || warnings.length === 0) return null;
   return (
     <div className="space-y-2">
       {warnings.map((w) => (
@@ -60,15 +62,13 @@ export function Warnings() {
           <TriangleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-300" />
           <div className="min-w-0 space-y-1.5">
             <p>{w.message}</p>
-            {editable && (
-              <p className="flex flex-wrap gap-x-4 gap-y-1">
-                {fixes(w).map((f) => (
-                  <a key={f.href} href={f.href} className="font-semibold underline underline-offset-2">
-                    {f.label}
-                  </a>
-                ))}
-              </p>
-            )}
+            <p className="flex flex-wrap gap-x-4 gap-y-1">
+              {fixes(w).map((f) => (
+                <a key={f.href} href={f.href} className="font-semibold underline underline-offset-2">
+                  {f.label}
+                </a>
+              ))}
+            </p>
           </div>
         </div>
       ))}
