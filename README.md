@@ -107,11 +107,9 @@ Built for the Ring and Alexa+ tracks and the AWS Builder challenge. Everything r
 Hackathon notes: [product feedback](docs/product-feedback.md) and [friction log](docs/friction-log.md).
 
 ## Try it
+- App: **https://d1wh1n5au8p2h1.cloudfront.net/** (open it on a phone and add it to the home screen)
+- Demo passcode: **NabourLabs**
 
-> **TODO before submitting:** replace the two placeholders below after `cdk deploy` and after setting the demo passcode (see [Demo access](#demo-access)).
-
-- App: **`<SiteUrl>`** (open it on a phone and add it to the home screen)
-- Demo passcode: **`<demo passcode>`**
 
 The demo passcode signs in **read-only** to the live fridge: the current inventory, door openings day by day (stills for the last 7 days), items waiting for confirmation, and open/close stats. A "Demo · read-only" badge shows on every screen; confirming, editing and fixing counts are disabled.
 
@@ -422,7 +420,7 @@ cdk deploy -c debugTraces=false
 
 ## Costs
 
-AWS costs come out of pocket, so only real door openings reach Nova and every paid call logs what it cost. A typical opening costs about half a cent: roughly $0.0014 for Nova, $0.001 per still for face detection (up to 4 stills) and $0.001 to $0.002 for blurring the clip. Motion without an opening costs only the Lambda time of the door check.
+AWS costs come out of pocket, so only real door openings reach Nova and every paid call logs what it cost. A typical opening costs about a fifth of a cent: roughly $0.0014 for Nova, $0.001 per still for face detection (up to 4 stills) and $0.001 to $0.002 for blurring the clip. Motion without an opening costs only the Lambda time of the door check.
 
 ### Nova cost per opening
 
